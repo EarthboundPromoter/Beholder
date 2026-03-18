@@ -1,0 +1,22 @@
+# Build output
+src/bin/
+src/obj/
+
+# Decompiled source (large, regenerable from game DLL)
+decompiled_full/
+
+# Game assemblies (copyrighted, not distributable)
+libs/
+
+# OS/IDE files
+.vs/
+*.user
+*.suo
+Thumbs.db
+Desktop.ini
+
+# NuGet
+*.nupkg
+
+# All types listing (regenerable)
+all_types.txt
