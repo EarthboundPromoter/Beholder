@@ -1,0 +1,4 @@
+# Normalize line endings; keep shell scripts LF
+* text=auto
+*.cs text
+*.sh text eol=lf
