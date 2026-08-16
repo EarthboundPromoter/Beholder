@@ -12,10 +12,13 @@ namespace SkaldAccessibility.Patches
     /// mode (SkaldIOPatches prefixes SkaldIO.isControllerConnected → true — the
     /// Steam Deck ships that exact mode).
     ///
-    /// Approved map (keymap session, 2026-08-16):
+    /// Approved map (keymap session 2026-08-16; Enter→A pulled by owner ruling
+    /// later that day — A is a per-screen option-row scheme button, and welding
+    /// it to Enter double-fired scheme slots, e.g. Reset on the rebind screen.
+    /// Enter is native-only now; A's slots stay reachable via number keys):
     ///   WASD  → left stick (the option funnel reads only the stick)
-    ///   Enter → A          Backspace → B
-    ///   U / I → X / Y      Q / E → LB / RB      Z / X → LT / RT
+    ///   Backspace → B      U / I → X / Y
+    ///   Q / E → LB / RB    Z / X → LT / RT
     ///
     /// Not emulated, per the session's rulings: Start and Back (their only
     /// consumers — quest log, quick save — keep native J / F5); the D-pad
@@ -117,7 +120,6 @@ namespace SkaldAccessibility.Patches
             }
 
             int applied = 0;
-            applied += Patch(harmony, type, "buttonAPressed", nameof(Postfix_ButtonA));
             applied += Patch(harmony, type, "buttonBPressed", nameof(Postfix_ButtonB));
             applied += Patch(harmony, type, "buttonXPressed", nameof(Postfix_ButtonX));
             applied += Patch(harmony, type, "buttonYPressed", nameof(Postfix_ButtonY));
@@ -137,7 +139,7 @@ namespace SkaldAccessibility.Patches
             applied += Patch(harmony, type, "isLeftStickLeftHeld", nameof(Postfix_StickLeftHeld));
             applied += Patch(harmony, type, "isLeftStickRightPressed", nameof(Postfix_StickRightPressed));
             applied += Patch(harmony, type, "isLeftStickRightHeld", nameof(Postfix_StickRightHeld));
-            Plugin.Logger?.LogInfo($"[Feed] Keyboard→controller feed live: {applied}/20 accessors");
+            Plugin.Logger?.LogInfo($"[Feed] Keyboard→controller feed live: {applied}/19 accessors");
         }
 
         private static int Patch(Harmony harmony, Type type, string methodName, string postfixName)
@@ -161,12 +163,6 @@ namespace SkaldAccessibility.Patches
         private static bool Emulate(KeyCode key)
             => !TextEntryActive() && Input.GetKeyDown(key);
 
-        static void Postfix_ButtonA(ref bool __result)
-        {
-            if (__result) return;
-            if (Emulate(KeyCode.Return) || Time.frameCount == SkaldIOPatches.InjectConfirmFrame) __result = true;
-        }
-
         static void Postfix_ButtonB(ref bool __result)
         {
             if (__result) return;
@@ -178,9 +174,24 @@ namespace SkaldAccessibility.Patches
         static void Postfix_LeftBumper(ref bool __result) { if (!__result && Emulate(KeyCode.Q)) __result = true; }
         static void Postfix_RightBumper(ref bool __result) { if (!__result && Emulate(KeyCode.E)) __result = true; }
 
-        static void Postfix_LeftTriggerPressed(ref bool __result) { if (!__result && Emulate(KeyCode.Z)) __result = true; }
-        static void Postfix_LeftTriggerHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.Z)) __result = true; }
-        static void Postfix_LeftTriggerUp(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKeyUp(KeyCode.Z)) __result = true; }
+        // Bridge confirm injects here as a synthetic LT click (press on frame N,
+        // release on N+1 — the real click shape), matching the game's own
+        // confirm idiom: LT clicks the focused element.
+        static void Postfix_LeftTriggerPressed(ref bool __result)
+        {
+            if (__result) return;
+            if (Emulate(KeyCode.Z) || Time.frameCount == SkaldIOPatches.InjectConfirmFrame) __result = true;
+        }
+        static void Postfix_LeftTriggerHeld(ref bool __result)
+        {
+            if (__result) return;
+            if ((!TextEntryActive() && Input.GetKey(KeyCode.Z)) || Time.frameCount == SkaldIOPatches.InjectConfirmFrame) __result = true;
+        }
+        static void Postfix_LeftTriggerUp(ref bool __result)
+        {
+            if (__result) return;
+            if ((!TextEntryActive() && Input.GetKeyUp(KeyCode.Z)) || Time.frameCount == SkaldIOPatches.InjectConfirmFrame + 1) __result = true;
+        }
         static void Postfix_RightTriggerPressed(ref bool __result) { if (!__result && Emulate(KeyCode.X)) __result = true; }
         static void Postfix_RightTriggerHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.X)) __result = true; }
         static void Postfix_RightTriggerUp(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKeyUp(KeyCode.X)) __result = true; }

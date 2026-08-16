@@ -42,7 +42,7 @@ namespace SkaldAccessibility.Patches
         // Bridge drive (dev-only; owner-sanctioned 2026-08-16): SkaldBridge arms
         // these by reflection — class and field names are the bridge's API.
         // Consumed by ControllerFeedPatch's OR-ins (up/down/left/right → left
-        // stick, confirm → A, cancel → B), same path as real keys.
+        // stick, confirm → LT click, cancel → B), same path as real keys.
         internal static int InjectUpFrame = -1, InjectDownFrame = -1,
             InjectLeftFrame = -1, InjectRightFrame = -1,
             InjectConfirmFrame = -1, InjectCancelFrame = -1;
