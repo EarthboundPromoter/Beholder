@@ -46,9 +46,20 @@ namespace SkaldAccessibility.Patches
         /// <summary>True while the game itself is capturing typed text: the Tab
         /// console, the F2 feedback tool, or a text-entry popup (PopUpName /
         /// PopUpCreateSave / PopUpSaveRename — the three getInputString
-        /// consumers; a game update adding a fourth is a WP8 seam-audit row).</summary>
+        /// consumers; a game update adding a fourth is a WP8 seam-audit row).
+        ///
+        /// MUST NOT evaluate before the game is initialized: reading
+        /// ConsoleControl.console runs ConsoleControl's static constructor,
+        /// which reads GameData — touched at frame 0 that NREs on unloaded data
+        /// and PERMANENTLY poisons the type, killing MainControl.Update every
+        /// frame after (the 2026-08-16 black-screen boot). First state
+        /// classification arrives strictly after "Application Ready!", and the
+        /// game's own MainControl.Update initializes ConsoleControl in that same
+        /// first ready frame — so past this guard the cctor has already run,
+        /// safely, on the game's side.</summary>
         public static bool TextEntryActive()
         {
+            if (GameStateTracker.CurrentMode == GameMode.Unknown) return false;
             if (Time.frameCount == _gateFrame) return _gateActive;
             _gateFrame = Time.frameCount;
             _gateActive = ComputeTextEntryActive();
