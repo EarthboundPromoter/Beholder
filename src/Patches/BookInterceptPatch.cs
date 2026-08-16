@@ -23,13 +23,13 @@ namespace SkaldAccessibility.Patches
                 if (pages == null || pages.Count == 0) return;
 
                 // Announce book opening and first page
-                Plugin.Speech?.Speak($"Book opened. {pages.Count} pages.", "Book");
+                Scaffold.SpeechService.Say($"Book opened. {pages.Count} pages.", "Book");
 
                 // Speak first page content
                 string firstPage = TextCleaner.CleanText(pages[0]);
                 if (!string.IsNullOrWhiteSpace(firstPage))
                 {
-                    Plugin.Speech?.SpeakQueued(firstPage, "Book");
+                    Scaffold.SpeechService.SayQueued(firstPage, "Book");
                 }
             }
             catch (Exception ex)

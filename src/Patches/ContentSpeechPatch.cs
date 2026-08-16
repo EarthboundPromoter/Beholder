@@ -42,9 +42,9 @@ namespace SkaldAccessibility.Patches
             _lastSpoken[source] = cleaned;
 
             if (interrupt)
-                Plugin.Speech?.Speak(cleaned, source);
+                Scaffold.SpeechService.Say(cleaned, source);
             else
-                Plugin.Speech?.SpeakQueued(cleaned, source);
+                Scaffold.SpeechService.SayQueued(cleaned, source);
 
             Plugin.Logger?.LogInfo($"[Content:{source}] \"{cleaned}\"");
         }

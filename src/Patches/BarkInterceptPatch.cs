@@ -60,7 +60,7 @@ namespace SkaldAccessibility.Patches
                 if (string.IsNullOrWhiteSpace(cleaned)) return;
 
                 // Queue bark speech (don't interrupt current speech for floating text)
-                Plugin.Speech?.SpeakQueued(cleaned, "Bark");
+                Scaffold.SpeechService.SayQueued(cleaned, "Bark");
             }
             catch (Exception ex)
             {

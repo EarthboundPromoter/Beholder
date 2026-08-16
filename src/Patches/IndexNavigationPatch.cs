@@ -199,7 +199,7 @@ namespace SkaldAccessibility.Patches
                 return; // same text, no need to log every frame
             }
             cursorState.LastSpoken = text;
-            Plugin.Speech?.Speak(text, "Nav");
+            Scaffold.SpeechService.Say(text, "Nav");
             Plugin.Logger?.LogInfo($"[Nav:idx:{control.GetType().Name}] {index} \"{text}\"");
         }
 

@@ -154,7 +154,7 @@ namespace SkaldAccessibility.Patches
 
                 if (!string.IsNullOrWhiteSpace(announcement))
                 {
-                    Plugin.Speech?.Speak(announcement, "SliderHov");
+                    Scaffold.SpeechService.Say(announcement, "SliderHov");
                     Plugin.Logger?.LogInfo($"[Nav:slider:hov] \"{announcement}\"");
                 }
 
@@ -175,7 +175,7 @@ namespace SkaldAccessibility.Patches
                             : TextCleaner.CleanText(desc);
                         if (!string.IsNullOrWhiteSpace(cleanedDesc))
                         {
-                            Plugin.Speech?.SpeakQueued(cleanedDesc, "SliderDesc");
+                            Scaffold.SpeechService.SayQueued(cleanedDesc, "SliderDesc");
                             Plugin.Logger?.LogInfo($"[Nav:slider:desc] \"{cleanedDesc}\"");
                         }
                     }
@@ -337,7 +337,7 @@ namespace SkaldAccessibility.Patches
                     ? $"{cleanedHeader}: {cleanedValue}"
                     : cleanedValue;
 
-                Plugin.Speech?.Speak(announcement, "Slider");
+                Scaffold.SpeechService.Say(announcement, "Slider");
                 Plugin.Logger?.LogInfo($"[Nav:slider] \"{announcement}\" (spoke)");
             }
             catch (Exception ex)

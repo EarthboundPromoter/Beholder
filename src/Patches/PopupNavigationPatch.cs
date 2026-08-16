@@ -127,7 +127,7 @@ namespace SkaldAccessibility.Patches
                 if (text != null && text != cursorState.LastSpoken)
                 {
                     cursorState.LastSpoken = text;
-                    Plugin.Speech?.Speak(text, "PopupNav");
+                    Scaffold.SpeechService.Say(text, "PopupNav");
                     Plugin.Logger?.LogInfo($"[Nav:popup] {index} \"{text}\"");
                 }
             }
@@ -257,7 +257,7 @@ namespace SkaldAccessibility.Patches
 
                 if (!string.IsNullOrWhiteSpace(main))
                 {
-                    Plugin.Speech?.Speak(main, "Popup");
+                    Scaffold.SpeechService.Say(main, "Popup");
                     Plugin.Logger?.LogInfo($"[Popup:text] \"{main}\"");
                     spoken = true;
                 }
@@ -266,11 +266,11 @@ namespace SkaldAccessibility.Patches
                 {
                     if (spoken)
                     {
-                        Plugin.Speech?.SpeakQueued(secondary, "Popup");
+                        Scaffold.SpeechService.SayQueued(secondary, "Popup");
                     }
                     else
                     {
-                        Plugin.Speech?.Speak(secondary, "Popup");
+                        Scaffold.SpeechService.Say(secondary, "Popup");
                         spoken = true;
                     }
                     Plugin.Logger?.LogInfo($"[Popup:text2] \"{secondary}\"");
@@ -280,11 +280,11 @@ namespace SkaldAccessibility.Patches
                 {
                     if (spoken)
                     {
-                        Plugin.Speech?.SpeakQueued(tertiary, "Popup");
+                        Scaffold.SpeechService.SayQueued(tertiary, "Popup");
                     }
                     else
                     {
-                        Plugin.Speech?.Speak(tertiary, "Popup");
+                        Scaffold.SpeechService.Say(tertiary, "Popup");
                     }
                     Plugin.Logger?.LogInfo($"[Popup:text3] \"{tertiary}\"");
                 }

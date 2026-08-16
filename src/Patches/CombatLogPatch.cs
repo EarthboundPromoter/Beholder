@@ -33,7 +33,7 @@ namespace SkaldAccessibility.Patches
 
                 if (string.IsNullOrWhiteSpace(combined)) return;
 
-                Plugin.Speech?.Speak(combined, "CombatLog");
+                Scaffold.SpeechService.Say(combined, "CombatLog");
                 Plugin.Logger?.LogInfo($"[CombatLog] \"{combined}\"");
             }
             catch (Exception ex)

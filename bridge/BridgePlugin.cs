@@ -101,6 +101,18 @@ namespace SkaldBridge
                         byte[] head = Encoding.ASCII.GetBytes(header);
                         stream.Write(head, 0, head.Length);
                         stream.Write(payload, 0, payload.Length);
+                        stream.Flush();
+                        // Graceful close: half-close our side and drain the peer's
+                        // FIN before disposing, so the OS cannot discard buffered
+                        // response bytes with an RST (the intermittent-empty-response
+                        // bug from the first boot test).
+                        try
+                        {
+                            client.Client.Shutdown(SocketShutdown.Send);
+                            var drain = new byte[256];
+                            while (stream.Read(drain, 0, drain.Length) > 0) { }
+                        }
+                        catch { }
                     }
                 }
                 catch (Exception ex)
@@ -147,6 +159,8 @@ namespace SkaldBridge
                     return OnMainThread(StateJson);
                 case "/log":
                     return LogTailJson(query);
+                case "/speech":
+                    return OnMainThread(SpeechJson);
                 case "/quit":
                     MainThreadQueue.Enqueue(() => Application.Quit());
                     return "{\"ok\":true,\"action\":\"quit queued\"}";
@@ -171,6 +185,26 @@ namespace SkaldBridge
                     return "{\"ok\":false,\"error\":\"main thread timeout\"}";
             }
             return result ?? "{\"ok\":false,\"error\":\"no result\"}";
+        }
+
+        /// <summary>Recent utterances + queue depth, reflected out of the mod's
+        /// SpeechService (dev-only coupling; tolerates the mod being absent).</summary>
+        private static string SpeechJson()
+        {
+            try
+            {
+                var svc = AccessTools.TypeByName("SkaldAccessibility.Scaffold.SpeechService");
+                if (svc == null) return "{\"ok\":false,\"error\":\"SpeechService not found\"}";
+                var recent = AccessTools.Method(svc, "RecentHistory")
+                    .Invoke(null, new object[] { 20 }) as System.Collections.Generic.List<string>;
+                int depth = (int)AccessTools.Property(svc, "QueueDepth").GetValue(null, null);
+                var lines = recent == null ? "" : string.Join(",", recent.Select(l => $"\"{Escape(l)}\""));
+                return $"{{\"ok\":true,\"queueDepth\":{depth},\"recent\":[{lines}]}}";
+            }
+            catch (Exception ex)
+            {
+                return $"{{\"ok\":false,\"error\":\"{Escape(ex.Message)}\"}}";
+            }
         }
 
         private static string StatusJson()

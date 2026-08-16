@@ -101,7 +101,7 @@ namespace SkaldAccessibility
                 string announcement = GetModeTransitionAnnouncement(_previousMode, _currentMode);
                 if (!string.IsNullOrEmpty(announcement))
                 {
-                    Plugin.Speech?.Speak(announcement, "State");
+                    Scaffold.SpeechService.Say(announcement, "State");
                 }
 
                 // Announce numeric button options with their key shortcuts
@@ -162,7 +162,7 @@ namespace SkaldAccessibility
                 if (parts.Count > 0)
                 {
                     string buttonList = string.Join(", ", parts);
-                    Plugin.Speech?.SpeakQueued(buttonList, "NumericButtons");
+                    Scaffold.SpeechService.SayQueued(buttonList, "NumericButtons");
                     Plugin.Logger?.LogInfo($"[State:buttons] {buttonList}");
                 }
             }

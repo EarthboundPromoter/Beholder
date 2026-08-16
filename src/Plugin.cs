@@ -3,7 +3,7 @@ using BepInEx.Logging;
 using HarmonyLib;
 using System;
 using System.Reflection;
-using SkaldAccessibility.Speech;
+using SkaldAccessibility.Scaffold;
 using SkaldAccessibility.Patches;
 
 namespace SkaldAccessibility
@@ -18,7 +18,6 @@ namespace SkaldAccessibility
         public const string Version = "0.2.0";
 
         internal static new ManualLogSource Logger;
-        internal static ScreenReaderOutput Speech;
 
         private Harmony _harmony;
         private bool _skaldIOPatched;
@@ -29,17 +28,11 @@ namespace SkaldAccessibility
 
             try
             {
-                // Initialize screen reader output
-                Speech = new ScreenReaderOutput();
-                if (Speech.IsAvailable)
-                {
-                    Logger.LogInfo("Screen reader detected and connected.");
-                    Speech.Speak("SKALD Accessibility mod loaded.", "Init");
-                }
-                else
-                {
-                    Logger.LogWarning("No screen reader detected. Speech output will be logged only.");
-                }
+                // Speech tier (Scaffold, ported from Sleeptalker — WP2):
+                // Tolk with screen reader preferred, SAPI fallback, log-only degrade.
+                SpeechService.Init();
+                UnityEngine.Application.quitting += SpeechService.Shutdown;
+                SpeechService.Say($"Skald Accessibility {Version} loaded.", "Init");
 
                 // Initialize state tracking (reflection-based, before Harmony)
                 StateTransitionPatch.Initialize();
@@ -67,6 +60,9 @@ namespace SkaldAccessibility
 
         private void Update()
         {
+            // Pump the speech queue (paced against Tolk_IsSpeaking)
+            SpeechService.Tick();
+
             // Poll game state each frame
             StateTransitionPatch.PollState();
 
