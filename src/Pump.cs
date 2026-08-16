@@ -116,6 +116,21 @@ namespace SkaldAccessibility
         {
             if (string.IsNullOrWhiteSpace(raw)) return;
             _pendingContent[source] = new ContentNote { Raw = raw, Interrupt = interrupt };
+
+            // Panel-class sources feed the review layer's capture (raw, with
+            // markup — the tag grammar is the sectioning schema). Latest wins.
+            switch (source)
+            {
+                case "SceneDesc":
+                case "SecondaryDesc":
+                case "SheetDesc":
+                case "Tooltip":
+                case "PopupMain":
+                case "PopupSecondary":
+                case "PopupTertiary":
+                    ReviewLayer.NotePanel(raw);
+                    break;
+            }
         }
 
         public static void NotePopup(object popup) => _pendingPopup = popup;
@@ -192,6 +207,9 @@ namespace SkaldAccessibility
 
             try { DrainBarks(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:bark] {ex.Message}"); }
+
+            try { ReviewLayer.MaintainFromDrain(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:review] {ex.Message}"); }
 
             try { Scaffold.SpeechService.Tick(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:speech] {ex.Message}"); }
@@ -356,6 +374,7 @@ namespace SkaldAccessibility
             _pendingSelection = null;
             _selControl = canvas;
             _selIndex = index;
+            ReviewLayer.OnFocusChanged();
         }
 
         /// <summary>Speak selection changes once, at the settled end-of-frame value.
@@ -378,6 +397,7 @@ namespace SkaldAccessibility
             if (ReferenceEquals(control, _selControl) && index == _selIndex) return;
             _selControl = control;
             _selIndex = index;
+            ReviewLayer.OnFocusChanged(); // review cursors reset with focus
             if (index < 0) return;
 
             string text = ComposeSelection(control, index);
@@ -541,7 +561,20 @@ namespace SkaldAccessibility
             string name = state.GetType().Name;
             if (name == _lastStateName) return;
             _lastStateName = name;
+            ReviewLayer.OnStateTransition(); // review never survives a state change
             GameStateTracker.OnStateChanged(name, state);
+        }
+
+        /// <summary>The focused element's composed line, for the review layer's
+        /// close re-anchor. Null when no selection is known.</summary>
+        internal static string CurrentFocusLine()
+        {
+            try
+            {
+                if (_selControl == null || _selIndex < 0) return null;
+                return ComposeSelection(_selControl, _selIndex);
+            }
+            catch { return null; }
         }
     }
 }

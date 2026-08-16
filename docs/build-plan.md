@@ -83,7 +83,7 @@ Ground truths that shape the remaining work. Full map in the memory store (`refe
 
 **WP9 — coverage wiring (proposed follow-on, after WP8, before the combat proposal):** wire the combat selector grids via the game's dormant `getControllerScrollableList` mechanism; open the gap ledger with the mouse-only islands for per-row rulings. (The D-pad ability-row extension originally proposed here is moot under the forced-controller ruling — that path now runs natively.)
 
-**WP10 — The review layer: terse focus + navigable panel buffer (spec APPROVED by owner 2026-08-16, designed live across the day's rides; build unscheduled — owner picks the slot).** Supersedes the §5 keymap note reserving bare arrows for a review layer: bare arrows stay on their native bindings permanently; review borrows them only inside its toggle.
+**WP10 — The review layer: terse focus + navigable panel buffer (spec APPROVED by owner 2026-08-16, designed live across the day's rides; BUILT same day at owner direction — ride-verify pending; the terse-tier per-source defaults remain open calibrations, auto-read behavior unchanged this build).** Supersedes the §5 keymap note reserving bare arrows for a review layer: bare arrows stay on their native bindings permanently; review borrows them only inside its toggle.
 
 *Problem.* The game has one description pipeline (`getFullDescriptionAndHeader` → panes/tooltips) with no terse/verbose distinction — the visual pane IS the drilldown: glanceable, ignorable. Speech can't ignore, so every focus move drags the full text behind it (worst: inventory `printComparativeStats`, 40–80 words per grid step; CC class pickers, multi-paragraph blobs). The fix is one architecture, not per-screen hacks: terse at focus, the panel always one gesture away.
 

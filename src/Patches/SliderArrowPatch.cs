@@ -268,6 +268,9 @@ namespace SkaldAccessibility.Patches
                     if (method == null) return;
                     desc = method.Invoke(button, null) as string;
                 }
+                // The row's description is the review panel while this row is
+                // focused (WP10) — raw, so the tag grammar can section it.
+                if (!string.IsNullOrWhiteSpace(desc)) ReviewLayer.NotePanel(desc);
                 string cleaned = string.IsNullOrWhiteSpace(desc) ? null : TextCleaner.CleanText(desc);
                 if (!string.IsNullOrWhiteSpace(cleaned))
                     Scaffold.SpeechService.SayQueued(cleaned, "SliderDesc");

@@ -17,6 +17,8 @@ namespace SkaldAccessibility
     ///   F1             - Repeat last spoken text
     ///   [              - Speech history: previous
     ///   ]              - Speech history: next
+    ///   R              - Review toggle (WP10); Home/End + PgUp/PgDn = the
+    ///                    stateless review cluster, live in every state
     /// </summary>
     public static class InputHandler
     {
@@ -24,11 +26,16 @@ namespace SkaldAccessibility
         {
             if (Patches.ControllerFeedPatch.TextEntryActive()) return;
 
-            // Stop speech: /
+            // Stop speech: / — processed before everything; the silencer is
+            // sacred and works inside the review state too.
             if (Input.GetKeyDown(KeyCode.Slash))
             {
                 SpeechService.Stop();
             }
+
+            // The review layer (WP10): toggle, cluster, and in-state input
+            // classes. Consumed presses stop here.
+            if (ReviewLayer.ProcessInput()) return;
 
             // Repeat last speech: F1
             if (Input.GetKeyDown(KeyCode.F1))

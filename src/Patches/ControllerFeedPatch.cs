@@ -163,14 +163,21 @@ namespace SkaldAccessibility.Patches
         private static bool Emulate(KeyCode key)
             => !TextEntryActive() && Input.GetKeyDown(key);
 
+        // Activation-class emulations additionally suspend while the review
+        // layer is open or eating its closing press (WP10) — a confirm from
+        // inside the buffer must never fire. Stick emulation stays live:
+        // navigation exits review, then acts.
+        private static bool EmulateActivation(KeyCode key)
+            => !ReviewLayer.EatingActivations() && Emulate(key);
+
         static void Postfix_ButtonB(ref bool __result)
         {
             if (__result) return;
-            if (Emulate(KeyCode.Backspace) || Time.frameCount == SkaldIOPatches.InjectCancelFrame) __result = true;
+            if (EmulateActivation(KeyCode.Backspace) || Time.frameCount == SkaldIOPatches.InjectCancelFrame) __result = true;
         }
 
-        static void Postfix_ButtonX(ref bool __result) { if (!__result && Emulate(KeyCode.U)) __result = true; }
-        static void Postfix_ButtonY(ref bool __result) { if (!__result && Emulate(KeyCode.I)) __result = true; }
+        static void Postfix_ButtonX(ref bool __result) { if (!__result && EmulateActivation(KeyCode.U)) __result = true; }
+        static void Postfix_ButtonY(ref bool __result) { if (!__result && EmulateActivation(KeyCode.I)) __result = true; }
         static void Postfix_LeftBumper(ref bool __result) { if (!__result && Emulate(KeyCode.Q)) __result = true; }
         static void Postfix_RightBumper(ref bool __result) { if (!__result && Emulate(KeyCode.E)) __result = true; }
 
@@ -180,21 +187,23 @@ namespace SkaldAccessibility.Patches
         static void Postfix_LeftTriggerPressed(ref bool __result)
         {
             if (__result) return;
-            if (Emulate(KeyCode.Z) || Time.frameCount == SkaldIOPatches.InjectConfirmFrame) __result = true;
+            if (EmulateActivation(KeyCode.Z) || Time.frameCount == SkaldIOPatches.InjectConfirmFrame) __result = true;
         }
         static void Postfix_LeftTriggerHeld(ref bool __result)
         {
             if (__result) return;
-            if ((!TextEntryActive() && Input.GetKey(KeyCode.Z)) || Time.frameCount == SkaldIOPatches.InjectConfirmFrame) __result = true;
+            if ((!TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKey(KeyCode.Z))
+                || Time.frameCount == SkaldIOPatches.InjectConfirmFrame) __result = true;
         }
         static void Postfix_LeftTriggerUp(ref bool __result)
         {
             if (__result) return;
-            if ((!TextEntryActive() && Input.GetKeyUp(KeyCode.Z)) || Time.frameCount == SkaldIOPatches.InjectConfirmFrame + 1) __result = true;
+            if ((!TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKeyUp(KeyCode.Z))
+                || Time.frameCount == SkaldIOPatches.InjectConfirmFrame + 1) __result = true;
         }
-        static void Postfix_RightTriggerPressed(ref bool __result) { if (!__result && Emulate(KeyCode.X)) __result = true; }
-        static void Postfix_RightTriggerHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.X)) __result = true; }
-        static void Postfix_RightTriggerUp(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKeyUp(KeyCode.X)) __result = true; }
+        static void Postfix_RightTriggerPressed(ref bool __result) { if (!__result && EmulateActivation(KeyCode.X)) __result = true; }
+        static void Postfix_RightTriggerHeld(ref bool __result) { if (!__result && !TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKey(KeyCode.X)) __result = true; }
+        static void Postfix_RightTriggerUp(ref bool __result) { if (!__result && !TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKeyUp(KeyCode.X)) __result = true; }
 
         static void Postfix_StickUpPressed(ref bool __result)
         {

@@ -112,7 +112,25 @@ namespace SkaldAccessibility.Patches
                     }
                 }
 
-                // (4) Keyboard → controller feed
+                // (4) Review-layer key swallow (WP10): while the review toggle
+                // is open (or during the eat tail of its closing press), the
+                // game goes blind to captured keys — one choke point covers
+                // every binding-mediated read. getPressedEscapeKey reads its
+                // list directly and needs its own postfix.
+                foreach (string reader in new[] { "getKeyPressed", "getKeyHeldDown", "getKeyUp" })
+                {
+                    var m = AccessTools.Method(skaldIOType, reader, new[] { typeof(UnityEngine.KeyCode) });
+                    if (m != null)
+                        harmony.Patch(m, postfix: new HarmonyMethod(typeof(SkaldIOPatches), nameof(Postfix_SwallowKey)));
+                    else
+                        Plugin.Logger?.LogError($"[SkaldIO] {reader} not found — review swallow incomplete");
+                }
+                var escMethod = AccessTools.Method(skaldIOType, "getPressedEscapeKey");
+                if (escMethod != null)
+                    harmony.Patch(escMethod, postfix: new HarmonyMethod(typeof(SkaldIOPatches), nameof(Postfix_SwallowEscape)));
+                Plugin.Logger?.LogInfo("[SkaldIO] Review-layer key swallow armed");
+
+                // (5) Keyboard → controller feed
                 ControllerFeedPatch.Apply(harmony);
             }
             catch (Exception ex)
@@ -125,6 +143,16 @@ namespace SkaldAccessibility.Patches
         {
             __result = true;
             return false;
+        }
+
+        static void Postfix_SwallowKey(UnityEngine.KeyCode __0, ref bool __result)
+        {
+            if (__result && ReviewLayer.ShouldSwallowKey(__0)) __result = false;
+        }
+
+        static void Postfix_SwallowEscape(ref bool __result)
+        {
+            if (__result && ReviewLayer.ShouldSwallowKey(UnityEngine.KeyCode.Escape)) __result = false;
         }
 
         /// <summary>Above = decrement; the game's own canControllerScrollDown

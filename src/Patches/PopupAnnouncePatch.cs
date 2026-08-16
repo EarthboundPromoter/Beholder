@@ -1,5 +1,6 @@
 using HarmonyLib;
 using System;
+using System.Linq;
 using System.Reflection;
 
 namespace SkaldAccessibility.Patches
@@ -108,6 +109,16 @@ namespace SkaldAccessibility.Patches
                 string secondary = ReadDescription(_secondaryDescField, uiElements);
                 string tertiary = ReadDescription(_tertiaryDescField, uiElements);
 
+                // The popup's combined raw text is the review layer's panel
+                // while the popup is up (WP10).
+                string rawPanel = string.Join("\n\n", new[]
+                {
+                    ReadRaw(_mainDescField, uiElements),
+                    ReadRaw(_secondaryDescField, uiElements),
+                    ReadRaw(_tertiaryDescField, uiElements),
+                }.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray());
+                if (rawPanel.Length > 0) ReviewLayer.NotePanel(rawPanel);
+
                 // Speak the first non-empty description with interrupt; remaining
                 // descriptions queue behind it.
                 bool spoken = false;
@@ -154,12 +165,17 @@ namespace SkaldAccessibility.Patches
 
         private static string ReadDescription(FieldInfo field, object uiElements)
         {
+            string raw = ReadRaw(field, uiElements);
+            return raw == null ? null : TextCleaner.CleanText(raw);
+        }
+
+        private static string ReadRaw(FieldInfo field, object uiElements)
+        {
             if (field == null) return null;
             object textBlock = field.GetValue(uiElements);
             if (textBlock == null) return null;
             string raw = _contentField.GetValue(textBlock) as string;
-            if (string.IsNullOrWhiteSpace(raw)) return null;
-            return TextCleaner.CleanText(raw);
+            return string.IsNullOrWhiteSpace(raw) ? null : raw;
         }
     }
 }
