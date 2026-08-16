@@ -64,6 +64,13 @@ namespace SkaldAccessibility
         // ---- Slider arrow-flip stream (noted by ArrowFlipJoin; latest wins) ----
         private static object _pendingArrowFlip;
 
+        // ---- List-selection stream (noted by ListSelectionPatch; latest wins) ----
+        private static object _pendingListSelection;
+        private static object _lastSelList;   // drain-side diff record: which list
+        private static object _lastSelObject; // ...and which current object last spoke
+        private static string _yellowTag;     // C64Color.YELLOW_TAG — the game's
+                                              // rendered marker for the current row
+
         private static int _lastFrame = -1;
 
         /// <summary>Note-only: called from the setState postfix. The game calls
@@ -132,6 +139,11 @@ namespace SkaldAccessibility
         /// latest wins, all rows share the state).</summary>
         public static void NoteSliderArrowFlip(object sliderButton) => _pendingArrowFlip = sliderButton;
 
+        /// <summary>Note-only: a SkaldObjectList selection write (click path or
+        /// direct setter). The drain reads the list's current object and speaks
+        /// only actual changes.</summary>
+        public static void NoteListSelection(object list) => _pendingListSelection = list;
+
         /// <summary>Called from Plugin.LateUpdate. Drain order encodes precedence
         /// (state → popup → content → selection → slider → combat batch → barks);
         /// SpeechService.Tick runs last so anything drained this frame can still
@@ -161,6 +173,9 @@ namespace SkaldAccessibility
 
             try { DrainSliderArrowFlip(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:flip] {ex.Message}"); }
+
+            try { DrainListSelection(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:listsel] {ex.Message}"); }
 
             try { DrainCombatLog(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:combat] {ex.Message}"); }
@@ -256,6 +271,34 @@ namespace SkaldAccessibility
             if (text != null) Scaffold.SpeechService.Say(text, "Slider");
         }
 
+        /// <summary>Speak list-selection changes ("Selected: &lt;row&gt;.") — the
+        /// game's current-object write, read back at the clock and diffed, so
+        /// the click-to-select step of every list sheet is audible (ledger B6).
+        /// First observation of a list settles silently, mirroring the
+        /// selection join's new-surface rule.</summary>
+        private static void DrainListSelection()
+        {
+            object list = _pendingListSelection;
+            if (list == null) return;
+            _pendingListSelection = null;
+
+            object current = Patches.ListSelectionPatch.CurrentObjectOf(list);
+            if (current == null) return;
+
+            if (!ReferenceEquals(list, _lastSelList))
+            {
+                _lastSelList = list;
+                _lastSelObject = current;
+                return;
+            }
+            if (ReferenceEquals(current, _lastSelObject)) return;
+            _lastSelObject = current;
+
+            string name = Patches.ListSelectionPatch.ListNameOf(current);
+            if (name == null) return;
+            Scaffold.SpeechService.Say($"Selected: {name}.", "Nav");
+        }
+
         /// <summary>Speak which arrow the cursor flipped onto ("Plus." /
         /// "Minus."), read from the game's own flag at drain time.</summary>
         private static void DrainSliderArrowFlip()
@@ -340,6 +383,7 @@ namespace SkaldAccessibility
         {
             int count = -1;
             string text = null;
+            bool isCurrentListRow = false;
 
             if (_getButtonsListMethod != null && _contentField != null)
             {
@@ -351,6 +395,12 @@ namespace SkaldAccessibility
                         count = buttons.Count;
                         object button = buttons[index];
                         string raw = button != null ? _contentField.GetValue(button) as string : null;
+                        // List sheets render the SkaldObjectList current object
+                        // wrapped in the yellow tag at position 0
+                        // (SkaldObjectList.getScrolledStringList) — transcode the
+                        // markup into "selected" instead of stripping it (B6).
+                        string yellow = YellowTag();
+                        isCurrentListRow = yellow != null && raw != null && raw.StartsWith(yellow);
                         if (!string.IsNullOrWhiteSpace(raw) && raw != " ")
                         {
                             string cleaned = Patches.TextCleaner.CleanText(raw);
@@ -404,8 +454,26 @@ namespace SkaldAccessibility
                 || typeName == "MenuButtonControl";
 
             if (numericClass) return $"{index + 1}: {text}";
+            if (isCurrentListRow) text = $"{text}, selected";
             if (count > 1) return $"{text}, {index + 1} of {count}";
             return text;
+        }
+
+        /// <summary>The game's own current-row marker, read once from
+        /// C64Color.YELLOW_TAG (colors load with game data; composition only
+        /// runs post-ready, so the type is long initialized).</summary>
+        private static string YellowTag()
+        {
+            if (_yellowTag != null) return _yellowTag.Length == 0 ? null : _yellowTag;
+            try
+            {
+                var prop = AccessTools.Property(AccessTools.TypeByName("C64Color"), "YELLOW_TAG");
+                _yellowTag = prop?.GetValue(null, null) as string ?? "";
+            }
+            catch { _yellowTag = ""; }
+            if (_yellowTag.Length == 0)
+                Plugin.Logger?.LogWarning("[Pump:sel] C64Color.YELLOW_TAG unavailable — selected-row state unvoiced");
+            return _yellowTag.Length == 0 ? null : _yellowTag;
         }
 
         private static void DrainState()

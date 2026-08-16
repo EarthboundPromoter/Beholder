@@ -58,6 +58,16 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **DECOMP + RULING (keymap session, 2026-08-16):** the lateral selector is one class family everywhere — `UITextSliderControl`/`UITextSliderButton` builds the visual-style modal's four rows (PopUpVisualStyle.cs:83-91), the Settings rows, the character-creation appearance screen (GUIControlApperanceEditorSheet), and the camping-food quantity selector. Role phrasing keys off the family once (universal hooks). Owner ruled the **count-only form**: focus = "Visual style: CRT, 2 of 3." (the value's position among its choices — the count replaces the list-position count so counters never stack); lateral adjust = new value in place with count, read one frame deferred (B3's fix, same stale-render trap). PROVISIONAL: owner is not yet sure the lateral idiom is intuitive from the count alone — revisit after more UI rides. Implementation = drain-side pass (with B1/B3).
 
+## B6 — Two cursors on every list sheet: funnel focus vs SkaldObjectList current object (FIX LANDED 2026-08-16, ride-verify pending)
+
+**Symptom (owner ride, rebind screen):** arming reassignment committed to the wrong binding — Enter acted on a row other than the focused one. Owner diagnosis confirmed: arrowing moves the funnel focus; the row that actions actually target is the list's *current object*, which only a **click** sets. The game shows the divergence visually (current object rendered yellow, `SkaldObjectList.getScrolledStringList`); the mod voiced only focus.
+
+**Mechanism:** every list-sheet state routes clicks through `getListButtonPressIndex` → `getObjectByPageIndex` → `getObjectByIndex`, which sets `currentObject` — a read that mutates. Actions (`updateKey`, class choice, load, craft) act on `getCurrentObject()`, never on funnel focus.
+
+**Landmine survey (same pattern, per-surface ride checklist):** keybindings (hit), load/save menus (LoadMenuState/SaveMenuState — loading acts on clicked row!), load-module, character-creation class + background pickers (choice commits the clicked row), crafting recipes, the generic ListSheetBaseState family (journal/faction-type sheets), inventory/combat consumable cycling (`setNextObject`), spell lists.
+
+**Fix landed:** (a) browse composition transcodes the game's yellow current-row marker — the focused row that is also the selected row speaks "…, selected, N of M" (transcode markup, don't strip); (b) new join on `setCurrentObject`/`getObjectByIndex` — the drain diffs the list's current object and speaks "Selected: <row>." on actual change, so the click-to-select step is audible. First observation of a list settles silently.
+
 ## Closed
 
 (none yet)
