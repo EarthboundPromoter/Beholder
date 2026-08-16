@@ -1,23 +1,34 @@
 #!/bin/bash
-# Build and deploy SkaldAccessibility mod
-# Usage: ./build_and_deploy.sh
+# Build and deploy SkaldAccessibility (+ dev bridge) to the game's BepInEx 5 install.
+# The game must not be running (the DLLs are locked while it is).
+# Usage: ./build_and_deploy.sh [--no-bridge]
 
 set -e
+REPO="$(cd "$(dirname "$0")" && pwd)"
+GAME="/c/Program Files (x86)/Steam/steamapps/common/SKALD Against the Black Priory"
+PLUGINS="$GAME/BepInEx/plugins"
 
-export PATH="$HOME/.dotnet:$PATH"
+echo "=== Building mod (Release) ==="
+dotnet build "$REPO/src/SkaldAccessibility.csproj" -c Release -v minimal
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC_DIR="$SCRIPT_DIR/src"
-GAME_DIR="/c/Program Files (x86)/Steam/steamapps/common/SKALD Against the Black Priory"
-PLUGIN_DIR="$GAME_DIR/BepInEx/plugins/SkaldAccessibility"
+mkdir -p "$PLUGINS/SkaldAccessibility"
+cp "$REPO/src/bin/Release/SkaldAccessibility.dll" "$PLUGINS/SkaldAccessibility/"
+echo "Deployed SkaldAccessibility.dll"
 
-echo "Building SkaldAccessibility..."
-cd "$SRC_DIR"
-dotnet build -c Debug --nologo -v q
+if [ "$1" != "--no-bridge" ]; then
+  echo "=== Building bridge (Release, dev-only — never ships) ==="
+  dotnet build "$REPO/bridge/SkaldBridge.csproj" -c Release -v minimal
+  mkdir -p "$PLUGINS/SkaldBridge"
+  cp "$REPO/bridge/bin/Release/SkaldBridge.dll" "$PLUGINS/SkaldBridge/"
+  echo "Deployed SkaldBridge.dll (127.0.0.1:8332)"
+fi
 
-echo "Deploying to game directory..."
-mkdir -p "$PLUGIN_DIR"
-cp "$SRC_DIR/bin/Debug/netstandard2.1/SkaldAccessibility.dll" "$PLUGIN_DIR/"
+# Speech DLLs beside the exe (Tolk arrives with WP2; the NVDA client serves the
+# current direct-P/Invoke backend). Copy-if-missing so game-root state is explicit.
+for dll in Tolk.dll nvdaControllerClient64.dll; do
+  if [ ! -f "$GAME/$dll" ]; then
+    echo "WARNING: $dll missing beside the game exe — speech will be log-only."
+  fi
+done
 
-echo "Done. Plugin deployed to: $PLUGIN_DIR"
-echo "Launch the game to test."
+echo "=== Deploy complete. Launch via steam://rungameid/1069160 ==="

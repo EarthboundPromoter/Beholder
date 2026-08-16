@@ -2,13 +2,12 @@
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
-    <AssemblyName>SkaldAccessibility</AssemblyName>
-    <Description>Screen reader accessibility mod for SKALD: Against the Black Priory</Description>
+    <AssemblyName>SkaldBridge</AssemblyName>
+    <Description>Dev-only observation bridge for the SKALD accessibility mod. Never ships.</Description>
     <LangVersion>latest</LangVersion>
     <DebugType>none</DebugType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <RootNamespace>SkaldAccessibility</RootNamespace>
     <GameDir>C:\Program Files (x86)\Steam\steamapps\common\SKALD Against the Black Priory</GameDir>
     <Managed>$(GameDir)\SKALD Against the Black Priory_Data\Managed</Managed>
   </PropertyGroup>
@@ -32,10 +31,6 @@
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(Managed)\UnityEngine.CoreModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>$(Managed)\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

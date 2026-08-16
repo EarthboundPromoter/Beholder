@@ -1,6 +1,5 @@
 using BepInEx;
 using BepInEx.Logging;
-using BepInEx.Unity.Mono;
 using HarmonyLib;
 using System;
 using System.Reflection;
@@ -9,9 +8,15 @@ using SkaldAccessibility.Patches;
 
 namespace SkaldAccessibility
 {
-    [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
+    [BepInPlugin(Guid, Name, Version)]
     public class Plugin : BaseUnityPlugin
     {
+        // GUID kept identical to the BepInEx 6 era's generated value so the
+        // plugin identity (and any config) carries across the toolchain flip.
+        public const string Guid = "SkaldAccessibility";
+        public const string Name = "Skald Accessibility";
+        public const string Version = "0.2.0";
+
         internal static new ManualLogSource Logger;
         internal static ScreenReaderOutput Speech;
 
@@ -40,7 +45,7 @@ namespace SkaldAccessibility
                 StateTransitionPatch.Initialize();
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to Update)
-                _harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
+                _harmony = new Harmony(Guid);
                 _harmony.PatchAll(Assembly.GetExecutingAssembly());
 
                 var patchedMethods = _harmony.GetPatchedMethods();
@@ -57,7 +62,7 @@ namespace SkaldAccessibility
                 Logger.LogError($"Failed to initialize: {e}");
             }
 
-            Logger.LogInfo($"Plugin {MyPluginInfo.PLUGIN_NAME} v{MyPluginInfo.PLUGIN_VERSION} loaded.");
+            Logger.LogInfo($"Plugin {Name} v{Version} loaded.");
         }
 
         private void Update()

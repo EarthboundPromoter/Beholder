@@ -23,3 +23,7 @@ all_types.txt
 
 # Claude session tooling (local process commands)
 .claude/
+
+# Dev bridge — local-only, never ships (lineage rule)
+bridge/bin/
+bridge/obj/
