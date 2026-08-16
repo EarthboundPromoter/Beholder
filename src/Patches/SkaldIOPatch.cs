@@ -344,7 +344,7 @@ namespace SkaldAccessibility.Patches
                 _boundCurrentSelectedButtons.Invoke(__instance, null);
                 int newIndex = (int)_getCurrentSelectedButtonIndex.Invoke(__instance, null);
                 NavigationCursor.SetIndex(__instance, newIndex);
-                Plugin.Logger?.LogInfo($"[SkaldIO:inc] {__instance.GetType().Name} {current}→{newIndex}");
+                Plugin.Logger?.LogDebug($"[SkaldIO:inc] {__instance.GetType().Name} {current}→{newIndex}");
             }
             catch (Exception ex)
             {
@@ -367,7 +367,7 @@ namespace SkaldAccessibility.Patches
                 _boundCurrentSelectedButtons.Invoke(__instance, null);
                 int newIndex = (int)_getCurrentSelectedButtonIndex.Invoke(__instance, null);
                 NavigationCursor.SetIndex(__instance, newIndex);
-                Plugin.Logger?.LogInfo($"[SkaldIO:dec] {__instance.GetType().Name} {current}→{newIndex}");
+                Plugin.Logger?.LogDebug($"[SkaldIO:dec] {__instance.GetType().Name} {current}→{newIndex}");
             }
             catch (Exception ex)
             {
