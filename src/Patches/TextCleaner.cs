@@ -10,7 +10,7 @@ namespace SkaldAccessibility.Patches
     /// class only — speech is handled by ContentSpeechPatch (event-driven hooks
     /// on specific content methods) and IndexNavigationPatch (navigation speech).
     /// </summary>
-    public static class TextInterceptPatch
+    public static class TextCleaner
     {
         private static readonly Regex TagRegex = new Regex(@"</?tag>", RegexOptions.Compiled);
         private static readonly Regex FunctionRegex = new Regex(@"\{[^}]+\}", RegexOptions.Compiled);

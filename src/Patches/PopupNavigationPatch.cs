@@ -11,9 +11,10 @@ namespace SkaldAccessibility.Patches
     /// Uses NavigationCursor index instead of hover observation.
     ///
     /// Covers all 25+ popup types. Init suppression lets popup body text
-    /// be heard before the first button is announced.
-    ///
-    /// Enter-key activation writes buttonPressIndexLeft at the NavigationCursor index.
+    /// be heard before the first button is announced. (Both the per-frame
+    /// polling and the suppression window are scheduled for deletion in
+    /// build-plan WP4, replaced by the selection join.)
+    /// Enter-key activation is SkaldIOPatch's job (Enter maps to a click).
     /// </summary>
     [HarmonyPatch]
     public static class PopupNavigationPatch
@@ -29,7 +30,6 @@ namespace SkaldAccessibility.Patches
         private static Type _popupButtonType;
         private static MethodInfo _getButtonsListMethod;
         private static FieldInfo _contentField;
-        private static FieldInfo _buttonPressIndexLeftField;
         private static bool _initialized;
         private static bool _initFailed;
 
@@ -68,11 +68,9 @@ namespace SkaldAccessibility.Patches
                 }
 
                 _getButtonsListMethod     = AccessTools.Method(baseType, "getButtonsList");
-                _buttonPressIndexLeftField = AccessTools.Field(baseType, "buttonPressIndexLeft");
                 _contentField             = AccessTools.Field(typeof(UITextBlock), "content");
 
                 _initialized = _getButtonsListMethod != null
-                    && _buttonPressIndexLeftField != null
                     && _contentField != null;
 
                 if (_initialized)
@@ -152,7 +150,7 @@ namespace SkaldAccessibility.Patches
 
             if (string.IsNullOrWhiteSpace(raw) || raw == " ") return null;
 
-            string cleaned = TextInterceptPatch.CleanText(raw);
+            string cleaned = TextCleaner.CleanText(raw);
             if (string.IsNullOrWhiteSpace(cleaned)) return null;
             return cleaned;
         }
@@ -304,7 +302,7 @@ namespace SkaldAccessibility.Patches
             if (textBlock == null) return null;
             string raw = _contentField.GetValue(textBlock) as string;
             if (string.IsNullOrWhiteSpace(raw)) return null;
-            return TextInterceptPatch.CleanText(raw);
+            return TextCleaner.CleanText(raw);
         }
     }
 }

@@ -11,10 +11,11 @@ namespace SkaldAccessibility.Patches
     ///
     /// Replaces ButtonHoverPatch. Instead of observing hoverIndex (which depends
     /// on virtual mouse position and resets to -1 every frame), reads the
-    /// NavigationCursor's authoritative index and speaks the element at that index.
-    ///
-    /// Also handles Enter-key activation: writes buttonPressIndexLeft at the
-    /// current NavigationCursor index.
+    /// NavigationCursor index (a mod-side mirror of the game's
+    /// currentSelectedButton — build-plan WP4 replaces both this mirror and this
+    /// per-frame postfix with a note-only hook on UICanvas.setCurrentSelectedButton
+    /// plus end-of-frame composition) and speaks the element at that index.
+    /// Enter-key activation is SkaldIOPatch's job (Enter maps to a click).
     ///
     /// Postfix on GUIControl.update() — runs after all control updates.
     /// </summary>
@@ -24,11 +25,8 @@ namespace SkaldAccessibility.Patches
         private static FieldInfo _numericButtonsField;
         private static FieldInfo _listButtonsField;
         private static FieldInfo _menuTabField;
-        private static FieldInfo _sheetComplexField;
-        private static FieldInfo _horizontalMenuButtonsField;
         private static MethodInfo _getButtonsListMethod;
         private static FieldInfo _contentField;
-        private static FieldInfo _buttonPressIndexLeftField;
 
         // Primary navigable control — whatever getControllerScrollableList() returns
         private static MethodInfo _getControllerScrollableListMethod;
@@ -68,12 +66,7 @@ namespace SkaldAccessibility.Patches
                 _numericButtonsField = AccessTools.Field(typeof(GUIControl), "numericButtons");
                 _listButtonsField = AccessTools.Field(typeof(GUIControl), "listButtons");
                 _menuTabField = AccessTools.Field(typeof(GUIControl), "menuTab");
-                _sheetComplexField = AccessTools.Field(typeof(GUIControl), "sheetComplex");
                 _getControllerScrollableListMethod = AccessTools.Method(typeof(GUIControl), "getControllerScrollableList");
-
-                var extraRowType = AccessTools.TypeByName("GUIControl+ExtraButtonRowSheetComplex");
-                if (extraRowType != null)
-                    _horizontalMenuButtonsField = AccessTools.Field(extraRowType, "horizontalMenuButtons");
 
                 var baseType = AccessTools.TypeByName("UIButtonControlBase");
                 if (baseType == null)
@@ -84,7 +77,6 @@ namespace SkaldAccessibility.Patches
                 }
 
                 _getButtonsListMethod = AccessTools.Method(baseType, "getButtonsList");
-                _buttonPressIndexLeftField = AccessTools.Field(baseType, "buttonPressIndexLeft");
                 _contentField = AccessTools.Field(typeof(UITextBlock), "content");
 
                 // Feat tree node → feat name (fallback when button text is unavailable)
@@ -100,7 +92,6 @@ namespace SkaldAccessibility.Patches
 
                 _initialized = _numericButtonsField != null
                     && _getButtonsListMethod != null
-                    && _buttonPressIndexLeftField != null
                     && _contentField != null;
 
                 if (_initialized)
@@ -227,7 +218,7 @@ namespace SkaldAccessibility.Patches
 
             if (string.IsNullOrWhiteSpace(raw) || raw == " ") return null;
 
-            string cleaned = TextInterceptPatch.CleanText(raw);
+            string cleaned = TextCleaner.CleanText(raw);
             if (string.IsNullOrWhiteSpace(cleaned)) return null;
             if (cleaned == "..." || cleaned == "\u2026") return "dot dot dot";
             return cleaned;
@@ -259,7 +250,7 @@ namespace SkaldAccessibility.Patches
 
                 string name = _getNameMethod.Invoke(feat, null) as string;
                 if (string.IsNullOrWhiteSpace(name)) return null;
-                return TextInterceptPatch.CleanText(name);
+                return TextCleaner.CleanText(name);
             }
             catch
             {

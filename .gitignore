@@ -20,3 +20,6 @@ Desktop.ini
 
 # All types listing (regenerable)
 all_types.txt
+
+# Claude session tooling (local process commands)
+.claude/

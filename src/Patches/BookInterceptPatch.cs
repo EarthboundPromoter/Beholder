@@ -26,7 +26,7 @@ namespace SkaldAccessibility.Patches
                 Plugin.Speech?.Speak($"Book opened. {pages.Count} pages.", "Book");
 
                 // Speak first page content
-                string firstPage = TextInterceptPatch.CleanText(pages[0]);
+                string firstPage = TextCleaner.CleanText(pages[0]);
                 if (!string.IsNullOrWhiteSpace(firstPage))
                 {
                     Plugin.Speech?.SpeakQueued(firstPage, "Book");

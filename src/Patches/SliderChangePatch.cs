@@ -145,8 +145,8 @@ namespace SkaldAccessibility.Patches
                 string header = headerBlock != null ? _contentField.GetValue(headerBlock) as string : null;
                 string value  = valueBlock  != null ? _contentField.GetValue(valueBlock)  as string : null;
 
-                string cleanedHeader = string.IsNullOrWhiteSpace(header) ? null : TextInterceptPatch.CleanText(header);
-                string cleanedValue  = string.IsNullOrWhiteSpace(value)  ? null : TextInterceptPatch.CleanText(value);
+                string cleanedHeader = string.IsNullOrWhiteSpace(header) ? null : TextCleaner.CleanText(header);
+                string cleanedValue  = string.IsNullOrWhiteSpace(value)  ? null : TextCleaner.CleanText(value);
 
                 string announcement = cleanedHeader != null && cleanedValue != null
                     ? $"{cleanedHeader}: {cleanedValue}"
@@ -172,7 +172,7 @@ namespace SkaldAccessibility.Patches
                         string desc = descMethod.Invoke(hoverButton, null) as string;
                         string cleanedDesc = string.IsNullOrWhiteSpace(desc)
                             ? null
-                            : TextInterceptPatch.CleanText(desc);
+                            : TextCleaner.CleanText(desc);
                         if (!string.IsNullOrWhiteSpace(cleanedDesc))
                         {
                             Plugin.Speech?.SpeakQueued(cleanedDesc, "SliderDesc");
@@ -312,7 +312,7 @@ namespace SkaldAccessibility.Patches
                 string value = _contentField.GetValue(valueBlock) as string;
                 if (string.IsNullOrWhiteSpace(value)) return;
 
-                string cleanedValue = TextInterceptPatch.CleanText(value);
+                string cleanedValue = TextCleaner.CleanText(value);
                 if (string.IsNullOrWhiteSpace(cleanedValue)) return;
 
                 var state = _states.GetOrCreateValue(__instance);
@@ -331,7 +331,7 @@ namespace SkaldAccessibility.Patches
                 string header = _contentField.GetValue(headerBlock) as string;
                 string cleanedHeader = string.IsNullOrWhiteSpace(header)
                     ? null
-                    : TextInterceptPatch.CleanText(header);
+                    : TextCleaner.CleanText(header);
 
                 string announcement = cleanedHeader != null
                     ? $"{cleanedHeader}: {cleanedValue}"
@@ -422,15 +422,10 @@ namespace SkaldAccessibility.Patches
                         _cycleActivityMethod = AccessTools.Method(_characterField.FieldType, "cyclePreferredCampActivity", new[] { typeof(int) });
                 }
 
+                // Per-type members are optional by design — the arrow dispatch
+                // null-checks each at use, so init always succeeds.
                 _initialized = true;
-
-                if (_initialized)
-                    Plugin.Logger?.LogInfo("[SliderArrow] Initialized successfully");
-                else
-                {
-                    Plugin.Logger?.LogError("[SliderArrow] Init failed");
-                    _initFailed = true;
-                }
+                Plugin.Logger?.LogInfo("[SliderArrow] Initialized successfully");
             }
             catch (Exception ex)
             {

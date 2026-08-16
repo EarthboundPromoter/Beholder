@@ -6,15 +6,15 @@ using System.Reflection;
 namespace SkaldAccessibility.Patches
 {
     /// <summary>
-    /// Event-driven speech for game content. Replaces the blanket UITextBlock.setContent()
-    /// hook (TextInterceptPatch) with targeted postfixes on the specific GUIControl and
-    /// PopUpBase methods that represent actual content changes.
+    /// Event-driven speech for game content. Replaces the old blanket
+    /// UITextBlock.setContent() hook with targeted postfixes on the specific
+    /// GUIControl and PopUpBase methods that represent actual content changes.
     ///
-    /// Each hook fires when a state class pushes new content — not when the renderer
-    /// refreshes the same content 60 times per second. Per-source dedup ensures the
-    /// same content arriving repeatedly (from setGUIData called every frame) only speaks once.
-    ///
-    /// No suppression windows. No seen-text sets. No mode filtering. No frame timers.
+    /// Several of these setters are still called every frame by setGUIData, so a
+    /// per-source last-spoken dictionary absorbs the repeats. That dictionary (and
+    /// its ClearAll invalidation hooks) is scheduled for deletion in build-plan WP5,
+    /// when these hooks become note-only and the end-of-frame drain diffs once at
+    /// the clock instead.
     /// </summary>
     public static class ContentSpeechPatch
     {
@@ -34,7 +34,7 @@ namespace SkaldAccessibility.Patches
         private static void SpeakIfChanged(string raw, string source, bool interrupt)
         {
             if (string.IsNullOrWhiteSpace(raw)) return;
-            string cleaned = TextInterceptPatch.CleanText(raw);
+            string cleaned = TextCleaner.CleanText(raw);
             if (string.IsNullOrWhiteSpace(cleaned)) return;
 
             _lastSpoken.TryGetValue(source, out string prev);

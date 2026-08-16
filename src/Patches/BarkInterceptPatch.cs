@@ -56,7 +56,7 @@ namespace SkaldAccessibility.Patches
             {
                 if (string.IsNullOrEmpty(__0)) return;
 
-                string cleaned = TextInterceptPatch.CleanText(__0);
+                string cleaned = TextCleaner.CleanText(__0);
                 if (string.IsNullOrWhiteSpace(cleaned)) return;
 
                 // Queue bark speech (don't interrupt current speech for floating text)

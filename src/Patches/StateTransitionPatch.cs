@@ -5,27 +5,18 @@ using System.Reflection;
 namespace SkaldAccessibility.Patches
 {
     /// <summary>
-    /// Detects game state transitions by patching StateControl.
+    /// Detects game state transitions. Despite the name this is currently a
+    /// per-frame poller, not a Harmony patch: it reads the static
+    /// MainControl.gameControl (StateControl) field and its currentState, and
+    /// reports type-name changes to GameStateTracker.
     ///
-    /// StateControl manages the game's state machine. Key methods:
-    ///   - activateState: transitions to a new state
-    ///   - jumpToState: direct state jump (may bypass normal flow)
-    ///
-    /// Each state is a StateBase subclass. We detect the type name
-    /// and route it through GameStateTracker.
-    ///
-    /// Approach: We patch the StateBase base class methods that are called
-    /// when states activate. Since we can't know the exact method signature
-    /// without full decompilation, we start with a general approach —
-    /// polling the active GUI control type each frame in Plugin.Update().
-    ///
-    /// We also hook GUIControl setter on MainControl if possible.
+    /// INTERIM: build-plan WP3 replaces this with a note-only postfix on
+    /// StateControl.setState(SkaldStates) (decompiled MainControl.cs:212) plus
+    /// settled truth-reads at the end-of-frame drain, and this poller is deleted.
     /// </summary>
     public static class StateTransitionPatch
     {
         // Cached reflection for reading current state
-        private static FieldInfo _guiControlField;
-        private static PropertyInfo _guiControlProp;
         private static FieldInfo _gameControlField;
         private static Type _mainControlType;
         private static object _mainControlInstance;
@@ -47,43 +38,13 @@ namespace SkaldAccessibility.Patches
                     return;
                 }
 
-                // Log MainControl's type hierarchy for diagnostics
-                var baseType = _mainControlType.BaseType;
-                Plugin.Logger?.LogInfo($"[StateTransition] MainControl base: {baseType?.Name ?? "none"}");
-
-                // Try guiControl first, then fall back to gameControl (StateControl)
-                _guiControlField = AccessTools.Field(_mainControlType, "guiControl");
-                if (_guiControlField != null)
-                {
-                    Plugin.Logger?.LogInfo($"[StateTransition] Found guiControl field on {_guiControlField.DeclaringType?.Name}, type={_guiControlField.FieldType.Name}");
-                }
-                else
-                {
-                    _guiControlProp = AccessTools.Property(_mainControlType, "guiControl");
-                    if (_guiControlProp != null)
-                    {
-                        Plugin.Logger?.LogInfo($"[StateTransition] Found guiControl property on {_guiControlProp.DeclaringType?.Name}");
-                    }
-                }
-
-                // Also get gameControl (StateControl) — this is the state machine
+                // gameControl (StateControl) is the state machine. (MainControl has
+                // no guiControl member — guiControl lives on StateBase.)
                 _gameControlField = AccessTools.Field(_mainControlType, "gameControl");
-                if (_gameControlField != null)
+                if (_gameControlField == null)
                 {
-                    Plugin.Logger?.LogInfo($"[StateTransition] Found gameControl field on {_gameControlField.DeclaringType?.Name}, type={_gameControlField.FieldType.Name}");
-                }
-                else
-                {
-                    Plugin.Logger?.LogWarning("[StateTransition] gameControl not found either. Scanning fields...");
-                    var allFields = AccessTools.GetDeclaredFields(_mainControlType);
-                    foreach (var f in allFields)
-                    {
-                        string fname = f.Name.ToLower();
-                        if (fname.Contains("control") || fname.Contains("gui") || fname.Contains("state"))
-                        {
-                            Plugin.Logger?.LogInfo($"[StateTransition]   field: {f.Name} ({f.FieldType.Name}) on {f.DeclaringType?.Name}");
-                        }
-                    }
+                    Plugin.Logger?.LogError("[StateTransition] gameControl field not found on MainControl");
+                    return;
                 }
 
                 _initialized = true;
@@ -97,8 +58,8 @@ namespace SkaldAccessibility.Patches
 
         /// <summary>
         /// Poll the current state. Called from Plugin.Update().
-        /// Detects state changes by checking the type of the active GUI control
-        /// or state object.
+        /// Transient failures (loading frames, scene churn) are logged and skipped —
+        /// polling continues on the next frame.
         /// </summary>
         public static void PollState()
         {
@@ -117,52 +78,22 @@ namespace SkaldAccessibility.Patches
                     Plugin.Logger?.LogInfo("[StateTransition] Found MainControl instance");
                 }
 
-                // Strategy 1: Read guiControl type name (if available)
-                object guiControl = null;
-                if (_guiControlField != null)
+                object stateControl = _gameControlField.GetValue(_mainControlInstance);
+                if (stateControl != null)
                 {
-                    guiControl = _guiControlField.GetValue(_mainControlInstance);
-                }
-                else if (_guiControlProp != null)
-                {
-                    guiControl = _guiControlProp.GetValue(_mainControlInstance);
-                }
-
-                if (guiControl != null)
-                {
-                    string typeName = guiControl.GetType().Name;
-                    if (typeName != _lastPolledState)
+                    string stateName = ReadActiveState(stateControl);
+                    if (stateName != null && stateName != _lastPolledState)
                     {
-                        _lastPolledState = typeName;
-                        string stateName = MapGUIControlToState(typeName);
+                        _lastPolledState = stateName;
                         GameStateTracker.OnStateChanged(stateName);
-                    }
-                    return; // guiControl is authoritative if available
-                }
-
-                // Strategy 2: Read gameControl (StateControl) and get active state
-                if (_gameControlField != null)
-                {
-                    object stateControl = _gameControlField.GetValue(_mainControlInstance);
-                    if (stateControl != null)
-                    {
-                        string stateName = ReadActiveState(stateControl);
-                        if (stateName != null && stateName != _lastPolledState)
-                        {
-                            _lastPolledState = stateName;
-                            GameStateTracker.OnStateChanged(stateName);
-                        }
                     }
                 }
             }
             catch (Exception ex)
             {
-                // Don't spam logs — this runs every frame
-                if (_initialized)
-                {
-                    Plugin.Logger?.LogDebug($"[StateTransition] Poll error: {ex.Message}");
-                    _initialized = false; // Stop polling on error
-                }
+                // Transient — a loading frame or destroyed object. Keep polling;
+                // going permanently silent here once disabled the entire mod.
+                Plugin.Logger?.LogDebug($"[StateTransition] Poll error (continuing): {ex.Message}");
             }
         }
 
@@ -171,8 +102,8 @@ namespace SkaldAccessibility.Patches
         private static bool _activeStateSearched;
 
         /// <summary>
-        /// Read the active state name from a StateControl object via reflection.
-        /// StateControl likely has a field like "activeState" or "currentState" of type StateBase.
+        /// Read the active state name from the StateControl object via reflection.
+        /// The field is currentState (StateBase) — candidates kept for resilience.
         /// </summary>
         private static string ReadActiveState(object stateControl)
         {
@@ -181,8 +112,7 @@ namespace SkaldAccessibility.Patches
                 _activeStateSearched = true;
                 var scType = stateControl.GetType();
 
-                // Try common field names for the active state
-                string[] candidates = { "activeState", "currentState", "state", "_activeState", "_currentState" };
+                string[] candidates = { "currentState", "activeState", "state" };
                 foreach (var name in candidates)
                 {
                     _activeStateField = AccessTools.Field(scType, name);
@@ -193,21 +123,8 @@ namespace SkaldAccessibility.Patches
                     }
                 }
 
-                // If none found, scan for StateBase-typed fields
                 if (_activeStateField == null)
-                {
-                    Plugin.Logger?.LogWarning("[StateTransition] No known active state field. Scanning StateControl fields...");
-                    foreach (var f in AccessTools.GetDeclaredFields(scType))
-                    {
-                        Plugin.Logger?.LogInfo($"[StateTransition]   SC field: {f.Name} ({f.FieldType.Name})");
-                        if (f.FieldType.Name.Contains("State") && !f.FieldType.Name.Contains("Control"))
-                        {
-                            _activeStateField = f;
-                            Plugin.Logger?.LogInfo($"[StateTransition] Using state field: {f.Name}");
-                            break;
-                        }
-                    }
-                }
+                    Plugin.Logger?.LogError("[StateTransition] No active state field found on StateControl");
             }
 
             if (_activeStateField == null) return null;
@@ -231,41 +148,6 @@ namespace SkaldAccessibility.Patches
                 return _activeStateField.GetValue(stateControl);
             }
             catch { return null; }
-        }
-
-        /// <summary>
-        /// Map a GUIControl class name to a state-like name for GameStateTracker.
-        /// </summary>
-        private static string MapGUIControlToState(string guiControlName)
-        {
-            // The GUIControl* classes map directly to game modes
-            switch (guiControlName)
-            {
-                case "GUIControlScene": return "SceneState";
-                case "GUIControlLog": return "OverlandState";
-                case "GUIControlOverland": return "OverlandState";
-                case "GUIControlCombat": return "CombatPlanningState";
-                case "GUIControlCombatEffectTargeting": return "CombatPlanningState";
-                case "GUIControlOverlandEffectTargeting": return "OverlandState";
-                case "GUIControlInventory": return "InventoryState";
-                case "GUIControlInventoryBase": return "InventoryState";
-                case "GUIControlCharacterSheet": return "CharacterState";
-                case "GUIControlMenu": return "MenuState";
-                case "GUIControlSettings": return "SettingsState";
-                case "GUIControlCamping": return "CampActivityState";
-                case "GUIControlCrafting": return "CraftingState";
-                case "GUIControlContainer": return "InventoryState";
-                case "GUIControlFeatBuy": return "FeatBuyState";
-                case "GUIControlCredits": return "CreditsState";
-                case "GUIControlAbilitySheet": return "AbilitiesState";
-                case "GUIControlSpellBookSheet": return "SpellsState";
-                case "GUIControlExtraRowList": return "JournalState";
-                case "GUIControlPartyManagement": return "InventoryState";
-                case "GUIControlApperanceEditorSheet": return "CharacterCreationState";
-                case "GUIControlSheet": return "CharacterState";
-                default:
-                    return guiControlName; // Pass through unknown names
-            }
         }
     }
 }

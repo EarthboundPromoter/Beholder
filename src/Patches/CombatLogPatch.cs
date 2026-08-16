@@ -7,7 +7,7 @@ namespace SkaldAccessibility.Patches
     /// Speaks combat log entries as they are written.
     ///
     /// CombatLog maintains a static text buffer and never routes through
-    /// UITextBlock.setContent(), so TextInterceptPatch cannot catch it.
+    /// UITextBlock.setContent(), so no rendered-text hook can catch it.
     /// This patch hooks addEntry(string name, string content) — the single
     /// write point for all combat events — and speaks each entry immediately.
     ///
@@ -24,8 +24,8 @@ namespace SkaldAccessibility.Patches
             {
                 if (!GameStateTracker.IsInCombat) return;
 
-                string name    = string.IsNullOrWhiteSpace(__0) ? null : TextInterceptPatch.CleanText(__0);
-                string message = string.IsNullOrWhiteSpace(__1) ? null : TextInterceptPatch.CleanText(__1);
+                string name    = string.IsNullOrWhiteSpace(__0) ? null : TextCleaner.CleanText(__0);
+                string message = string.IsNullOrWhiteSpace(__1) ? null : TextCleaner.CleanText(__1);
 
                 string combined = (name != null && message != null)
                     ? $"{name}: {message}"

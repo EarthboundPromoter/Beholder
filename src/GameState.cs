@@ -154,7 +154,7 @@ namespace SkaldAccessibility
                     if (button == null) continue;
                     string raw = _contentField.GetValue(button) as string;
                     if (string.IsNullOrWhiteSpace(raw)) continue;
-                    string cleaned = TextInterceptPatch.CleanText(raw);
+                    string cleaned = TextCleaner.CleanText(raw);
                     if (string.IsNullOrWhiteSpace(cleaned)) continue;
                     parts.Add($"{i + 1}: {cleaned}");
                 }

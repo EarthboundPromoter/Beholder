@@ -45,7 +45,6 @@ namespace SkaldAccessibility.Patches
         private static MethodInfo _boundCurrentSelectedButtons;
         private static MethodInfo _incrementCurrentSelectedButton;
         private static MethodInfo _decrementCurrentSelectedButton;
-        private static MethodInfo _getButtonsList;
         private static MethodInfo _canControllerScrollDown;
         private static MethodInfo _canControllerScrollUp;
 
@@ -207,12 +206,6 @@ namespace SkaldAccessibility.Patches
                     _incrementCurrentSelectedButton = AccessTools.Method(uiCanvasType, "incrementCurrentSelectedButton");
                     _decrementCurrentSelectedButton = AccessTools.Method(uiCanvasType, "decrementCurrentSelectedButton");
                     _getCurrentControllerSelectedElement = AccessTools.Method(uiCanvasType, "getCurrentControllerSelectedElement");
-                }
-
-                var buttonBaseType = AccessTools.TypeByName("UIButtonControlBase");
-                if (buttonBaseType != null)
-                {
-                    _getButtonsList = AccessTools.Method(buttonBaseType, "getButtonsList");
                 }
 
                 if (uiElementType != null)
