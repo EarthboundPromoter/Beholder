@@ -8,6 +8,14 @@ REPO="$(cd "$(dirname "$0")" && pwd)"
 GAME="/c/Program Files (x86)/Steam/steamapps/common/SKALD Against the Black Priory"
 PLUGINS="$GAME/BepInEx/plugins"
 
+# HARD GUARD (owner correction 2026-08-16): never deploy over a live session.
+# The running game may be the owner's ride — deploying fails on locked DLLs
+# anyway, and quitting/launching over it is never this script's call.
+if tasklist //FI "IMAGENAME eq SKALD Against the Black Priory.exe" 2>/dev/null | grep -qi "SKALD"; then
+  echo "ABORT: the game is running. Close it (or ask the owner to) before deploying."
+  exit 1
+fi
+
 echo "=== Building mod (Release) ==="
 dotnet build "$REPO/src/SkaldAccessibility.csproj" -c Release -v minimal
 

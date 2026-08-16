@@ -87,6 +87,8 @@ namespace SkaldAccessibility.Patches
                 var postfixMousePressed = new HarmonyMethod(typeof(SkaldIOPatches), nameof(Postfix_MousePressed));
                 PatchMethod(harmony, skaldIOType, "getMouseUp", postfixMouseUp);
                 PatchMethod(harmony, skaldIOType, "getMousePressed", postfixMousePressed);
+                PatchMethod(harmony, skaldIOType, "getPressedEscapeKey",
+                    new HarmonyMethod(typeof(SkaldIOPatches), nameof(Postfix_EscapeKey)));
 
                 // Suppress arrow key → scrollbar conflict. getButtonScrollUp/Down
                 // respond to Up/Down arrow held, which conflicts with our navigation.
@@ -277,10 +279,20 @@ namespace SkaldAccessibility.Patches
         /// <summary>
         /// getMouseUp postfix: Enter key-up → left click release, Right Shift key-down → right click release.
         /// </summary>
+        // --- Bridge drive injection (dev-only; owner-sanctioned 2026-08-16) ---
+        // One-shot synthetic presses, armed by SkaldBridge for a whole frame so
+        // every caller sees them — indistinguishable from a real key. Consumed by
+        // the same postfixes real keys flow through: full mod-path parity.
+        internal static int InjectUpFrame = -1, InjectDownFrame = -1,
+            InjectLeftFrame = -1, InjectRightFrame = -1,
+            InjectConfirmFrame = -1, InjectCancelFrame = -1;
+
         static void Postfix_MouseUp(int __0, ref bool __result)
         {
             if (__0 == 0 && Input.GetKeyUp(KeyCode.Return)) __result = true;
             if (__0 == 1 && Input.GetKeyUp(KeyCode.RightShift)) __result = true;
+            // Synthetic click: press on frame N, release on N+1 (real-click shape).
+            if (__0 == 0 && Time.frameCount == InjectConfirmFrame + 1) __result = true;
         }
 
         /// <summary>
@@ -290,11 +302,14 @@ namespace SkaldAccessibility.Patches
         {
             if (__0 == 0 && Input.GetKeyDown(KeyCode.Return)) __result = true;
             if (__0 == 1 && Input.GetKeyDown(KeyCode.RightShift)) __result = true;
+            if (__0 == 0 && Time.frameCount == InjectConfirmFrame) __result = true;
         }
-        static void Postfix_DownArrow(ref bool __result)   { if (Input.GetKeyDown(KeyCode.DownArrow))  __result = true; }
-        static void Postfix_UpArrow(ref bool __result)     { if (Input.GetKeyDown(KeyCode.UpArrow))    __result = true; }
-        static void Postfix_RightArrow(ref bool __result)  { if (Input.GetKeyDown(KeyCode.RightArrow)) __result = true; }
-        static void Postfix_LeftArrow(ref bool __result)   { if (Input.GetKeyDown(KeyCode.LeftArrow))  __result = true; }
+        static void Postfix_DownArrow(ref bool __result)   { if (Input.GetKeyDown(KeyCode.DownArrow)  || Time.frameCount == InjectDownFrame)  __result = true; }
+        static void Postfix_UpArrow(ref bool __result)     { if (Input.GetKeyDown(KeyCode.UpArrow)    || Time.frameCount == InjectUpFrame)    __result = true; }
+        static void Postfix_RightArrow(ref bool __result)  { if (Input.GetKeyDown(KeyCode.RightArrow) || Time.frameCount == InjectRightFrame) __result = true; }
+        static void Postfix_LeftArrow(ref bool __result)   { if (Input.GetKeyDown(KeyCode.LeftArrow)  || Time.frameCount == InjectLeftFrame)  __result = true; }
+
+        static void Postfix_EscapeKey(ref bool __result)   { if (Time.frameCount == InjectCancelFrame) __result = true; }
 
         // --- Scrollbar arrow key suppression ---
 

@@ -161,6 +161,10 @@ namespace SkaldBridge
                     return LogTailJson(query);
                 case "/speech":
                     return OnMainThread(SpeechJson);
+                case "/press":
+                    return OnMainThread(() => PressJson(query));
+                case "/screenshot":
+                    return OnMainThread(ScreenshotJson);
                 case "/quit":
                     MainThreadQueue.Enqueue(() => Application.Quit());
                     return "{\"ok\":true,\"action\":\"quit queued\"}";
@@ -185,6 +189,45 @@ namespace SkaldBridge
                     return "{\"ok\":false,\"error\":\"main thread timeout\"}";
             }
             return result ?? "{\"ok\":false,\"error\":\"no result\"}";
+        }
+
+        /// <summary>Dev-only drive (owner-sanctioned 2026-08-16): arm a one-shot
+        /// synthetic press consumed by the mod's own input postfixes next frame —
+        /// full mod-path parity. /press?key=up|down|left|right|confirm|cancel</summary>
+        private static string PressJson(string query)
+        {
+            string key = null;
+            foreach (var kv in query.Split('&'))
+            {
+                var p = kv.Split(new[] { '=' }, 2);
+                if (p.Length == 2 && p[0] == "key") key = p[1].ToLowerInvariant();
+            }
+            var patches = AccessTools.TypeByName("SkaldAccessibility.Patches.SkaldIOPatches");
+            if (patches == null) return "{\"ok\":false,\"error\":\"SkaldIOPatches not found\"}";
+            string fieldName;
+            switch (key)
+            {
+                case "up": fieldName = "InjectUpFrame"; break;
+                case "down": fieldName = "InjectDownFrame"; break;
+                case "left": fieldName = "InjectLeftFrame"; break;
+                case "right": fieldName = "InjectRightFrame"; break;
+                case "confirm": fieldName = "InjectConfirmFrame"; break;
+                case "cancel": fieldName = "InjectCancelFrame"; break;
+                default: return "{\"ok\":false,\"error\":\"key must be up|down|left|right|confirm|cancel\"}";
+            }
+            var field = AccessTools.Field(patches, fieldName);
+            if (field == null) return "{\"ok\":false,\"error\":\"inject field not found (old mod build?)\"}";
+            field.SetValue(null, Time.frameCount + 1);
+            return $"{{\"ok\":true,\"pressed\":\"{key}\",\"armedForFrame\":{Time.frameCount + 1}}}";
+        }
+
+        private static string ScreenshotJson()
+        {
+            string dir = Path.Combine(Paths.GameRootPath, "BepInEx", "bridge_shots");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, $"shot_{Time.frameCount}.png");
+            ScreenCapture.CaptureScreenshot(path);
+            return $"{{\"ok\":true,\"path\":\"{Escape(path)}\",\"note\":\"written async, poll the file\"}}";
         }
 
         /// <summary>Recent utterances + queue depth, reflected out of the mod's

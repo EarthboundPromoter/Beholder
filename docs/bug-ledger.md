@@ -22,6 +22,34 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **Fix shape (next build pass):** give sliders a real join instead of resurrecting the watcher — candidates: (a) note-only postfix on the slider control's hover-assignment site (`UITextSliderControl.update` sets `hoverButton`, UITextSliderControl.cs:306-312 — hook the assignment, not a per-frame compare), or (b) make the mod's setMouseToClosest re-implementations also write the selection index for slider controls, restoring join coverage. Either way the row then speaks "Name: Value" + queued description through the normal composition. Verify toggles' value text lives in `currentValueTextBlock` (pre-WP6 receipts say yes: "Tactical Grid: Enabled").
 
+## B3 — Contradictory slider value announcements on adjust (OPEN, found 2026-08-16, owner ride)
+
+**Symptom:** adjusting music volume, spoken values contradict the direction of adjustment (press one way, hear a value from the other direction).
+
+**Receipts:** f25880–f26092: "100%, 100%, 80%, 60%, 40%, 60%, 80%, 100%" — the spoken sequence runs one press BEHIND the actual value; at every direction change the announced value moves the wrong way.
+
+**Root cause:** an off-by-one-frame read. `UITextSliderControl.update` redraws `currentValueTextBlock` from the backing value, THEN our postfix runs and mutates the backing — so the rendered block still holds the pre-press value when the Pump drains at the end of that same frame. The redraw lands next frame; every announcement is one press stale.
+
+**Fix shape (next build pass):** defer the slider-value read one frame — the note carries "speak on the NEXT drain," after the game's own redraw has landed (settled-value speech, one frame later). Alternative rejected: reading the backing setting directly would be fresh but violates render-first — the deferred rendered read is both correct and honest.
+
+## B4 — Dead presses at list edges: bar scrolls, focus doesn't move, no speech (OPEN, found 2026-08-16, owner ride)
+
+**Symptom:** in Audio settings, Up/Down sometimes visibly moves the scroll bar but doesn't advance to the next option and produces no speech.
+
+**Facts:** Audio has exactly TWO rows (Music Volume, Sound FX Volume — GlobalSettings.cs:588/624; that's the whole AudioSettings list). So nearly every press is an edge press.
+
+**Root cause:** the game's own edge design, faithfully replicated by the mod's gate-removal re-implementations (GUIControl.cs:1806-1821): `setMouseToClosestOptionBelow` advances selection only while `canControllerScrollUp()` (index < count-1); **at the list edge it calls `sheetComplex.scrollLeftBarUp()` instead** — scrolling the pane, moving no selection, firing no join, speaking nothing. Not a focus/scroll desync: within the list, focus-follow works and the game snaps the virtual mouse per move; the dead zone exists only at edges, and with a 2-row list the edges are everywhere.
+
+**Fix shape (next build pass):** never a silent press — when the press routes to the scroll branch at a true list edge, speak the edge ("Bottom of list." / "Top of list."), matching game logic (clamp, no wrap — standing owner rule). For genuinely scrollable long content the edge press scrolls the pane; a pane-scroll cue ("scrolled") is a phrasing-ruling row for the keymap session.
+
+## B5 — Lateral selectors unannounced as such: pre-new-game modal + character creation (OPEN, found 2026-08-16, owner ride; owner diagnosed)
+
+**Symptom:** the pre-new-game modal (visual style) and parts of character creation felt "weird" to navigate.
+
+**Owner's diagnosis (2026-08-16):** not broken focus — the visual style picker is a **lateral selector** (Left/Right cycles the value in place), and its buttons are *another* set of lateral selectors. The game's UI idiom is idiosyncratic here, and the mod's speech conveys the focused label but nothing about the control's *shape* — a listener can't tell a lateral selector from a button, so Left/Right versus Up/Down versus Enter expectations break.
+
+**Fix shape (next build pass):** role phrasing at composition time — when the focused control is a lateral-selector class, the utterance carries the idiom the way the CS lineage transcodes toggles ("X, on"): e.g. "Visual style: CRT, 2 of 3" with lateral movement speaking the new value in place. Requires a small decomp pass to identify the selector control classes in the modal and CC screens (candidates around PopUpVisualStyle and the CharacterBuilder screens), then a phrasing ruling from the owner (self-contextualizing, no tutorialization — P7).
+
 ## Closed
 
 (none yet)
