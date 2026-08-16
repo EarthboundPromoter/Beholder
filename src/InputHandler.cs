@@ -7,15 +7,14 @@ namespace SkaldAccessibility
     /// Handles custom hotkeys for the accessibility mod.
     /// Called from Plugin.Update() every frame.
     ///
-    /// Uses Unity legacy Input (same as game). Current keys predate the
-    /// 2026-08-16 forced-controller ruling; the full layout (and the known
-    /// F2-vs-native-Feedback collision) is settled at the keymap session
-    /// before build-plan WP7.
+    /// Uses Unity legacy Input (same as game). Layout per the keymap session
+    /// (2026-08-16): the F2 mode-announce key is deleted (owner ruling — native
+    /// F2 Feedback keeps the key untouched). All review keys suspend while the
+    /// game's own text entry is capturing, same gate as the controller feed.
     ///
     /// Hotkeys:
     ///   /              - Stop speech (flushes the queue too — explicit act)
     ///   F1             - Repeat last spoken text
-    ///   F2             - Announce current game mode/state
     ///   [              - Speech history: previous
     ///   ]              - Speech history: next
     /// </summary>
@@ -23,6 +22,8 @@ namespace SkaldAccessibility
     {
         public static void ProcessInput()
         {
+            if (Patches.ControllerFeedPatch.TextEntryActive()) return;
+
             // Stop speech: /
             if (Input.GetKeyDown(KeyCode.Slash))
             {
@@ -33,14 +34,6 @@ namespace SkaldAccessibility
             if (Input.GetKeyDown(KeyCode.F1))
             {
                 SpeechService.RepeatLast();
-            }
-
-            // Announce current state: F2
-            if (Input.GetKeyDown(KeyCode.F2))
-            {
-                var mode = GameStateTracker.CurrentMode;
-                string stateName = GameStateTracker.CurrentStateName;
-                SpeechService.Say($"{mode}. {stateName}", "Hotkey");
             }
 
             // Speech history browse: [ and ] — reads the ring, never mutates it.

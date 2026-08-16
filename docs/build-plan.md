@@ -56,6 +56,17 @@ All four opening rulings **APPROVED by the owner, 2026-08-16**: WP0 diff disposi
 
 **Fifth ruling (owner, 2026-08-16, later the same day): FORCED CONTROLLER MODE ADOPTED**, superseding the March gate-removal design and §1's "native focus without controller spoofing" paragraph. The game's controller-gated affordances switch on wholesale (`isControllerConnected` → true; Steam Deck ships this exact mode) and keyboard feeds the controller layer via OR-in postfixes. The selection join (WP4) is mechanism-identical under both designs, so WP2–WP6 are unaffected; WP7 is rewritten below; WP9's D-pad extension is moot (the native D-pad path now just runs). Ruling of record with the approved keymap and collision docket: memory `project_direction_forced_controller.md`.
 
+**Keymap session outcomes (owner rulings, 2026-08-16 — the WP7 gate, now cleared):**
+
+1. **"." → Next Character, "," → Inventory** — in-game rebinds through the game's own settings (every binding in SKALDKeyBindings is changeable; the `canChange` ctor parameter is ignored — line 21). Q/E cleanly own LB/RB. *Owner action at next launch: make both rebinds in Settings → Key Bindings.*
+2. **No Start, no Back emulation** — decomp-verified their only consumers are quest log (native J) and quick save (native F5). Two fewer keys for the text-entry gate.
+3. **No D-pad emulation** — all D-pad functions have native keyboard routes: ability/filter shift = the Ctrl pair (`getAbilityButtonShiftLeft/Right`, consumed by combat planning, inventory filters, overland), console = Tab. The controller-layout overlay (D-pad Up) is skipped — visual glyph legend, no speech content. Ride note: the decomp's crossed naming (LeftControl pairs with D-pad-Left inside "ShiftRight") — confirm each Ctrl key's on-screen direction by ear.
+4. **Mod F2 mode-announce key deleted** (owner: "kill the mod key") — native F2 Feedback keeps its key untouched. Freed slot stays free.
+5. **B4 ruled clamp-at-edge** (see ledger) — landed in WP7; the pane-scroll cue question dissolved.
+6. **B5 ruled count-only role phrasing** on the UITextSliderButton family, provisional (see ledger) — implementation in the drain-side pass.
+
+**Decomp corrections to the collision docket** (found during the session): Q never actually double-fires — `getPressedNextCharacterKey` is one function ORing the native binding with LB (SkaldIO.cs:758), and LB has no other consumer; likewise WASD movement merges binding-or-stick inside single accessors, so no double-step and **no movement unbinding is required** (docket assumption corrected; confirm by ear on the WP7 ride). The E collision is real — Inventory and carousel-right are different consumers — hence rebind (1). The triggers are natively merged to mouse clicks in SkaldIO.update (lines 520-543), so Z/X inherit real click semantics with no synthesis.
+
 ## 6. Coverage annex (2026-08-16 full-decomp survey; definitive, supersedes the March tier list)
 
 Ground truths that shape the remaining work. Full map in the memory store (`reference_controller_coverage.md`).

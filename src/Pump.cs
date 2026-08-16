@@ -58,6 +58,9 @@ namespace SkaldAccessibility
         // ---- Slider value stream (noted by SliderArrowPatch after an adjust) ----
         private static object _pendingSliderValue;
 
+        // ---- List-edge stream (noted by the B4 edge clamp; latest wins) ----
+        private static string _pendingEdge;
+
         private static int _lastFrame = -1;
 
         /// <summary>Note-only: called from the setState postfix. The game calls
@@ -116,6 +119,11 @@ namespace SkaldAccessibility
 
         public static void NoteSliderValue(object sliderButton) => _pendingSliderValue = sliderButton;
 
+        /// <summary>Note-only: called from the edge-clamp prefix when a press
+        /// lands on a true list edge (bug-ledger B4 ruling — clamp, no wrap,
+        /// speak the edge).</summary>
+        public static void NoteEdge(string text) => _pendingEdge = text;
+
         /// <summary>Called from Plugin.LateUpdate. Drain order encodes precedence
         /// (state → popup → content → selection → slider → combat batch → barks);
         /// SpeechService.Tick runs last so anything drained this frame can still
@@ -136,6 +144,9 @@ namespace SkaldAccessibility
 
             try { DrainSelection(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:sel] {ex.Message}"); }
+
+            try { DrainEdge(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:edge] {ex.Message}"); }
 
             try { DrainSliderValue(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:slider] {ex.Message}"); }
@@ -232,6 +243,16 @@ namespace SkaldAccessibility
             _pendingSliderValue = null;
             string text = Patches.SliderArrowPatch.ReadSliderRow(btn, valueOnly: true);
             if (text != null) Scaffold.SpeechService.Say(text, "Slider");
+        }
+
+        /// <summary>An edge press moves no selection, so this is the only speech
+        /// the press produces; immediate priority, same source as navigation.</summary>
+        private static void DrainEdge()
+        {
+            string edge = _pendingEdge;
+            if (edge == null) return;
+            _pendingEdge = null;
+            Scaffold.SpeechService.Say(edge, "Nav");
         }
 
         /// <summary>Speak selection changes once, at the settled end-of-frame value.

@@ -7,8 +7,8 @@ namespace SkaldAccessibility.Patches
     /// The selection join (build-plan WP4). UICanvas.setCurrentSelectedButton(int)
     /// is a trivial private setter inherited by every button control
     /// (UIButtonControlBase : UICanvas), and every selection write path funnels
-    /// through it: the mod's increment/decrement prefixes (reflective invokes land
-    /// on this detour), hover-to-selection sync, grid screens, clamping, and
+    /// through it: the native increment/decrement (driven by the controller feed
+    /// since WP7), hover-to-selection sync, grid screens, clamping, and
     /// screen-init resets (verified UICanvas.cs:91 and callers, 2026-08-16).
     ///
     /// Note-only: records the instance; the Pump's drain reads the final index at

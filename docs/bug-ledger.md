@@ -22,6 +22,8 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **Fix shape (next build pass):** give sliders a real join instead of resurrecting the watcher — candidates: (a) note-only postfix on the slider control's hover-assignment site (`UITextSliderControl.update` sets `hoverButton`, UITextSliderControl.cs:306-312 — hook the assignment, not a per-frame compare), or (b) make the mod's setMouseToClosest re-implementations also write the selection index for slider controls, restoring join coverage. Either way the row then speaks "Name: Value" + queued description through the normal composition. Verify toggles' value text lives in `currentValueTextBlock` (pre-WP6 receipts say yes: "Tactical Grid: Enabled").
 
+**WP7 note (2026-08-16):** expected to dissolve under forced controller mode — the blamed re-implementations are deleted; the native `setMouseToClosestOptionBelow` increments the settings sliderControl list, which writes `currentSelectedButton` and fires the join. Verify on the WP7 ride before closing.
+
 ## B3 — Contradictory slider value announcements on adjust (OPEN, found 2026-08-16, owner ride)
 
 **Symptom:** adjusting music volume, spoken values contradict the direction of adjustment (press one way, hear a value from the other direction).
@@ -32,7 +34,7 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **Fix shape (next build pass):** defer the slider-value read one frame — the note carries "speak on the NEXT drain," after the game's own redraw has landed (settled-value speech, one frame later). Alternative rejected: reading the backing setting directly would be fresh but violates render-first — the deferred rendered read is both correct and honest.
 
-## B4 — Dead presses at list edges: bar scrolls, focus doesn't move, no speech (OPEN, found 2026-08-16, owner ride)
+## B4 — Dead presses at list edges: bar scrolls, focus doesn't move, no speech (FIX LANDED WP7 2026-08-16, ride-verify pending)
 
 **Symptom:** in Audio settings, Up/Down sometimes visibly moves the scroll bar but doesn't advance to the next option and produces no speech.
 
@@ -42,6 +44,8 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **Fix shape (next build pass):** never a silent press — when the press routes to the scroll branch at a true list edge, speak the edge ("Bottom of list." / "Top of list."), matching game logic (clamp, no wrap — standing owner rule). For genuinely scrollable long content the edge press scrolls the pane; a pane-scroll cue ("scrolled") is a phrasing-ruling row for the keymap session.
 
+**RULING + FIX (keymap session, 2026-08-16):** owner ruled **clamp the focus** — decomp proved the scroll branch is never load-bearing for reaching options (`canControllerScrollUp/Down` tests the FULL element list, UICanvas.cs:71-79; scroll-only screens like GUIControlCredits override the methods without calling base and are untouched). Landed in WP7: edge-clamp prefix on `setMouseToClosestOptionAbove/Below` suppresses the scroll branch at a true edge and speaks "Top of list." / "Bottom of list." via the Pump. The pane-scroll cue question dissolved — nothing scrolls. Cosmetic loss accepted: no visual nudge revealing overflow content trailing a list (one-screen exception row if a ride ever surfaces one).
+
 ## B5 — Lateral selectors unannounced as such: pre-new-game modal + character creation (OPEN, found 2026-08-16, owner ride; owner diagnosed)
 
 **Symptom:** the pre-new-game modal (visual style) and parts of character creation felt "weird" to navigate.
@@ -49,6 +53,8 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 **Owner's diagnosis (2026-08-16):** not broken focus — the visual style picker is a **lateral selector** (Left/Right cycles the value in place), and its buttons are *another* set of lateral selectors. The game's UI idiom is idiosyncratic here, and the mod's speech conveys the focused label but nothing about the control's *shape* — a listener can't tell a lateral selector from a button, so Left/Right versus Up/Down versus Enter expectations break.
 
 **Fix shape (next build pass):** role phrasing at composition time — when the focused control is a lateral-selector class, the utterance carries the idiom the way the CS lineage transcodes toggles ("X, on"): e.g. "Visual style: CRT, 2 of 3" with lateral movement speaking the new value in place. Requires a small decomp pass to identify the selector control classes in the modal and CC screens (candidates around PopUpVisualStyle and the CharacterBuilder screens), then a phrasing ruling from the owner (self-contextualizing, no tutorialization — P7).
+
+**DECOMP + RULING (keymap session, 2026-08-16):** the lateral selector is one class family everywhere — `UITextSliderControl`/`UITextSliderButton` builds the visual-style modal's four rows (PopUpVisualStyle.cs:83-91), the Settings rows, the character-creation appearance screen (GUIControlApperanceEditorSheet), and the camping-food quantity selector. Role phrasing keys off the family once (universal hooks). Owner ruled the **count-only form**: focus = "Visual style: CRT, 2 of 3." (the value's position among its choices — the count replaces the list-position count so counters never stack); lateral adjust = new value in place with count, read one frame deferred (B3's fix, same stale-render trap). PROVISIONAL: owner is not yet sure the lateral idiom is intuitive from the count alone — revisit after more UI rides. Implementation = drain-side pass (with B1/B3).
 
 ## Closed
 
