@@ -274,8 +274,8 @@ namespace SkaldAccessibility
         /// <summary>Speak list-selection changes ("Selected: &lt;row&gt;.") — the
         /// game's current-object write, read back at the clock and diffed, so
         /// the click-to-select step of every list sheet is audible (ledger B6).
-        /// First observation of a list settles silently, mirroring the
-        /// selection join's new-surface rule.</summary>
+        /// A first observation speaks too (owner ruling 2026-08-16: settled
+        /// state on arrival is always voiced); only repeats stay silent.</summary>
         private static void DrainListSelection()
         {
             object list = _pendingListSelection;
@@ -285,13 +285,8 @@ namespace SkaldAccessibility
             object current = Patches.ListSelectionPatch.CurrentObjectOf(list);
             if (current == null) return;
 
-            if (!ReferenceEquals(list, _lastSelList))
-            {
-                _lastSelList = list;
-                _lastSelObject = current;
-                return;
-            }
-            if (ReferenceEquals(current, _lastSelObject)) return;
+            if (ReferenceEquals(list, _lastSelList) && ReferenceEquals(current, _lastSelObject)) return;
+            _lastSelList = list;
             _lastSelObject = current;
 
             string name = Patches.ListSelectionPatch.ListNameOf(current);
@@ -322,10 +317,11 @@ namespace SkaldAccessibility
         }
 
         /// <summary>Speak selection changes once, at the settled end-of-frame value.
-        /// The FIRST note for a control instance records silently — screen/popup
-        /// entry speech belongs to the content sources, and the game resets
-        /// selection to 0 on build (this replaces the old init-suppression
-        /// windows). Subsequent index changes on the same control speak.</summary>
+        /// A NEW surface speaks its settled focus too (owner ruling 2026-08-16:
+        /// always speak the settled focus on state entry / modal arrival — the
+        /// screen-init selection write is the entry event; content sources drain
+        /// first, so entry reads as content then focus). The drain-clock settle
+        /// still collapses build-time write bursts to the one final value.</summary>
         private static void DrainSelection()
         {
             object control = _pendingSelection;
@@ -337,14 +333,8 @@ namespace SkaldAccessibility
 
             int index = (int)_selIndexField.GetValue(control);
 
-            if (!ReferenceEquals(control, _selControl))
-            {
-                // New surface: settle silently.
-                _selControl = control;
-                _selIndex = index;
-                return;
-            }
-            if (index == _selIndex) return;
+            if (ReferenceEquals(control, _selControl) && index == _selIndex) return;
+            _selControl = control;
             _selIndex = index;
             if (index < 0) return;
 
