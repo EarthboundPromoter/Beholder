@@ -40,6 +40,8 @@ namespace SkaldAccessibility.Patches
         private static FieldInfo _selectPlusField;   // UITextSliderButton.controllerSelectPlusButton
         private static FieldInfo _minusButtonField;  // UITextSliderButton.minusButton
         private static FieldInfo _plusButtonField;   // UITextSliderButton.plusButton
+        private static FieldInfo _settingField;      // UITextSliderSettingsButton.setting
+        private static MethodInfo _getFullDescriptionMethod; // SkaldBaseObject.getFullDescription
         private static MethodInfo _getElementsMethod; // UICanvas.getElements
         private static MethodInfo _getMouseUpMethod; // SkaldIO.getMouseUp(int)
         private static readonly Dictionary<Type, MethodInfo> _descMethods = new Dictionary<Type, MethodInfo>();
@@ -84,6 +86,13 @@ namespace SkaldAccessibility.Patches
                 _getElementsMethod = AccessTools.Method(AccessTools.TypeByName("UICanvas"), "getElements");
                 _contentField = AccessTools.Field(typeof(UITextBlock), "content");
                 _getMouseUpMethod = AccessTools.Method(skaldIOType, "getMouseUp", new[] { typeof(int) });
+
+                var settingsButtonType = AccessTools.TypeByName("UITextSliderControl+UITextSliderSettingsButton");
+                if (settingsButtonType != null)
+                    _settingField = AccessTools.Field(settingsButtonType, "setting");
+                var baseObjectType = AccessTools.TypeByName("SkaldBaseObject");
+                if (baseObjectType != null)
+                    _getFullDescriptionMethod = AccessTools.Method(baseObjectType, "getFullDescription");
 
                 _initialized = _hoverButtonField != null && _headerTextBlockField != null
                     && _currentValueTextBlockField != null && _contentField != null
@@ -230,21 +239,35 @@ namespace SkaldAccessibility.Patches
             catch { return null; }
         }
 
-        /// <summary>Queue the row's full description behind the name announcement
-        /// (getDescription is abstract on UITextSliderButton; MethodInfo cached
-        /// per concrete type).</summary>
+        /// <summary>Queue the row's description behind the name announcement.
+        /// Settings rows reach past the row's getDescription (which returns the
+        /// setting's header + body — the header repeats the name the row
+        /// announcement just spoke) to the setting's getFullDescription: the
+        /// same game text, minus the duplicate name (owner verbosity ruling,
+        /// 2026-08-16). Other row types keep their own getDescription.</summary>
         public static void QueueDescription(object button)
         {
             try
             {
-                var type = button.GetType();
-                if (!_descMethods.TryGetValue(type, out var method))
+                string desc = null;
+                if (_settingField != null && _getFullDescriptionMethod != null
+                    && _settingField.DeclaringType.IsInstanceOfType(button))
                 {
-                    method = AccessTools.Method(type, "getDescription");
-                    _descMethods[type] = method;
+                    object setting = _settingField.GetValue(button);
+                    if (setting != null)
+                        desc = _getFullDescriptionMethod.Invoke(setting, null) as string;
                 }
-                if (method == null) return;
-                string desc = method.Invoke(button, null) as string;
+                if (desc == null)
+                {
+                    var type = button.GetType();
+                    if (!_descMethods.TryGetValue(type, out var method))
+                    {
+                        method = AccessTools.Method(type, "getDescription");
+                        _descMethods[type] = method;
+                    }
+                    if (method == null) return;
+                    desc = method.Invoke(button, null) as string;
+                }
                 string cleaned = string.IsNullOrWhiteSpace(desc) ? null : TextCleaner.CleanText(desc);
                 if (!string.IsNullOrWhiteSpace(cleaned))
                     Scaffold.SpeechService.SayQueued(cleaned, "SliderDesc");

@@ -64,6 +64,9 @@ namespace SkaldAccessibility
         // ---- Slider arrow-flip stream (noted by ArrowFlipJoin; latest wins) ----
         private static object _pendingArrowFlip;
 
+        // ---- Canvas-switch stream (noted by CanvasSwitchPatch; latest wins) ----
+        private static object _pendingCanvasSwitch;
+
         // ---- List-selection stream (noted by ListSelectionPatch; latest wins) ----
         private static object _pendingListSelection;
         private static object _lastSelList;   // drain-side diff record: which list
@@ -144,6 +147,10 @@ namespace SkaldAccessibility
         /// only actual changes.</summary>
         public static void NoteListSelection(object list) => _pendingListSelection = list;
 
+        /// <summary>Note-only: a popup switched its active navigable canvas
+        /// (zone crossing — no index write involved).</summary>
+        public static void NoteCanvasSwitch(object canvas) => _pendingCanvasSwitch = canvas;
+
         /// <summary>Called from Plugin.LateUpdate. Drain order encodes precedence
         /// (state → popup → content → selection → slider → combat batch → barks);
         /// SpeechService.Tick runs last so anything drained this frame can still
@@ -161,6 +168,9 @@ namespace SkaldAccessibility
 
             try { DrainContent(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:content] {ex.Message}"); }
+
+            try { DrainCanvasSwitch(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:canvas] {ex.Message}"); }
 
             try { DrainSelection(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:sel] {ex.Message}"); }
@@ -314,6 +324,38 @@ namespace SkaldAccessibility
             if (edge == null) return;
             _pendingEdge = null;
             Scaffold.SpeechService.Say(edge, "Nav");
+        }
+
+        /// <summary>Speak the arrived canvas's settled focus on a zone crossing —
+        /// bypasses the selection dedup (arrival is the event even when the
+        /// canvas's index never changed) and supersedes this frame's selection
+        /// note. Button rows carry a role prefix so a zone of buttons doesn't
+        /// read as bare labels ("Buttons: Default, 1 of 3."). Index mirrors the
+        /// game's own bound-on-read clamp (negative → 0).</summary>
+        private static void DrainCanvasSwitch()
+        {
+            object canvas = _pendingCanvasSwitch;
+            if (canvas == null) return;
+            _pendingCanvasSwitch = null;
+
+            if (!_selReflectionReady) InitSelectionReflection();
+            if (_selIndexField == null) return;
+
+            int index = (int)_selIndexField.GetValue(canvas);
+            if (index < 0) index = 0;
+
+            string text = ComposeSelection(canvas, index);
+            if (text == null) return;
+
+            bool isButtonRow = _getButtonsListMethod != null
+                && _getButtonsListMethod.DeclaringType.IsInstanceOfType(canvas);
+            Scaffold.SpeechService.Say(isButtonRow ? $"Buttons: {text}." : text, "Nav");
+
+            // Supersede the frame's selection note and align the dedup records
+            // so the next real move on this canvas diffs correctly.
+            _pendingSelection = null;
+            _selControl = canvas;
+            _selIndex = index;
         }
 
         /// <summary>Speak selection changes once, at the settled end-of-frame value.
