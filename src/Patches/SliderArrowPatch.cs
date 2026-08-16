@@ -38,6 +38,9 @@ namespace SkaldAccessibility.Patches
         private static FieldInfo _currentValueTextBlockField;
         private static FieldInfo _contentField;
         private static FieldInfo _selectPlusField;   // UITextSliderButton.controllerSelectPlusButton
+        private static FieldInfo _minusButtonField;  // UITextSliderButton.minusButton
+        private static FieldInfo _plusButtonField;   // UITextSliderButton.plusButton
+        private static MethodInfo _getElementsMethod; // UICanvas.getElements
         private static MethodInfo _getMouseUpMethod; // SkaldIO.getMouseUp(int)
         private static readonly Dictionary<Type, MethodInfo> _descMethods = new Dictionary<Type, MethodInfo>();
         private static bool _initialized;
@@ -76,6 +79,9 @@ namespace SkaldAccessibility.Patches
                 _headerTextBlockField = AccessTools.Field(buttonType, "headerTextBlock");
                 _currentValueTextBlockField = AccessTools.Field(buttonType, "currentValueTextBlock");
                 _selectPlusField = AccessTools.Field(buttonType, "controllerSelectPlusButton");
+                _minusButtonField = AccessTools.Field(buttonType, "minusButton");
+                _plusButtonField = AccessTools.Field(buttonType, "plusButton");
+                _getElementsMethod = AccessTools.Method(AccessTools.TypeByName("UICanvas"), "getElements");
                 _contentField = AccessTools.Field(typeof(UITextBlock), "content");
                 _getMouseUpMethod = AccessTools.Method(skaldIOType, "getMouseUp", new[] { typeof(int) });
 
@@ -146,6 +152,36 @@ namespace SkaldAccessibility.Patches
             {
                 Pump.NoteSliderArrowFlip(__instance);
             }
+        }
+
+        /// <summary>Map a slider control's scrollable element back to its owning
+        /// row. UITextSliderControl.getScrollableElements returns each row's
+        /// currently-chosen minus/plus ARROW button — the row itself never
+        /// appears in the list — so selection composition needs this reverse
+        /// lookup (visual-style modal + settings sliders; ledger B2 gap).
+        /// Returns the element itself if it already is a row; null when the
+        /// element belongs to no row.</summary>
+        public static object RowForScrollableElement(object control, object element)
+        {
+            try
+            {
+                if (!_initialized) { if (_initFailed) return null; Initialize(); if (!_initialized) return null; }
+                if (element == null) return null;
+                if (_headerTextBlockField.DeclaringType.IsInstanceOfType(element)) return element;
+                if (_minusButtonField == null || _plusButtonField == null || _getElementsMethod == null) return null;
+
+                var elements = _getElementsMethod.Invoke(control, null) as System.Collections.IEnumerable;
+                if (elements == null) return null;
+                foreach (var e in elements)
+                {
+                    if (e == null || !_headerTextBlockField.DeclaringType.IsInstanceOfType(e)) continue;
+                    if (ReferenceEquals(_minusButtonField.GetValue(e), element)
+                        || ReferenceEquals(_plusButtonField.GetValue(e), element))
+                        return e;
+                }
+            }
+            catch { }
+            return null;
         }
 
         /// <summary>Which arrow the cursor is on for a row, read from the game's

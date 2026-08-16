@@ -24,6 +24,8 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **WP7 note (2026-08-16):** expected to dissolve under forced controller mode — the blamed re-implementations are deleted; the native `setMouseToClosestOptionBelow` increments the settings sliderControl list, which writes `currentSelectedButton` and fires the join. Verify on the WP7 ride before closing.
 
+**Second half found on the visual-style-modal ride (2026-08-16, owner):** the join DID fire but composition had no `UITextSliderControl` branch — its scrollable elements are the rows' minus/plus arrow buttons, so every path fell through to graceful silence. Fixed: arrow-element → owning-row reverse lookup, then the standard "Header: Value, plus/minus" composition + queued description, with the element count trailing. Covers the modal and the settings sliders through the same class. Verify "Name: Value" now speaks on vertical nav in both places before closing B2.
+
 ## B3 — Contradictory slider value announcements on adjust (CLOSED BY DELETION 2026-08-16, ride-verify pending)
 
 **Symptom:** adjusting music volume, spoken values contradict the direction of adjustment (press one way, hear a value from the other direction).

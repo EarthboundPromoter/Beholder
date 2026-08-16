@@ -422,6 +422,32 @@ namespace SkaldAccessibility
                 catch { /* not a UIButtonControlBase — fall through */ }
             }
 
+            // Slider controls (UITextSliderControl — the visual-style modal,
+            // settings sliders): the scrollable elements are each row's chosen
+            // minus/plus arrow, so the buttons-list path never matches. Map the
+            // arrow back to its owning row and speak the slider composition
+            // (closes the B2-class silence on vertical nav over slider rows).
+            if (text == null && _getScrollableElementsMethod != null)
+            {
+                try
+                {
+                    var elements = _getScrollableElementsMethod.Invoke(control, null)
+                        as System.Collections.Generic.List<UIElement>;
+                    if (elements != null && index >= 0 && index < elements.Count)
+                    {
+                        object row = Patches.SliderArrowPatch.RowForScrollableElement(control, elements[index]);
+                        if (row != null)
+                        {
+                            count = elements.Count;
+                            text = Patches.SliderArrowPatch.ReadSliderRow(row, valueOnly: false);
+                            if (text != null)
+                                Patches.SliderArrowPatch.QueueDescription(row);
+                        }
+                    }
+                }
+                catch { }
+            }
+
             // Image-only elements (feat-tree nodes): read the feat name from the
             // scrollable element's backing object.
             if (text == null && _getScrollableElementsMethod != null && _featField != null && _featGetNameMethod != null)
