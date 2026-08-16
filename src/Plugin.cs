@@ -34,9 +34,6 @@ namespace SkaldAccessibility
                 UnityEngine.Application.quitting += SpeechService.Shutdown;
                 SpeechService.Say($"Skald Accessibility {Version} loaded.", "Init");
 
-                // Initialize state tracking (reflection-based, before Harmony)
-                StateTransitionPatch.Initialize();
-
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to Update)
                 _harmony = new Harmony(Guid);
                 _harmony.PatchAll(Assembly.GetExecutingAssembly());
@@ -60,13 +57,9 @@ namespace SkaldAccessibility
 
         private void Update()
         {
-            // Pump the speech queue (paced against Tolk_IsSpeaking)
-            SpeechService.Tick();
-
-            // Poll game state each frame
-            StateTransitionPatch.PollState();
-
-            // Apply SkaldIO patches after game data is loaded (avoids premature cctor crash)
+            // Apply SkaldIO patches after game data is loaded (avoids premature cctor
+            // crash). Keys off the first state classification, which now arrives via
+            // the setState clock at the Pump's drain.
             if (!_skaldIOPatched && GameStateTracker.CurrentMode != GameMode.Unknown)
             {
                 _skaldIOPatched = true;
@@ -75,6 +68,14 @@ namespace SkaldAccessibility
 
             // Hotkey processing
             InputHandler.ProcessInput();
+        }
+
+        private void LateUpdate()
+        {
+            // The timing spine: note-only hooks feed pending state; all reads,
+            // composition, and the speech queue pump happen here, once per frame,
+            // after the game's own update has settled.
+            Pump.Drain();
         }
     }
 }

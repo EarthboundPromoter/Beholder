@@ -77,10 +77,11 @@ namespace SkaldAccessibility
         public static string CurrentStateName => _currentStateName;
 
         /// <summary>
-        /// Called when we detect a state change (from Harmony patches or polling).
-        /// Maps the state class name to our GameMode enum.
+        /// Called once per actual state change, from the Pump's drain (the setState
+        /// clock diffed at end of frame). Receives the live state object so reads
+        /// happen against game truth at a settled moment.
         /// </summary>
-        public static void OnStateChanged(string stateName)
+        public static void OnStateChanged(string stateName, object stateObject)
         {
             if (string.IsNullOrEmpty(stateName) || stateName == _currentStateName)
                 return;
@@ -105,7 +106,7 @@ namespace SkaldAccessibility
                 }
 
                 // Announce numeric button options with their key shortcuts
-                AnnounceNumericButtons();
+                AnnounceNumericButtons(stateObject);
             }
         }
 
@@ -113,7 +114,7 @@ namespace SkaldAccessibility
         /// Read numeric buttons from the active state's GUIControl and announce
         /// them with their number key shortcuts (e.g., "1: Select, 2: Abort").
         /// </summary>
-        private static void AnnounceNumericButtons()
+        private static void AnnounceNumericButtons(object stateObject)
         {
             try
             {
@@ -134,11 +135,9 @@ namespace SkaldAccessibility
                     || _getButtonsListMethod == null || _contentField == null)
                     return;
 
-                // Read active state from StateTransitionPatch's cached state object
-                object stateControl = StateTransitionPatch.GetActiveStateObject();
-                if (stateControl == null) return;
+                if (stateObject == null) return;
 
-                object guiControl = _stateGuiControlField.GetValue(stateControl);
+                object guiControl = _stateGuiControlField.GetValue(stateObject);
                 if (guiControl == null) return;
 
                 object numericButtons = _numericButtonsField.GetValue(guiControl);
