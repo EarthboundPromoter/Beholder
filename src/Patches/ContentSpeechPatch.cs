@@ -10,43 +10,17 @@ namespace SkaldAccessibility.Patches
     /// UITextBlock.setContent() hook with targeted postfixes on the specific
     /// GUIControl and PopUpBase methods that represent actual content changes.
     ///
-    /// Several of these setters are still called every frame by setGUIData, so a
-    /// per-source last-spoken dictionary absorbs the repeats. That dictionary (and
-    /// its ClearAll invalidation hooks) is scheduled for deletion in build-plan WP5,
-    /// when these hooks become note-only and the end-of-frame drain diffs once at
-    /// the clock instead.
+    /// Note-only since WP5: several of these setters are called every frame by
+    /// setGUIData, so the hooks note into the Pump — latest value per source wins
+    /// within the frame, and the drain diffs against the last drained value at
+    /// the clock. The old per-hook _lastSpoken dictionary and its ClearAll
+    /// invalidation are deleted.
     /// </summary>
     public static class ContentSpeechPatch
     {
-        private static readonly Dictionary<string, string> _lastSpoken = new Dictionary<string, string>();
-
-        /// <summary>
-        /// Clear all dedup state. Called on state transitions and popup dismissal.
-        /// </summary>
-        public static void ClearAll()
-        {
-            _lastSpoken.Clear();
-        }
-
-        /// <summary>
-        /// Speak text if it differs from the last spoken text for this source.
-        /// </summary>
         private static void SpeakIfChanged(string raw, string source, bool interrupt)
         {
-            if (string.IsNullOrWhiteSpace(raw)) return;
-            string cleaned = TextCleaner.CleanText(raw);
-            if (string.IsNullOrWhiteSpace(cleaned)) return;
-
-            _lastSpoken.TryGetValue(source, out string prev);
-            if (cleaned == prev) return;
-            _lastSpoken[source] = cleaned;
-
-            if (interrupt)
-                Scaffold.SpeechService.Say(cleaned, source);
-            else
-                Scaffold.SpeechService.SayQueued(cleaned, source);
-
-            Plugin.Logger?.LogInfo($"[Content:{source}] \"{cleaned}\"");
+            Pump.NoteContent(source, raw, interrupt);
         }
 
         // =====================================================================

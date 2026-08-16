@@ -336,7 +336,8 @@ namespace SkaldAccessibility.Patches
                 _setCurrentSelectedButton.Invoke(__instance, new object[] { current + 1 });
                 _boundCurrentSelectedButtons.Invoke(__instance, null);
                 int newIndex = (int)_getCurrentSelectedButtonIndex.Invoke(__instance, null);
-                NavigationCursor.SetIndex(__instance, newIndex);
+                // Selection speech rides the SelectionJoinPatch note — the reflective
+                // setCurrentSelectedButton invoke above lands on the Harmony detour.
                 Plugin.Logger?.LogDebug($"[SkaldIO:inc] {__instance.GetType().Name} {current}→{newIndex}");
             }
             catch (Exception ex)
@@ -359,7 +360,8 @@ namespace SkaldAccessibility.Patches
                 _setCurrentSelectedButton.Invoke(__instance, new object[] { current - 1 });
                 _boundCurrentSelectedButtons.Invoke(__instance, null);
                 int newIndex = (int)_getCurrentSelectedButtonIndex.Invoke(__instance, null);
-                NavigationCursor.SetIndex(__instance, newIndex);
+                // Selection speech rides the SelectionJoinPatch note — the reflective
+                // setCurrentSelectedButton invoke above lands on the Harmony detour.
                 Plugin.Logger?.LogDebug($"[SkaldIO:dec] {__instance.GetType().Name} {current}→{newIndex}");
             }
             catch (Exception ex)

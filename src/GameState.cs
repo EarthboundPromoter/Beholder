@@ -94,10 +94,6 @@ namespace SkaldAccessibility
             {
                 Plugin.Logger?.LogInfo($"[GameState] {_previousMode} -> {_currentMode} ({stateName})");
 
-                // Clear caches so the new screen gets fresh speech
-                ContentSpeechPatch.ClearAll();
-                SliderHoverPatch.LastFocusedSliderButton = null;
-
                 // Announce mode transitions (Framework P9: explicit termination/entry)
                 string announcement = GetModeTransitionAnnouncement(_previousMode, _currentMode);
                 if (!string.IsNullOrEmpty(announcement))

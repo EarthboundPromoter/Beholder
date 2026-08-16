@@ -59,8 +59,10 @@ namespace SkaldAccessibility.Patches
                 string cleaned = TextCleaner.CleanText(__0);
                 if (string.IsNullOrWhiteSpace(cleaned)) return;
 
-                // Queue bark speech (don't interrupt current speech for floating text)
-                Scaffold.SpeechService.SayQueued(cleaned, "Bark");
+                // Note-only (WP5): barks batch at the Pump; identical repeats in a
+                // frame coalesce to "text, N times" at the drain (compress, don't
+                // curate), then queue — floating text never interrupts.
+                Pump.NoteBark(cleaned);
             }
             catch (Exception ex)
             {

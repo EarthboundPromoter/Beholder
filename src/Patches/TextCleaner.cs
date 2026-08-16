@@ -7,8 +7,8 @@ namespace SkaldAccessibility.Patches
     /// and formatting from raw game text, leaving clean readable strings.
     ///
     /// Previously a Harmony patch on UITextBlock.setContent(). Now a utility
-    /// class only — speech is handled by ContentSpeechPatch (event-driven hooks
-    /// on specific content methods) and IndexNavigationPatch (navigation speech).
+    /// class only — speech is handled by ContentSpeechPatch (targeted content
+    /// hooks) and the selection join (SelectionJoinPatch + Pump composition).
     /// </summary>
     public static class TextCleaner
     {

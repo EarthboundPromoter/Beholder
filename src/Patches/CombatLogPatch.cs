@@ -22,8 +22,9 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                if (!GameStateTracker.IsInCombat) return;
-
+                // Note-only (WP5): lines batch at the Pump and coalesce at the
+                // drain, where the in-combat gate is a LIVE read of the game's own
+                // current state — the mod-side IsInCombat flag no longer gates this.
                 string name    = string.IsNullOrWhiteSpace(__0) ? null : TextCleaner.CleanText(__0);
                 string message = string.IsNullOrWhiteSpace(__1) ? null : TextCleaner.CleanText(__1);
 
@@ -33,7 +34,7 @@ namespace SkaldAccessibility.Patches
 
                 if (string.IsNullOrWhiteSpace(combined)) return;
 
-                Scaffold.SpeechService.Say(combined, "CombatLog");
+                Pump.NoteCombatLog(combined);
                 Plugin.Logger?.LogInfo($"[CombatLog] \"{combined}\"");
             }
             catch (Exception ex)
