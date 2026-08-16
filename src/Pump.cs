@@ -61,6 +61,9 @@ namespace SkaldAccessibility
         // ---- List-edge stream (noted by the B4 edge clamp; latest wins) ----
         private static string _pendingEdge;
 
+        // ---- Slider arrow-flip stream (noted by ArrowFlipJoin; latest wins) ----
+        private static object _pendingArrowFlip;
+
         private static int _lastFrame = -1;
 
         /// <summary>Note-only: called from the setState postfix. The game calls
@@ -124,6 +127,11 @@ namespace SkaldAccessibility
         /// speak the edge).</summary>
         public static void NoteEdge(string text) => _pendingEdge = text;
 
+        /// <summary>Note-only: the stick-sideways minus/plus flip on slider rows
+        /// (fires once per row per press — the game flips the whole control;
+        /// latest wins, all rows share the state).</summary>
+        public static void NoteSliderArrowFlip(object sliderButton) => _pendingArrowFlip = sliderButton;
+
         /// <summary>Called from Plugin.LateUpdate. Drain order encodes precedence
         /// (state → popup → content → selection → slider → combat batch → barks);
         /// SpeechService.Tick runs last so anything drained this frame can still
@@ -150,6 +158,9 @@ namespace SkaldAccessibility
 
             try { DrainSliderValue(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:slider] {ex.Message}"); }
+
+            try { DrainSliderArrowFlip(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:flip] {ex.Message}"); }
 
             try { DrainCombatLog(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:combat] {ex.Message}"); }
@@ -243,6 +254,18 @@ namespace SkaldAccessibility
             _pendingSliderValue = null;
             string text = Patches.SliderArrowPatch.ReadSliderRow(btn, valueOnly: true);
             if (text != null) Scaffold.SpeechService.Say(text, "Slider");
+        }
+
+        /// <summary>Speak which arrow the cursor flipped onto ("Plus." /
+        /// "Minus."), read from the game's own flag at drain time.</summary>
+        private static void DrainSliderArrowFlip()
+        {
+            object btn = _pendingArrowFlip;
+            if (btn == null) return;
+            _pendingArrowFlip = null;
+            string side = Patches.SliderArrowPatch.ReadArrowSide(btn);
+            if (side == null) return;
+            Scaffold.SpeechService.Say(char.ToUpper(side[0]) + side.Substring(1) + ".", "Nav");
         }
 
         /// <summary>An edge press moves no selection, so this is the only speech

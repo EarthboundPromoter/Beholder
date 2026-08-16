@@ -2,21 +2,33 @@ using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using UnityEngine;
 
 namespace SkaldAccessibility.Patches
 {
     /// <summary>
-    /// Slider input + description (WP6). One postfix on UITextSliderControl.update:
-    /// on Left/Right, reads the control's own hoverButton field — the game's
-    /// authoritative slider focus, read at time of use, never a mod mirror — and
-    /// dispatches the per-type backing mutation (the March-proven mutators), then
-    /// notes the button so the Pump speaks the SETTLED value at end of frame.
+    /// Slider voicing on the NATIVE controller idiom (owner ruling 2026-08-16:
+    /// follow the game's expectations — the WP6 arrow-key adjust layer is
+    /// deleted, freeing the arrows for the future review layer).
+    ///
+    /// The game's slider mechanic under controller mode: each row's focusable
+    /// element is its currently-chosen minus/plus arrow button; stick-sideways
+    /// flips which arrow is chosen (UITextSliderButton.controllerScrollSideways*,
+    /// applied to every row in the control at once — native design); LT clicks
+    /// the arrow and steps the value (each subclass's update consumes
+    /// getLeftUp and re-renders the value block in the same call).
+    ///
+    /// Two joins, both mechanism-class, both note-only:
+    ///  - the sideways flip → note → drain speaks the arrow now under the
+    ///    cursor ("Plus." / "Minus."), read from the game's own
+    ///    controllerSelectPlusButton at drain time;
+    ///  - a click landing while a slider row is hovered → note → drain speaks
+    ///    the row's rendered value. The mutation and the value re-render happen
+    ///    inside the same row update BEFORE this control-level postfix runs, so
+    ///    the drain reads a fresh value the same frame (the arrow-key path's
+    ///    one-frame-stale bug, ledger B3, died with that path).
     ///
     /// Also hosts the slider-row describer used by the Pump's selection
-    /// composition ("Header: Value" + queued description) — replacing the deleted
-    /// SliderHoverPatch/SliderChangePatch per-frame watchers, their 3-frame
-    /// window, and the first-value swallow.
+    /// composition ("Header: Value, plus/minus" + queued description).
     /// </summary>
     [HarmonyPatch]
     public static class SliderArrowPatch
@@ -25,12 +37,8 @@ namespace SkaldAccessibility.Patches
         private static FieldInfo _headerTextBlockField;
         private static FieldInfo _currentValueTextBlockField;
         private static FieldInfo _contentField;
-        private static FieldInfo _settingField;
-        private static MethodInfo _incrementStateMethod;
-        private static FieldInfo _pointerField;
-        private static MethodInfo _boundPointerMethod;
-        private static FieldInfo _characterField;
-        private static MethodInfo _cycleActivityMethod;
+        private static FieldInfo _selectPlusField;   // UITextSliderButton.controllerSelectPlusButton
+        private static MethodInfo _getMouseUpMethod; // SkaldIO.getMouseUp(int)
         private static readonly Dictionary<Type, MethodInfo> _descMethods = new Dictionary<Type, MethodInfo>();
         private static bool _initialized;
         private static bool _initFailed;
@@ -60,38 +68,23 @@ namespace SkaldAccessibility.Patches
             try
             {
                 var controlType = AccessTools.TypeByName("UITextSliderControl");
-                var buttonType = AccessTools.TypeByName("UITextSliderButton");
-                if (controlType == null || buttonType == null) { _initFailed = true; return; }
+                var buttonType = AccessTools.TypeByName("UITextSliderControl+UITextSliderButton");
+                var skaldIOType = AccessTools.TypeByName("SkaldIO");
+                if (controlType == null || buttonType == null || skaldIOType == null) { _initFailed = true; return; }
 
                 _hoverButtonField = AccessTools.Field(controlType, "hoverButton");
                 _headerTextBlockField = AccessTools.Field(buttonType, "headerTextBlock");
                 _currentValueTextBlockField = AccessTools.Field(buttonType, "currentValueTextBlock");
+                _selectPlusField = AccessTools.Field(buttonType, "controllerSelectPlusButton");
                 _contentField = AccessTools.Field(typeof(UITextBlock), "content");
-
-                var settingsType = AccessTools.TypeByName("UITextSliderSettingsButton");
-                if (settingsType != null)
-                {
-                    _settingField = AccessTools.Field(settingsType, "setting");
-                    if (_settingField != null)
-                        _incrementStateMethod = AccessTools.Method(_settingField.FieldType, "incrementState", new[] { typeof(int) });
-                }
-                var customType = AccessTools.TypeByName("UITextCustomSliderButton");
-                if (customType != null)
-                {
-                    _pointerField = AccessTools.Field(customType, "pointer");
-                    _boundPointerMethod = AccessTools.Method(customType, "boundPointer");
-                }
-                var campType = AccessTools.TypeByName("UITextSliderCampActivityButton");
-                if (campType != null)
-                {
-                    _characterField = AccessTools.Field(campType, "character");
-                    if (_characterField != null)
-                        _cycleActivityMethod = AccessTools.Method(_characterField.FieldType, "cyclePreferredCampActivity", new[] { typeof(int) });
-                }
+                _getMouseUpMethod = AccessTools.Method(skaldIOType, "getMouseUp", new[] { typeof(int) });
 
                 _initialized = _hoverButtonField != null && _headerTextBlockField != null
-                    && _currentValueTextBlockField != null && _contentField != null;
+                    && _currentValueTextBlockField != null && _contentField != null
+                    && _getMouseUpMethod != null;
                 if (!_initialized) { Plugin.Logger?.LogError("[SliderArrow] Init failed — missing fields"); _initFailed = true; }
+                if (_selectPlusField == null)
+                    Plugin.Logger?.LogWarning("[SliderArrow] controllerSelectPlusButton not found — arrow position unvoiced");
             }
             catch (Exception ex)
             {
@@ -100,49 +93,21 @@ namespace SkaldAccessibility.Patches
             }
         }
 
+        /// <summary>Click join: a left-click release landing this frame while a
+        /// slider row is hovered (the game's own hoverButton, virtual mouse
+        /// included) means that row's arrow consumed it — note the row so the
+        /// drain speaks the freshly rendered value. Covers every slider type and
+        /// every click source (LT / Z / real mouse) through one seam.</summary>
         [HarmonyPostfix]
         static void Postfix(object __instance)
         {
             try
             {
-                bool left = Input.GetKeyDown(KeyCode.LeftArrow);
-                bool right = Input.GetKeyDown(KeyCode.RightArrow);
-                if (!left && !right) return;
-
                 if (!_initialized) { if (_initFailed) return; Initialize(); if (!_initialized) return; }
 
-                // The game's own focus, read at time of use.
+                if (!(bool)_getMouseUpMethod.Invoke(null, new object[] { 0 })) return;
                 object hoverButton = _hoverButtonField.GetValue(__instance);
                 if (hoverButton == null) return;
-
-                int direction = right ? 1 : -1;
-                string typeName = hoverButton.GetType().Name;
-
-                if (typeName == "UITextSliderSettingsButton" && _settingField != null && _incrementStateMethod != null)
-                {
-                    object setting = _settingField.GetValue(hoverButton);
-                    if (setting != null)
-                        _incrementStateMethod.Invoke(setting, new object[] { direction });
-                }
-                else if (typeName == "UITextCustomSliderButton" && _pointerField != null)
-                {
-                    int pointer = (int)_pointerField.GetValue(hoverButton);
-                    _pointerField.SetValue(hoverButton, pointer + direction);
-                    _boundPointerMethod?.Invoke(hoverButton, null);
-                }
-                else if (typeName == "UITextSliderCampActivityButton" && _characterField != null && _cycleActivityMethod != null)
-                {
-                    object character = _characterField.GetValue(hoverButton);
-                    if (character != null)
-                        _cycleActivityMethod.Invoke(character, new object[] { direction });
-                }
-                else
-                {
-                    return; // unknown slider type — graceful silence, no note
-                }
-
-                // The value text block refreshes during the game's own redraw;
-                // the Pump reads the settled value at end of frame.
                 Pump.NoteSliderValue(hoverButton);
             }
             catch (Exception ex)
@@ -151,10 +116,57 @@ namespace SkaldAccessibility.Patches
             }
         }
 
+        // ---------- Arrow-flip join ----------
+
+        /// <summary>The stick-sideways flip changes no selection index, so the
+        /// selection join never hears it — this is its own join on the button
+        /// class's flip methods. The control applies the flip to every row, so
+        /// the postfix fires once per row; latest-wins collapses it at drain.</summary>
+        [HarmonyPatch]
+        public static class ArrowFlipJoin
+        {
+            [HarmonyTargetMethods]
+            static IEnumerable<MethodBase> TargetMethods()
+            {
+                var buttonType = AccessTools.TypeByName("UITextSliderControl+UITextSliderButton");
+                if (buttonType == null)
+                {
+                    Plugin.Logger?.LogWarning("[SliderArrow] UITextSliderButton not found — arrow flips unvoiced");
+                    yield break;
+                }
+                var left = AccessTools.Method(buttonType, "controllerScrollSidewaysLeft");
+                var right = AccessTools.Method(buttonType, "controllerScrollSidewaysRight");
+                if (left != null) yield return left;
+                if (right != null) yield return right;
+                Plugin.Logger?.LogInfo("[SliderArrow] Patching UITextSliderButton.controllerScrollSideways*");
+            }
+
+            [HarmonyPostfix]
+            static void Postfix(object __instance)
+            {
+                Pump.NoteSliderArrowFlip(__instance);
+            }
+        }
+
+        /// <summary>Which arrow the cursor is on for a row, read from the game's
+        /// own flag at time of use. Null when unknowable.</summary>
+        public static string ReadArrowSide(object button)
+        {
+            try
+            {
+                if (!_initialized) { if (_initFailed) return null; Initialize(); if (!_initialized) return null; }
+                if (_selectPlusField == null) return null;
+                if (!_selectPlusField.DeclaringType.IsInstanceOfType(button)) return null;
+                return (bool)_selectPlusField.GetValue(button) ? "plus" : "minus";
+            }
+            catch { return null; }
+        }
+
         // ---------- Describer (used by Pump composition and value drain) ----------
 
-        /// <summary>"Header: Value" for a slider row (or just the value). Returns
-        /// null if the object is not a slider button — callers fall through.</summary>
+        /// <summary>"Header: Value, plus/minus" for a slider row (or just the
+        /// value). Returns null if the object is not a slider button — callers
+        /// fall through.</summary>
         public static string ReadSliderRow(object button, bool valueOnly)
         {
             try
@@ -171,8 +183,13 @@ namespace SkaldAccessibility.Patches
                 string cleanedValue = string.IsNullOrWhiteSpace(value) ? null : TextCleaner.CleanText(value);
 
                 if (valueOnly) return cleanedValue ?? cleanedHeader;
-                if (cleanedHeader != null && cleanedValue != null) return $"{cleanedHeader}: {cleanedValue}";
-                return cleanedHeader ?? cleanedValue;
+
+                string row = (cleanedHeader != null && cleanedValue != null)
+                    ? $"{cleanedHeader}: {cleanedValue}"
+                    : cleanedHeader ?? cleanedValue;
+                if (row == null) return null;
+                string side = ReadArrowSide(button);
+                return side != null ? $"{row}, {side}" : row;
             }
             catch { return null; }
         }

@@ -24,7 +24,7 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **WP7 note (2026-08-16):** expected to dissolve under forced controller mode — the blamed re-implementations are deleted; the native `setMouseToClosestOptionBelow` increments the settings sliderControl list, which writes `currentSelectedButton` and fires the join. Verify on the WP7 ride before closing.
 
-## B3 — Contradictory slider value announcements on adjust (OPEN, found 2026-08-16, owner ride)
+## B3 — Contradictory slider value announcements on adjust (CLOSED BY DELETION 2026-08-16, ride-verify pending)
 
 **Symptom:** adjusting music volume, spoken values contradict the direction of adjustment (press one way, hear a value from the other direction).
 
@@ -33,6 +33,8 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 **Root cause:** an off-by-one-frame read. `UITextSliderControl.update` redraws `currentValueTextBlock` from the backing value, THEN our postfix runs and mutates the backing — so the rendered block still holds the pre-press value when the Pump drains at the end of that same frame. The redraw lands next frame; every announcement is one press stale.
 
 **Fix shape (next build pass):** defer the slider-value read one frame — the note carries "speak on the NEXT drain," after the game's own redraw has landed (settled-value speech, one frame later). Alternative rejected: reading the backing setting directly would be fresh but violates render-first — the deferred rendered read is both correct and honest.
+
+**CLOSED (2026-08-16, native-slider commit):** the arrow-key adjust path that carried this bug is deleted (owner ruling: follow the game's controller idiom — A/D flips the minus/plus arrow, Z clicks it). The native click path mutates and re-renders the value inside the same row update, BEFORE the control-level postfix notes it — the drain reads a fresh value the same frame, so the stale read is structurally impossible. Verify by ear on the next slider ride.
 
 ## B4 — Dead presses at list edges: bar scrolls, focus doesn't move, no speech (FIX LANDED WP7 2026-08-16, ride-verify pending)
 
