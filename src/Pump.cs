@@ -58,8 +58,10 @@ namespace SkaldAccessibility
         // ---- Slider value stream (noted by SliderArrowPatch after an adjust) ----
         private static object _pendingSliderValue;
 
-        // ---- List-edge stream (noted by the B4 edge clamp; latest wins) ----
-        private static string _pendingEdge;
+        // ---- List-edge stream (noted by the B4 edge observer; latest wins) ----
+        private static object _pendingEdgeList;
+        private static string _pendingEdgePreLine;
+        private static string _pendingEdgeText;
 
         // ---- Slider arrow-flip stream (noted by ArrowFlipJoin; latest wins) ----
         private static object _pendingArrowFlip;
@@ -147,10 +149,30 @@ namespace SkaldAccessibility
 
         public static void NoteSliderValue(object sliderButton) => _pendingSliderValue = sliderButton;
 
-        /// <summary>Note-only: called from the edge-clamp prefix when a press
-        /// lands on a true list edge (bug-ledger B4 ruling — clamp, no wrap,
-        /// speak the edge).</summary>
-        public static void NoteEdge(string text) => _pendingEdge = text;
+        /// <summary>Note-only: an edge press whose native window-slide is about
+        /// to run (bug-ledger B4 as amended). Carries the focused slot's
+        /// pre-slide line; the drain diffs after the re-render.</summary>
+        public static void NoteEdgeScroll(object list, string preLine, string edgeText)
+        {
+            _pendingEdgeList = list;
+            _pendingEdgePreLine = preLine;
+            _pendingEdgeText = edgeText;
+        }
+
+        /// <summary>The composed line of a control's current selection, read at
+        /// time of use (used by the edge observer's pre-capture).</summary>
+        internal static string CurrentLineOf(object control)
+        {
+            try
+            {
+                if (!_selReflectionReady) InitSelectionReflection();
+                if (_selIndexField == null || control == null) return null;
+                int index = (int)_selIndexField.GetValue(control);
+                if (index < 0) return null;
+                return ComposeSelection(control, index);
+            }
+            catch { return null; }
+        }
 
         /// <summary>Note-only: the stick-sideways minus/plus flip on slider rows
         /// (fires once per row per press — the game flips the whole control;
@@ -334,14 +356,27 @@ namespace SkaldAccessibility
             Scaffold.SpeechService.Say(char.ToUpper(side[0]) + side.Substring(1) + ".", "Nav");
         }
 
-        /// <summary>An edge press moves no selection, so this is the only speech
-        /// the press produces; immediate priority, same source as navigation.</summary>
+        /// <summary>An edge press moves no selection index, so this is the only
+        /// speech the press produces. The native window-slide ran during the
+        /// game's update; by the drain the page has re-rendered — if the focused
+        /// slot's line changed, a new entry slid under focus and IT is the
+        /// announcement; if unchanged, the window is at the model's true end
+        /// and the edge line speaks. Never a silent press (B4 as amended).</summary>
         private static void DrainEdge()
         {
-            string edge = _pendingEdge;
-            if (edge == null) return;
-            _pendingEdge = null;
-            Scaffold.SpeechService.Say(edge, "Nav");
+            object list = _pendingEdgeList;
+            if (list == null) return;
+            string pre = _pendingEdgePreLine;
+            string edgeText = _pendingEdgeText;
+            _pendingEdgeList = null;
+            _pendingEdgePreLine = null;
+            _pendingEdgeText = null;
+
+            string post = CurrentLineOf(list);
+            if (post != null && post != pre)
+                Scaffold.SpeechService.Say(post, "Nav");
+            else
+                Scaffold.SpeechService.Say(edgeText, "Nav");
         }
 
         /// <summary>Speak the arrived canvas's settled focus on a zone crossing —

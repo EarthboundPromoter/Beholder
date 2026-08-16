@@ -159,30 +159,37 @@ namespace SkaldAccessibility.Patches
         /// (index &gt; 0) is the edge test, asked at time of use.</summary>
         static bool Prefix_ClampAbove(object __instance)
         {
-            return ClampAtEdge(__instance, _canControllerScrollDown, "Top of list.");
+            return ObserveEdge(__instance, _canControllerScrollDown, "Top of list.");
         }
 
         /// <summary>Below = increment; canControllerScrollUp (index &lt; count-1).</summary>
         static bool Prefix_ClampBelow(object __instance)
         {
-            return ClampAtEdge(__instance, _canControllerScrollUp, "Bottom of list.");
+            return ObserveEdge(__instance, _canControllerScrollUp, "Bottom of list.");
         }
 
-        private static bool ClampAtEdge(object instance, MethodInfo canScroll, string edgeText)
+        /// <summary>B4 as amended (2026-08-16, class-list ride): at a window edge
+        /// the native branch slides the PAGED WINDOW one entry — on long lists
+        /// that is the only route to entries beyond the page (the original B4
+        /// "never load-bearing" claim was wrong there). So the native scroll
+        /// always runs; we capture the focused slot's composed line first, and
+        /// the drain compares after the re-render — content changed means a new
+        /// entry slid under focus (speak it), unchanged means a true end
+        /// (speak the edge line). Never a silent press either way.</summary>
+        private static bool ObserveEdge(object instance, MethodInfo canScroll, string edgeText)
         {
             try
             {
                 object list = _getControllerScrollableList.Invoke(instance, null);
                 if (list == null) return true;                 // original no-ops
-                if ((bool)canScroll.Invoke(list, null)) return true; // native move runs
-                Pump.NoteEdge(edgeText);
-                return false; // suppress the pane-scroll branch — focus clamps
+                if ((bool)canScroll.Invoke(list, null)) return true; // in-window move; join speaks
+                Pump.NoteEdgeScroll(list, Pump.CurrentLineOf(list), edgeText);
             }
             catch (Exception ex)
             {
-                Plugin.Logger?.LogDebug($"[SkaldIO:clamp] {ex.Message}");
-                return true;
+                Plugin.Logger?.LogDebug($"[SkaldIO:edge] {ex.Message}");
             }
+            return true; // the native window-slide always runs
         }
 
         /// <summary>When SheetComplexSettings.getControllerScrollableList()
