@@ -29,6 +29,15 @@ namespace SkaldAccessibility.Patches
         private static MethodInfo _getButtonsListMethod;
         private static FieldInfo _contentField;
         private static FieldInfo _buttonPressIndexLeftField;
+
+        // Primary navigable control — whatever getControllerScrollableList() returns
+        private static MethodInfo _getControllerScrollableListMethod;
+
+        // Feat tree: read feat name from Node objects when button text is unavailable
+        private static FieldInfo _featField;
+        private static MethodInfo _getNameMethod;
+        private static MethodInfo _getScrollableElementsMethod;
+
         private static bool _initialized;
         private static bool _initFailed;
 
@@ -60,6 +69,7 @@ namespace SkaldAccessibility.Patches
                 _listButtonsField = AccessTools.Field(typeof(GUIControl), "listButtons");
                 _menuTabField = AccessTools.Field(typeof(GUIControl), "menuTab");
                 _sheetComplexField = AccessTools.Field(typeof(GUIControl), "sheetComplex");
+                _getControllerScrollableListMethod = AccessTools.Method(typeof(GUIControl), "getControllerScrollableList");
 
                 var extraRowType = AccessTools.TypeByName("GUIControl+ExtraButtonRowSheetComplex");
                 if (extraRowType != null)
@@ -76,6 +86,17 @@ namespace SkaldAccessibility.Patches
                 _getButtonsListMethod = AccessTools.Method(baseType, "getButtonsList");
                 _buttonPressIndexLeftField = AccessTools.Field(baseType, "buttonPressIndexLeft");
                 _contentField = AccessTools.Field(typeof(UITextBlock), "content");
+
+                // Feat tree node → feat name (fallback when button text is unavailable)
+                var uiCanvasType = AccessTools.TypeByName("UICanvas");
+                if (uiCanvasType != null)
+                    _getScrollableElementsMethod = AccessTools.Method(uiCanvasType, "getScrollableElements");
+                var nodeType = AccessTools.TypeByName("UIFeatTree+FeatTreeCollection+Node");
+                if (nodeType != null)
+                    _featField = AccessTools.Field(nodeType, "feat");
+                var featType = AccessTools.TypeByName("FeatContainer+Feat");
+                if (featType != null)
+                    _getNameMethod = AccessTools.Method(featType, "getName");
 
                 _initialized = _numericButtonsField != null
                     && _getButtonsListMethod != null
@@ -127,16 +148,27 @@ namespace SkaldAccessibility.Patches
                         ProcessControl(menuTab, isNumeric: false);
                 }
 
-                // UIHorizontalMenuButtons — lives inside ExtraButtonRowSheetComplex,
-                // used on difficulty selector and potentially other screens.
-                if (_sheetComplexField != null && _horizontalMenuButtonsField != null)
+                // Process whatever getControllerScrollableList() returns — the game's
+                // primary navigable control for this screen. Covers UIFeatTree,
+                // UIHorizontalMenuButtons, and any other control the game navigates.
+                // Dedup in ProcessControl prevents double-speech if this returns
+                // a control already processed above (numericButtons, listButtons, etc).
+                if (_getControllerScrollableListMethod != null)
                 {
-                    object sheetComplex = _sheetComplexField.GetValue(__instance);
-                    if (sheetComplex != null && _horizontalMenuButtonsField.DeclaringType.IsInstanceOfType(sheetComplex))
+                    try
                     {
-                        object horizontalButtons = _horizontalMenuButtonsField.GetValue(sheetComplex);
-                        if (horizontalButtons != null)
-                            ProcessControl(horizontalButtons, isNumeric: false);
+                        object primaryControl = _getControllerScrollableListMethod.Invoke(__instance, null);
+                        if (primaryControl != null
+                            && primaryControl != numericButtons
+                            && (_listButtonsField == null || primaryControl != _listButtonsField.GetValue(__instance))
+                            && (_menuTabField == null || primaryControl != _menuTabField.GetValue(__instance)))
+                        {
+                            ProcessControl(primaryControl, isNumeric: false);
+                        }
+                    }
+                    catch
+                    {
+                        // Non-conforming control on this screen — graceful silence.
                     }
                 }
             }
@@ -159,11 +191,13 @@ namespace SkaldAccessibility.Patches
 
             // Speak if index changed since last announcement
             string text = ReadButtonText(control, index);
+
+            // Fallback: for image-based controls (feat tree nodes, etc.),
+            // read from the element at the current index via reflection
             if (text == null)
-            {
-                Plugin.Logger?.LogDebug($"[Nav:diag:{control.GetType().Name}] idx={index} text=NULL");
-                return;
-            }
+                text = ReadFeatNodeName(control, index);
+
+            if (text == null) return;
 
             // Numeric buttons include their key shortcut (1-9) for orientation
             if (isNumeric)
@@ -180,7 +214,9 @@ namespace SkaldAccessibility.Patches
 
         private static string ReadButtonText(object control, int index)
         {
-            var buttons = _getButtonsListMethod.Invoke(control, null) as IList;
+            IList buttons;
+            try { buttons = _getButtonsListMethod.Invoke(control, null) as IList; }
+            catch { return null; } // control is not a UIButtonControlBase (e.g., UIFeatTree)
             if (buttons == null || index < 0 || index >= buttons.Count) return null;
             object button = buttons[index];
             if (button == null) return null;
@@ -195,6 +231,40 @@ namespace SkaldAccessibility.Patches
             if (string.IsNullOrWhiteSpace(cleaned)) return null;
             if (cleaned == "..." || cleaned == "\u2026") return "dot dot dot";
             return cleaned;
+        }
+
+        /// <summary>
+        /// Fallback for image-based controls: read feat name from UIFeatTree nodes.
+        /// Gets the scrollable element at the given index, reads its private 'feat'
+        /// field, and calls getName() on the feat object.
+        /// </summary>
+        private static string ReadFeatNodeName(object control, int index)
+        {
+            if (_featField == null || _getNameMethod == null || _getScrollableElementsMethod == null)
+                return null;
+
+            try
+            {
+                var elements = _getScrollableElementsMethod.Invoke(control, null)
+                    as System.Collections.Generic.List<UIElement>;
+                if (elements == null) return null;
+                if (index < 0 || index >= elements.Count) return null;
+
+                object node = elements[index];
+                if (node == null) return null;
+                if (!_featField.DeclaringType.IsInstanceOfType(node)) return null;
+
+                object feat = _featField.GetValue(node);
+                if (feat == null) return null;
+
+                string name = _getNameMethod.Invoke(feat, null) as string;
+                if (string.IsNullOrWhiteSpace(name)) return null;
+                return TextInterceptPatch.CleanText(name);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 }
