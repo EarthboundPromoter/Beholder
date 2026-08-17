@@ -96,6 +96,10 @@ namespace SkaldAccessibility
         // ---- Slider value stream (noted by SliderArrowPatch after an adjust) ----
         private static object _pendingSliderValue;
 
+        // ---- Attribute-editor flip stream (noted by EditorFlipPatch; the
+        //      sheet instance — the drain reads its entry flag at the clock) ----
+        private static object _pendingEditorFlip;
+
         // ---- List-edge stream (noted by the B4 edge observer; latest wins) ----
         private static object _pendingEdgeList;
         private static string _pendingEdgePreLine;
@@ -306,6 +310,10 @@ namespace SkaldAccessibility
         /// clear-then-set in one frame (re-route) speaks only the new walk.</summary>
         public static void NoteTravel(string line) => _pendingTravel = line;
 
+        /// <summary>Note-only: an attribute-editor sheet flipped its plus/minus
+        /// row cursor (A/D sideways). The drain reads the settled flag.</summary>
+        public static void NoteEditorFlip(object sheet) => _pendingEditorFlip = sheet;
+
         /// <summary>Called from Plugin.LateUpdate. Drain order encodes precedence
         /// (state → popup → content → selection → slider → combat batch → barks);
         /// SpeechService.Tick runs last so anything drained this frame can still
@@ -342,6 +350,9 @@ namespace SkaldAccessibility
 
             try { DrainSliderArrowFlip(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:flip] {ex.Message}"); }
+
+            try { DrainEditorFlip(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:editorflip] {ex.Message}"); }
 
             try { DrainListSelection(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:listsel] {ex.Message}"); }
@@ -585,6 +596,25 @@ namespace SkaldAccessibility
             if (_spokenListSelections.Add(list))
                 Scaffold.SpeechService.SayQueued($"Selected: {name}.", "Nav");
             else Scaffold.SpeechService.Say($"Selected: {name}.", "Nav");
+        }
+
+        /// <summary>Speak which arrow column the attribute editor's row cursor
+        /// flipped onto — "Plus." / "Minus." ONLY, never the row body (owner
+        /// ruling 2026-08-17) — read from the game's own
+        /// controllerScrollToPlusButton flag at drain time (entry1; both
+        /// entries flip together by construction).</summary>
+        private static void DrainEditorFlip()
+        {
+            object sheet = _pendingEditorFlip;
+            if (sheet == null) return;
+            _pendingEditorFlip = null;
+
+            if (Seams.CharacterSheet_entry1 == null || Seams.EditorEntry_scrollToPlusButton == null) return;
+            object entry = Seams.CharacterSheet_entry1.GetValue(sheet);
+            if (entry == null || Seams.EditorSheetEntryType == null
+                || !Seams.EditorSheetEntryType.IsInstanceOfType(entry)) return;
+            bool plus = (bool)Seams.EditorEntry_scrollToPlusButton.GetValue(entry);
+            Scaffold.SpeechService.Say(plus ? "Plus." : "Minus.", "Nav");
         }
 
         /// <summary>Speak which arrow the cursor flipped onto ("Plus." /
@@ -1446,6 +1476,8 @@ namespace SkaldAccessibility
             ReviewLayer.OnStateTransition();    // review never survives a state change
             OverlandCursor.OnStateTransition(); // neither does the cursor or its list
             Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone
+            Patches.MouseGuardPatch.OnStateTransition();    // nor a snap latch
+                                                            // (entry snaps re-latch)
             _pendingZoneLabel = null;
             // Point-pool records reset per state so re-entering an editor
             // screen re-announces its pools (the diff records otherwise

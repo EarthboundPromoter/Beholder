@@ -158,6 +158,11 @@ namespace SkaldAccessibility.Patches
                 // (7) Overland cursor patches (WP11) — game-type detours, so
                 // deferred like everything else here.
                 OverlandCursorPatches.Apply(harmony);
+
+                // (8) Mouse guard (owner ruling 2026-08-17) — SkaldIO detours,
+                // so deferred; latches every keyboard snap against physical
+                // jitter and right-stick drift.
+                MouseGuardPatch.Apply(harmony);
             }
             catch (Exception ex)
             {

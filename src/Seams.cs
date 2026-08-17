@@ -387,6 +387,15 @@ namespace SkaldAccessibility
         internal static FieldInfo InvSegment_offsetIndex;
         internal static MethodInfo Inventory_getListByType;
 
+        // ---- Mouse guard + attribute-editor flip join (owner rulings
+        //      2026-08-17: latch snaps against jitter; speak the flip side) ----
+        internal static MethodInfo SkaldIO_updateMousePosition;
+        internal static MethodInfo AttributeEditor_scrollSidewaysLeft;
+        internal static MethodInfo AttributeEditor_scrollSidewaysRight;
+        internal static FieldInfo CharacterSheet_entry1;
+        internal static Type EditorSheetEntryType;   // UIBaseCharacterSheet+EditorSheetEntry
+        internal static FieldInfo EditorEntry_scrollToPlusButton;
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -631,6 +640,15 @@ namespace SkaldAccessibility
             Prop_shouldNotBeDrawn = M(PropType, "Prop", "shouldNotBeDrawn");
             SkaldIO_setVirtualMousePosition = M(SkaldIOType, "SkaldIO", "setVirtualMousePosition",
                 new[] { typeof(int), typeof(int) });
+            SkaldIO_updateMousePosition = M(SkaldIOType, "SkaldIO", "updateMousePosition");
+            AttributeEditor_scrollSidewaysLeft = M(T("UIAttributeEditorSheet"), "UIAttributeEditorSheet", "controllerScrollSidewaysLeft");
+            AttributeEditor_scrollSidewaysRight = M(T("UIAttributeEditorSheet"), "UIAttributeEditorSheet", "controllerScrollSidewaysRight");
+            var baseCharacterSheet = T("UIBaseCharacterSheet");
+            CharacterSheet_entry1 = F(baseCharacterSheet, "UIBaseCharacterSheet", "entry1");
+            EditorSheetEntryType = baseCharacterSheet?.GetNestedType("EditorSheetEntry",
+                BindingFlags.NonPublic | BindingFlags.Public);
+            Row("UIBaseCharacterSheet+EditorSheetEntry", EditorSheetEntryType != null);
+            EditorEntry_scrollToPlusButton = F(EditorSheetEntryType, "EditorSheetEntry", "controllerScrollToPlusButton");
             ToolTipPrinter_clearToolTip = M(ToolTipPrinterType, "ToolTipPrinter", "clearToolTip");
             ToolTipPrinter_hasToolTip = M(ToolTipPrinterType, "ToolTipPrinter", "hasToolTip");
             OverlandState_setMouseInput = M(OverlandStateType, "OverlandState", "setMouseInput");

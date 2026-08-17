@@ -48,6 +48,10 @@ namespace SkaldAccessibility
         private static int _tileX, _tileY;
         private static object _lastMap;
 
+        /// <summary>The WP11 latch owns the virtual mouse while the cursor is
+        /// held — the general mouse guard defers to it.</summary>
+        internal static bool HoldsMouse => _held;
+
         // ---- Scan state (the cursor position IS the ring position; only the
         //      last-used category persists, for P-reverse) ----
         private static int _lastScanCategory = -1;
