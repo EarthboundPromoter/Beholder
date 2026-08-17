@@ -218,6 +218,25 @@ namespace SkaldAccessibility.Scaffold
             Pen.Add(p);
         }
 
+        /// <summary>Remove and RETURN queued entries from one source, in queue
+        /// order, preserving the rest — for callers that hold content across a
+        /// precedence window instead of dropping it (owner doctrine
+        /// 2026-08-17: precedence is a hold-and-flush, never a loss).</summary>
+        public static List<string> ExtractSource(string source)
+        {
+            var extracted = new List<string>();
+            if (Queue.Count == 0) return extracted;
+            var keep = new List<Pending>();
+            foreach (var p in Queue)
+            {
+                if (p.Source == source) extracted.Add(p.Text);
+                else keep.Add(p);
+            }
+            Queue.Clear();
+            foreach (var p in keep) Queue.Enqueue(p);
+            return extracted;
+        }
+
         /// <summary>Drop only queued entries from one source, preserving the rest.</summary>
         public static void FlushSource(string source)
         {

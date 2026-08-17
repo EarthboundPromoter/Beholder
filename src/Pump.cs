@@ -207,6 +207,20 @@ namespace SkaldAccessibility
         // silently (owner ruling 2026-08-17 — quiet on load).
         private static bool _stripSeenSinceState;
 
+        // ---- Locality hold (owner ruling 2026-08-17): dialogue takes
+        //      precedence over locality furniture — headers noted (or already
+        //      queued) while a scene-family state is up are HELD, latest per
+        //      source, and released queued when the dialogue ends. A hold and
+        //      flush, never a loss. ----
+        private static readonly System.Collections.Generic.Dictionary<string, string> _heldFurniture
+            = new System.Collections.Generic.Dictionary<string, string>();
+        private static bool _inSceneFamily;
+        private static readonly string[] FurnitureSources = { "PrimaryHeader", "BigHeader" };
+
+        private static bool IsSceneFamily(object state)
+            => state != null && Seams.SceneBaseStateType != null
+               && Seams.SceneBaseStateType.IsInstanceOfType(state);
+
         public static void NoteCombatLog(string line)
         {
             if (!string.IsNullOrWhiteSpace(line)) _pendingCombatLog.Add(line);
@@ -408,6 +422,17 @@ namespace SkaldAccessibility
                 }
                 _lastContent.TryGetValue(source, out string prev);
                 if (cleaned == prev) continue;
+
+                // Locality furniture noted while a dialogue is up: hold it
+                // (latest wins), release on dialogue exit. The diff record is
+                // deliberately NOT updated here — release runs the value
+                // through the normal spoken path.
+                if (_inSceneFamily && System.Array.IndexOf(FurnitureSources, source) >= 0)
+                {
+                    _heldFurniture[source] = cleaned;
+                    continue;
+                }
+
                 _lastContent[source] = cleaned;
                 if (kv.Value.Interrupt)
                     Scaffold.SpeechService.Say(cleaned, source);
@@ -1292,6 +1317,35 @@ namespace SkaldAccessibility
             string name = state.GetType().Name;
             if (name == _lastStateName) return;
             _lastStateName = name;
+
+            // Locality hold window (owner ruling 2026-08-17). Entering the
+            // scene family also RECLAIMS furniture already sitting in the
+            // speech queue — an auto-triggered dialogue mounts one frame
+            // after its region state, so the region header is queued before
+            // the transition is visible. Leaving the family releases the
+            // held lines queued, and sets their diff records first so the
+            // returning state's own same-value repaint dedups.
+            bool nowScene = IsSceneFamily(state);
+            if (nowScene && !_inSceneFamily)
+            {
+                foreach (string source in FurnitureSources)
+                {
+                    var reclaimed = Scaffold.SpeechService.ExtractSource(source);
+                    if (reclaimed.Count > 0)
+                        _heldFurniture[source] = reclaimed[reclaimed.Count - 1];
+                }
+            }
+            else if (!nowScene && _inSceneFamily && _heldFurniture.Count > 0)
+            {
+                foreach (var kv in _heldFurniture)
+                {
+                    _lastContent[kv.Key] = kv.Value;
+                    Scaffold.SpeechService.SayQueued(kv.Value, kv.Key);
+                }
+                _heldFurniture.Clear();
+            }
+            _inSceneFamily = nowScene;
+
             ReviewLayer.OnStateTransition();    // review never survives a state change
             OverlandCursor.OnStateTransition(); // neither does the cursor or its list
             Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone
