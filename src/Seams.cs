@@ -343,6 +343,7 @@ namespace SkaldAccessibility
         internal static MethodInfo PopUpUIBase_setMouseToClosestButtonBelow;
         internal static MethodInfo PopUpUIBase_getControllerScrollableUICanvas;
         internal static MethodInfo PopUpUIBase_setMouseToSelectedButton;
+        internal static MethodInfo PopUpBase_updateControllerScrolling;
         internal static MethodInfo UICanvas_incrementCurrentSelectedButton;
         internal static MethodInfo UICanvas_decrementCurrentSelectedButton;
         internal static MethodInfo SkaldObjectList_getObjectList;
@@ -687,6 +688,7 @@ namespace SkaldAccessibility
             PopUpUIBase_setMouseToClosestButtonBelow = M(PopUpUIBaseType, "PopUpUIBase", "setMouseToClosestButtonBelow");
             PopUpUIBase_getControllerScrollableUICanvas = M(PopUpUIBaseType, "PopUpUIBase", "getControllerScrollableUICanvas");
             PopUpUIBase_setMouseToSelectedButton = M(PopUpUIBaseType, "PopUpUIBase", "setMouseToSelectedButton");
+            PopUpBase_updateControllerScrolling = M(PopUpBaseType, "PopUpBase", "updateControllerScrolling");
             UICanvas_incrementCurrentSelectedButton = M(UICanvasType, "UICanvas", "incrementCurrentSelectedButton");
             UICanvas_decrementCurrentSelectedButton = M(UICanvasType, "UICanvas", "decrementCurrentSelectedButton");
             SkaldObjectList_getObjectList = M(SkaldObjectListType, "SkaldObjectList", "getObjectList");

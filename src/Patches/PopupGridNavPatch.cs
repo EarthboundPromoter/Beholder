@@ -115,6 +115,44 @@ namespace SkaldAccessibility.Patches
             catch { return false; }
         }
 
+        // ---- Tooltip discipline (WP11 class, popup edition — owner ride
+        //      2026-08-17): a raised tooltip spawns AT the virtual mouse,
+        //      steals hover from the cell (the highlight visibly "shunts"
+        //      away), and gates the popup's press handling behind
+        //      isMouseOverTooltip. Any stick move clears it first, restoring
+        //      cell hover before the move runs. ----
+
+        [HarmonyPatch]
+        public static class TooltipClearOnMoveHook
+        {
+            [HarmonyPrepare]
+            static bool Prepare() =>
+                Seams.PopUpBase_updateControllerScrolling != null
+                && Seams.ToolTipPrinter_hasToolTip != null
+                && Seams.ToolTipPrinter_clearToolTip != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.PopUpBase_updateControllerScrolling;
+
+            [HarmonyPrefix]
+            static void Prefix()
+            {
+                try
+                {
+                    if (!(bool)Seams.ToolTipPrinter_hasToolTip.Invoke(null, null)) return;
+                    if (Pressed(Seams.SkaldIO_getOptionSelectionButtonUp)
+                        || Pressed(Seams.SkaldIO_getOptionSelectionButtonDown)
+                        || Pressed(Seams.SkaldIO_getOptionSelectionButtonLeft)
+                        || Pressed(Seams.SkaldIO_getOptionSelectionButtonRight))
+                        Seams.ToolTipPrinter_clearToolTip.Invoke(null, null);
+                }
+                catch { }
+            }
+
+            private static bool Pressed(MethodInfo accessor)
+                => accessor != null && (bool)accessor.Invoke(null, null);
+        }
+
         // ---- (2) Cell flattening ----
 
         [HarmonyPatch]

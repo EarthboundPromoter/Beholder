@@ -39,6 +39,8 @@ namespace SkaldAccessibility
             = new System.Collections.Generic.Dictionary<string, ContentNote>();
         private static readonly System.Collections.Generic.Dictionary<string, string> _lastContent
             = new System.Collections.Generic.Dictionary<string, string>();
+        private static readonly System.Collections.Generic.Dictionary<string, string> _lastPanelForwarded
+            = new System.Collections.Generic.Dictionary<string, string>();
 
         // ---- Popup stream: top-of-stack watch (CC report build 2026-08-16).
         //      The game keeps a popup STACK with multiple top-changing paths
@@ -146,7 +148,11 @@ namespace SkaldAccessibility
             _pendingContent[source] = new ContentNote { Raw = raw, Interrupt = interrupt };
 
             // Panel-class sources feed the review layer's capture (raw, with
-            // markup — the tag grammar is the sectioning schema). Latest wins.
+            // markup — the tag grammar is the sectioning schema). Latest
+            // GENUINELY-NEW value wins: per-frame repaints of an unchanged
+            // value must not stomp a newer panel (the spell picker repaints
+            // its prompt every frame, which was stealing the review panel
+            // back from a just-raised tooltip — owner ride 2026-08-17).
             switch (source)
             {
                 case "SceneDesc":
@@ -156,7 +162,12 @@ namespace SkaldAccessibility
                 case "PopupMain":
                 case "PopupSecondary":
                 case "PopupTertiary":
-                    ReviewLayer.NotePanel(raw);
+                    _lastPanelForwarded.TryGetValue(source, out string prevPanel);
+                    if (raw != prevPanel)
+                    {
+                        _lastPanelForwarded[source] = raw;
+                        ReviewLayer.NotePanel(raw);
+                    }
                     break;
             }
         }
@@ -827,7 +838,7 @@ namespace SkaldAccessibility
                                             as System.Collections.IList;
                                         string id = Seams.SkaldBaseObject_getId.Invoke(spell, null) as string;
                                         if (picked != null && id != null && picked.Contains(id))
-                                            qualifier = "selected";
+                                            qualifier = "chosen"; // owner wording 2026-08-17
                                     }
                                 }
                             }
