@@ -168,6 +168,47 @@ namespace SkaldAccessibility
         internal static FieldInfo SliderButton_plusButton;
         internal static FieldInfo SliderSettingsButton_setting;
 
+        // ---- Selector grids (WP9) ----
+        internal static Type UIAbilitySelectorGridType;
+        internal static Type UICombatSelectorGridType;     // UICombatAbilitySelectorGrid
+        internal static Type CombatPlanningStateType;
+        internal static Type CombatBaseStateType;
+        internal static Type OverlandStateType;
+        internal static Type CharacterType;
+        internal static Type ButtonDataType;               // UIButtonControlBase+ButtonData
+        internal static FieldInfo GUIControl_abilitySelectorGrid;
+        internal static MethodInfo GUIControl_setMouseToUIElement;
+        internal static MethodInfo UICanvas_controllerScrollSidewaysLeft;
+        internal static MethodInfo UICanvas_controllerScrollSidewaysRight;
+        internal static MethodInfo SkaldIO_getOptionSelectionButtonUp;
+        internal static MethodInfo SkaldIO_getOptionSelectionButtonDown;
+        internal static MethodInfo SkaldIO_getOptionSelectionButtonLeft;
+        internal static MethodInfo SkaldIO_getOptionSelectionButtonRight;
+        internal static FieldInfo CombatPlanning_abilityGrid;
+        internal static FieldInfo CombatPlanning_spellGrid;
+        internal static FieldInfo CombatPlanning_consumableGrid;
+        internal static FieldInfo Overland_spellGrid;
+        internal static FieldInfo Overland_currentCharacter;
+        internal static MethodInfo CombatBase_getCurrentCharacter;
+        internal static MethodInfo Character_getCombatAbilityButtonData;
+        internal static MethodInfo Character_getCombatSpellButtonData;
+        internal static MethodInfo Character_getNonCombatSpellButtonData;
+        internal static MethodInfo Character_getInventory;
+        internal static MethodInfo Inventory_getConsumablesButtonData;
+        internal static FieldInfo ButtonData_hoverText;
+        internal static FieldInfo CombatSelectorGrid_textBlock;
+
+        /// <summary>The eight movement accessors the modal-grid ruling
+        /// suppresses while a selector grid is open (combat pressed-reads,
+        /// overland held-reads), keyed by name (GridNavigationPatch consumes).</summary>
+        internal static readonly Dictionary<string, MethodInfo> MovementReaders
+            = new Dictionary<string, MethodInfo>();
+        internal static readonly string[] MovementReaderNames =
+        {
+            "getPressedUpKey", "getPressedDownKey", "getPressedLeftKey", "getPressedRightKey",
+            "getDownUpKey", "getDownDownKey", "getDownLeftKey", "getDownRightKey",
+        };
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -306,6 +347,41 @@ namespace SkaldAccessibility
             SliderButton_minusButton = F(SliderButtonType, "UITextSliderButton", "minusButton");
             SliderButton_plusButton = F(SliderButtonType, "UITextSliderButton", "plusButton");
             SliderSettingsButton_setting = F(SliderSettingsButtonType, "UITextSliderSettingsButton", "setting");
+
+            // Selector grids (WP9)
+            UIAbilitySelectorGridType = T("UIAbilitySelectorGrid");
+            UICombatSelectorGridType = T("UICombatAbilitySelectorGrid");
+            CombatPlanningStateType = T("CombatPlanningState");
+            CombatBaseStateType = T("CombatBaseState");
+            OverlandStateType = T("OverlandState");
+            CharacterType = T("Character");
+            ButtonDataType = T("UIButtonControlBase+ButtonData");
+            GUIControl_abilitySelectorGrid = F(typeof(GUIControl), "GUIControl", "abilitySelectorGrid");
+            GUIControl_setMouseToUIElement = M(typeof(GUIControl), "GUIControl", "setMouseToUIElement");
+            UICanvas_controllerScrollSidewaysLeft = M(UICanvasType, "UICanvas", "controllerScrollSidewaysLeft");
+            UICanvas_controllerScrollSidewaysRight = M(UICanvasType, "UICanvas", "controllerScrollSidewaysRight");
+            SkaldIO_getOptionSelectionButtonUp = M(SkaldIOType, "SkaldIO", "getOptionSelectionButtonUp");
+            SkaldIO_getOptionSelectionButtonDown = M(SkaldIOType, "SkaldIO", "getOptionSelectionButtonDown");
+            SkaldIO_getOptionSelectionButtonLeft = M(SkaldIOType, "SkaldIO", "getOptionSelectionButtonLeft");
+            SkaldIO_getOptionSelectionButtonRight = M(SkaldIOType, "SkaldIO", "getOptionSelectionButtonRight");
+            CombatPlanning_abilityGrid = F(CombatPlanningStateType, "CombatPlanningState", "abilitySelectorGrid");
+            CombatPlanning_spellGrid = F(CombatPlanningStateType, "CombatPlanningState", "spellSelectorGrid");
+            CombatPlanning_consumableGrid = F(CombatPlanningStateType, "CombatPlanningState", "consumableSelectorGrid");
+            Overland_spellGrid = F(OverlandStateType, "OverlandState", "spellSelectorGrid");
+            Overland_currentCharacter = F(OverlandStateType, "OverlandState", "currentCharacter");
+            CombatBase_getCurrentCharacter = M(CombatBaseStateType, "CombatBaseState", "getCurrentCharacter");
+            Character_getCombatAbilityButtonData = M(CharacterType, "Character", "getCombatActivatedAbilityButtonDataList");
+            Character_getCombatSpellButtonData = M(CharacterType, "Character", "getCombatActivatedSpellButtonDataList");
+            Character_getNonCombatSpellButtonData = M(CharacterType, "Character", "getNonCombatActivatedSpellButtonDataList");
+            Character_getInventory = M(CharacterType, "Character", "getInventory");
+            // Inventory type from the getter's own signature — no name guess.
+            Inventory_getConsumablesButtonData = Character_getInventory == null ? null
+                : AccessTools.Method(Character_getInventory.ReturnType, "getConsumablesButtonDataList");
+            Row("Inventory.getConsumablesButtonDataList", Inventory_getConsumablesButtonData != null);
+            ButtonData_hoverText = F(ButtonDataType, "ButtonData", "hoverText");
+            CombatSelectorGrid_textBlock = F(UICombatSelectorGridType, "UICombatAbilitySelectorGrid", "textBlock");
+            foreach (string name in MovementReaderNames)
+                MovementReaders[name] = M(SkaldIOType, "SkaldIO", name);
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

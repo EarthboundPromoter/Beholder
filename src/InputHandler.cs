@@ -37,6 +37,11 @@ namespace SkaldAccessibility
             // classes. Consumed presses stop here.
             if (ReviewLayer.ProcessInput()) return;
 
+            // Selector-grid driver (WP9): while a grid is open, the option
+            // accessors (WASD under the feed) walk it through the game's own
+            // funnel calls. No-op when no grid is live.
+            Patches.GridNavigationPatch.Tick();
+
             // Repeat last speech: F1
             if (Input.GetKeyDown(KeyCode.F1))
             {

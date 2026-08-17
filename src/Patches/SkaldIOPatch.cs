@@ -115,6 +115,11 @@ namespace SkaldAccessibility.Patches
 
                 // (5) Keyboard → controller feed
                 ControllerFeedPatch.Apply(harmony);
+
+                // (6) Grid-modal movement suppression (WP9) — SkaldIO readers,
+                // so they belong to this deferred batch like every SkaldIO
+                // patch (frame-0 detours force the cctor — the boot-kill).
+                GridNavigationPatch.ApplyMovementSuppression(harmony);
             }
             catch (Exception ex)
             {

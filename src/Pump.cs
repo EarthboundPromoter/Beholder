@@ -441,6 +441,11 @@ namespace SkaldAccessibility
         /// (positional counts trail — RW3 standing rule).</summary>
         private static string ComposeSelection(object control, int index)
         {
+            // Selector grids (WP9): cells are image buttons with no rendered
+            // text — names resolve from the game's own button-data list.
+            if (Seams.UIAbilitySelectorGridType != null && Seams.UIAbilitySelectorGridType.IsInstanceOfType(control))
+                return ComposeGridSelection(control, index);
+
             int count = -1;
             string text = null;
             bool isCurrentListRow = false;
@@ -547,6 +552,31 @@ namespace SkaldAccessibility
             if (isCurrentListRow) text = $"{text}, selected";
             if (count > 1) return $"{text}, {index + 1} of {count}";
             return text;
+        }
+
+        /// <summary>Grid-cell composition (WP9): name from the game's own
+        /// button-data list (index-aligned by construction), trailing count.
+        /// The native hover pipeline echoes the same name into
+        /// setSecondaryDescription a frame later — seed that source's diff so
+        /// the echo dedups (the WP8 popup pattern); a genuinely different
+        /// hover text still speaks.</summary>
+        private static string ComposeGridSelection(object grid, int index)
+        {
+            try
+            {
+                var elements = Seams.UICanvas_getScrollableElements?.Invoke(grid, null)
+                    as System.Collections.ICollection;
+                int count = elements != null ? elements.Count : 0;
+                if (count == 0 || index < 0 || index >= count) return null;
+
+                string raw = Patches.GridNavigationPatch.NameAt(grid, index);
+                string name = string.IsNullOrWhiteSpace(raw) ? null : Patches.TextCleaner.CleanText(raw);
+                if (string.IsNullOrWhiteSpace(name)) return null;
+
+                SeedContent("SecondaryDesc", name);
+                return count > 1 ? $"{name}, {index + 1} of {count}" : name;
+            }
+            catch { return null; }
         }
 
         /// <summary>The game's own current-row marker, read once from
