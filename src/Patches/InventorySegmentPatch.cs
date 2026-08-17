@@ -69,15 +69,23 @@ namespace SkaldAccessibility.Patches
                 => Diff(__instance, __state, "Last column.");
         }
 
-        /// <summary>(segment, column) when the funnel currently walks an
-        /// inventory segment; null on every other screen.</summary>
+        /// <summary>(funnel list, segment, column) when the funnel currently
+        /// walks a character-inventory surface; null on every other screen.
+        /// The funnel list is the SHEET — its cells live on the controller
+        /// focus surface (UIInventorySheetBase.cs:586-598), so the original
+        /// segment-type check against the list itself never matched and this
+        /// patch was dead from birth (owner ride 2026-08-17). Resolve through
+        /// Pump.InventorySurfaceOf; a direct segment list still matches.</summary>
         private static object[] Capture(object gui)
         {
             try
             {
                 object list = Seams.GUIControl_getControllerScrollableList.Invoke(gui, null);
-                if (list == null || !Seams.InventorySegmentType.IsInstanceOfType(list)) return null;
-                return new[] { list, Seams.InvSegment_column.GetValue(list) };
+                if (list == null) return null;
+                object segment = Seams.InventorySegmentType.IsInstanceOfType(list)
+                    ? list : Pump.InventorySurfaceOf(list);
+                if (segment == null || !Seams.InventorySegmentType.IsInstanceOfType(segment)) return null;
+                return new[] { list, segment, Seams.InvSegment_column.GetValue(segment) };
             }
             catch { return null; }
         }
@@ -87,16 +95,25 @@ namespace SkaldAccessibility.Patches
             if (state == null) return;
             try
             {
-                object segment = state[0];
-                int before = (int)state[1];
-                int after = (int)Seams.InvSegment_column.GetValue(segment);
-                if (after != before)
+                object list = state[0];
+                object segment = state[1];
+                int before = (int)state[2];
+                // Re-read through the live chain — a press at the grid's last
+                // column switches the sheet's focus surface (main ->
+                // secondary, UIInventorySheetBase.cs:638-649) rather than
+                // moving the column.
+                object nowSegment = Seams.InventorySegmentType.IsInstanceOfType(list)
+                    ? list : Pump.InventorySurfaceOf(list);
+                if (nowSegment == null) return;
+                int after = (int)Seams.InvSegment_column.GetValue(nowSegment);
+                if (!ReferenceEquals(nowSegment, segment) || after != before)
                 {
-                    // The drain's element-identity escape turns this into the
-                    // new cell's line; the snap keeps the game's hover-driven
-                    // vertical walk anchored on the new column.
-                    Pump.NoteSelection(segment);
-                    Seams.GUIControl_setMouseToUIElement.Invoke(gui, new object[] { segment, 2, -6 });
+                    // Note the LIST the funnel walks (the sheet) — the drain
+                    // composes the surface cell at the sheet's row, and its
+                    // element-identity escape re-speaks same-row column moves
+                    // (cells are stable ctor-created UIGridButtons). The
+                    // native sideways call has already re-snapped the mouse.
+                    Pump.NoteSelection(list);
                 }
                 else
                 {

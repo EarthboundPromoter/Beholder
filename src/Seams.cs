@@ -386,6 +386,12 @@ namespace SkaldAccessibility
         internal static FieldInfo InvSegment_column;
         internal static FieldInfo InvSegment_offsetIndex;
         internal static MethodInfo Inventory_getListByType;
+        // The funnel walks the SHEET, not a segment — its index lives there
+        // and the cells live on its focus surface (decomp
+        // UIInventorySheetBase.cs:586-604; 2026-08-17 fix).
+        internal static Type UIInventorySheetBaseType;
+        internal static FieldInfo InvSheet_currentControllerSurface;
+        internal static FieldInfo InvSheet_mainInventoryGrid;
 
         // ---- Mouse guard + attribute-editor flip join (owner rulings
         //      2026-08-17: latch snaps against jitter; speak the flip side) ----
@@ -748,6 +754,9 @@ namespace SkaldAccessibility
             InvSegment_column = F(InventorySegmentType, "UIGridCharacterInventorySegment", "controllerSelectColumn");
             InvSegment_offsetIndex = F(InventorySegmentType, "UIGridCharacterInventorySegment", "offsetIndex");
             Inventory_getListByType = M(InventoryType, "Inventory", "getListByType");
+            UIInventorySheetBaseType = T("UIInventorySheetBase");
+            InvSheet_currentControllerSurface = F(UIInventorySheetBaseType, "UIInventorySheetBase", "currentControllerSurface");
+            InvSheet_mainInventoryGrid = F(UIInventorySheetBaseType, "UIInventorySheetBase", "mainInventoryGrid");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

@@ -767,7 +767,12 @@ namespace SkaldAccessibility
                 bool elementMoved = element != null
                     && !ReferenceEquals(element, _selElement)
                     && ((Seams.FeatNodeType != null && Seams.FeatNodeType.IsInstanceOfType(element))
-                        || (Seams.InventorySegmentType != null && Seams.InventorySegmentType.IsInstanceOfType(control)));
+                        || (Seams.InventorySegmentType != null && Seams.InventorySegmentType.IsInstanceOfType(control))
+                        // Inventory sheets: a column move changes which cell
+                        // the sheet's row index means; cells are stable
+                        // UIGridButton objects created once at ctor
+                        // (UIGridBase.cs:59-78), so identity diffing is safe.
+                        || (Seams.UIInventorySheetBaseType != null && Seams.UIInventorySheetBaseType.IsInstanceOfType(control)));
                 if (!elementMoved) return;
             }
             _selControl = control;
@@ -795,6 +800,29 @@ namespace SkaldAccessibility
             if (_popupSpokeThisFrame || (arrival && _playerNavFrame != Time.frameCount))
                 Scaffold.SpeechService.SayQueued(text, "Nav");
             else Scaffold.SpeechService.Say(text, "Nav");
+        }
+
+        /// <summary>The character-inventory funnel walks the SHEET: its
+        /// scrollable elements delegate to the controller focus surface but
+        /// its increment writes the sheet's own index
+        /// (UIInventorySheetBase.cs:586-604) — so selection notes carry the
+        /// sheet while the cells live on the surface. Resolve the surface the
+        /// game itself would walk: currentControllerSurface, falling back to
+        /// mainInventoryGrid exactly as getControllerFocusSurface does. Null
+        /// when the control is not an inventory sheet.</summary>
+        internal static object InventorySurfaceOf(object control)
+        {
+            try
+            {
+                if (control == null || Seams.UIInventorySheetBaseType == null
+                    || !Seams.UIInventorySheetBaseType.IsInstanceOfType(control)
+                    || Seams.InvSheet_currentControllerSurface == null) return null;
+                object surface = Seams.InvSheet_currentControllerSurface.GetValue(control);
+                if (surface == null && Seams.InvSheet_mainInventoryGrid != null)
+                    surface = Seams.InvSheet_mainInventoryGrid.GetValue(control);
+                return surface;
+            }
+            catch { return null; }
         }
 
         /// <summary>The element sitting at a control's index, resolved through
@@ -834,6 +862,16 @@ namespace SkaldAccessibility
             // inventory's own filtered list.
             if (Seams.InventorySegmentType != null && Seams.InventorySegmentType.IsInstanceOfType(control))
                 return ComposeInventoryCell(control, index);
+
+            // Character-inventory SHEET (owner ride 2026-08-17 — cells were
+            // silent): the native funnel writes its index on the SHEET, never
+            // a segment, so the branch above never matched a funnel note.
+            // Resolve the sheet's focus surface and compose its cell at the
+            // sheet's row.
+            object invSurface = InventorySurfaceOf(control);
+            if (invSurface != null && Seams.InventorySegmentType != null
+                && Seams.InventorySegmentType.IsInstanceOfType(invSurface))
+                return ComposeInventoryCell(invSurface, index);
 
             int count = -1;
             string text = null;
