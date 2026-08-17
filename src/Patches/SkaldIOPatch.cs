@@ -152,8 +152,36 @@ namespace SkaldAccessibility.Patches
 
         static void Postfix_SwallowKey(UnityEngine.KeyCode __0, ref bool __result)
         {
-            if (__result && (ReviewLayer.ShouldSwallowKey(__0) || OverlandCursor.ShouldSwallowKey(__0)))
+            if (__result && (ReviewLayer.ShouldSwallowKey(__0) || OverlandCursor.ShouldSwallowKey(__0)
+                || ArrowClaimed(__0)))
                 __result = false;
+        }
+
+        /// <summary>The mod's arrow claim (owner ruling 2026-08-17): in
+        /// overland- and combat-class states the game goes blind to the four
+        /// arrow keys at this choke — every binding-mediated read answers
+        /// false, so no bind (the alt-movement "Move 2" set included) can
+        /// move the character on arrows. Replaces reliance on the WP11
+        /// alt-getter patches, whose one-line targets the JIT inlines into
+        /// callers compiled before the deferred batch lands (the regression
+        /// the owner caught live). The mod's own arrow reads use raw input
+        /// and never pass through here; raw game consumers (tooltip scroll,
+        /// console history, rebind capture) are untouched by design. Combat
+        /// arrows were a pure WASD duplicate; the combat cursor inherits the
+        /// claim when it ships.</summary>
+        static bool ArrowClaimed(UnityEngine.KeyCode key)
+        {
+            if (key != UnityEngine.KeyCode.UpArrow && key != UnityEngine.KeyCode.DownArrow
+                && key != UnityEngine.KeyCode.LeftArrow && key != UnityEngine.KeyCode.RightArrow)
+                return false;
+            try
+            {
+                object state = Pump.CurrentStateObject();
+                if (state == null) return false;
+                return (Seams.OverlandStateType != null && Seams.OverlandStateType.IsInstanceOfType(state))
+                    || (Seams.CombatBaseStateType != null && Seams.CombatBaseStateType.IsInstanceOfType(state));
+            }
+            catch { return false; }
         }
 
         /// <summary>One-shot bridge numeric press: fires only on the armed frame

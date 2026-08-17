@@ -413,6 +413,24 @@ namespace SkaldAccessibility
                     Scaffold.SpeechService.Say(cleaned, source);
                 else
                     Scaffold.SpeechService.SayQueued(cleaned, source);
+
+                // Dialogue node change (owner ruling 2026-08-17): picking a
+                // choice mounts a new node INSIDE the same scene state — no
+                // state change, so the entry-time announcement never re-fires
+                // and the new choices went unspoken. The prose change IS the
+                // node event; re-announce the choice row queued behind it
+                // (the queue's dedup absorbs the state-entry overlap).
+                if (source == "SceneDesc")
+                {
+                    try
+                    {
+                        object state = CurrentStateObject();
+                        if (state != null && Seams.SceneBaseStateType != null
+                            && Seams.SceneBaseStateType.IsInstanceOfType(state))
+                            GameStateTracker.AnnounceNumericButtons(state);
+                    }
+                    catch { }
+                }
             }
             _pendingContent.Clear();
         }

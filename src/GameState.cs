@@ -129,7 +129,7 @@ namespace SkaldAccessibility
         /// Read numeric buttons from the active state's GUIControl and announce
         /// them with their number key shortcuts (e.g., "1: Select, 2: Abort").
         /// </summary>
-        private static void AnnounceNumericButtons(object stateObject)
+        internal static void AnnounceNumericButtons(object stateObject)
         {
             try
             {

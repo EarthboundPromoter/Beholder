@@ -361,6 +361,7 @@ namespace SkaldAccessibility
         internal static Type UISpellBookSheetType;
         internal static Type UIAbilitySheetType;
         internal static Type UIBaseCharacterSheetType;
+        internal static Type SceneBaseStateType;   // dialogue-surface family (node re-announce)
         internal static MethodInfo SheetClass_getControllerScrollableList;
         internal static MethodInfo GUIControl_controllerScrollSidewaysLeft;
         internal static MethodInfo GUIControl_controllerScrollSidewaysRight;
@@ -705,6 +706,7 @@ namespace SkaldAccessibility
             UISpellBookSheetType = T("UISpellBookSheet");
             UIAbilitySheetType = T("UIAbilitySheet");
             UIBaseCharacterSheetType = T("UIBaseCharacterSheet");
+            SceneBaseStateType = T("SceneBaseState");
             SheetClass_getControllerScrollableList = M(SheetClassType, "SheetClass", "getControllerScrollableList");
             GUIControl_controllerScrollSidewaysLeft = M(typeof(GUIControl), "GUIControl", "controllerScrollSidewaysLeft");
             GUIControl_controllerScrollSidewaysRight = M(typeof(GUIControl), "GUIControl", "controllerScrollSidewaysRight");
