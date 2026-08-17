@@ -1316,6 +1316,18 @@ namespace SkaldAccessibility
             catch { return null; }
         }
 
+        // The cell composes were failing to TOTAL silence with the reason
+        // swallowed by their own catch (owner ride 2026-08-17: vacant cells
+        // spoke nothing, not even "Empty."). Every distinct failure reason
+        // logs once per session — a receipt, not noise.
+        private static readonly System.Collections.Generic.HashSet<string> _invCellFailReasons
+            = new System.Collections.Generic.HashSet<string>();
+        private static void LogInvCellFailOnce(string reason)
+        {
+            if (_invCellFailReasons.Add(reason))
+                Plugin.Logger?.LogWarning($"[InvCell] compose failed: {reason}");
+        }
+
         /// <summary>Same map with an explicit column — the hover join names
         /// the cell the cursor actually sits on, independent of the funnel's
         /// column field.</summary>
@@ -1325,15 +1337,17 @@ namespace SkaldAccessibility
             {
                 if (Seams.InvSegment_inventory == null || Seams.Inventory_getListByType == null
                     || Seams.InvSegment_gridWidth == null
-                    || Seams.InvSegment_offsetIndex == null) return null;
+                    || Seams.InvSegment_offsetIndex == null)
+                { LogInvCellFailOnce("seam handles missing"); return null; }
 
                 object inventory = Seams.InvSegment_inventory.GetValue(segment);
                 object itemTypes = Seams.InvSegment_itemTypes?.GetValue(segment);
-                if (inventory == null || itemTypes == null) return null;
+                if (inventory == null) { LogInvCellFailOnce("segment.inventory null"); return null; }
+                if (itemTypes == null) { LogInvCellFailOnce("segment.itemTypes null"); return null; }
 
                 var items = Seams.Inventory_getListByType.Invoke(inventory, new[] { itemTypes, (object)false })
                     as System.Collections.IList;
-                if (items == null) return null;
+                if (items == null) { LogInvCellFailOnce("getListByType returned null/non-list"); return null; }
 
                 int width = (int)Seams.InvSegment_gridWidth.GetValue(segment);
                 int offset = (int)Seams.InvSegment_offsetIndex.GetValue(segment);
@@ -1348,7 +1362,11 @@ namespace SkaldAccessibility
                 if (name == null) return "Empty.";
                 return items.Count > 1 ? $"{name}, {itemIndex + 1} of {items.Count}" : name;
             }
-            catch { return null; }
+            catch (System.Exception ex)
+            {
+                LogInvCellFailOnce($"{ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>The game's header markup tag (lazy, post-ready — the
