@@ -126,6 +126,27 @@ namespace SkaldAccessibility.Patches
                         postfix: new HarmonyMethod(typeof(SkaldIOPatches), nameof(Postfix_InjectNumeric)));
                 }
 
+                // (4c) Player-nav stamp (owner ruling 2026-08-17): the four
+                // option-selection direction reads are the single funnel for
+                // player-driven focus movement — states, WP9 grids, popup
+                // ribbons, and zone crossings all poll them — so a true
+                // answer stamps the frame and first-observation demotion
+                // yields to the player's interrupt. Confirms deliberately
+                // do not stamp: they mount surfaces whose same-frame init
+                // writes must stay queued behind the entry read.
+                int navStamp = 0;
+                foreach (var dir in new[] { Seams.SkaldIO_getOptionSelectionButtonUp,
+                    Seams.SkaldIO_getOptionSelectionButtonDown,
+                    Seams.SkaldIO_getOptionSelectionButtonLeft,
+                    Seams.SkaldIO_getOptionSelectionButtonRight })
+                {
+                    if (dir == null) continue;
+                    harmony.Patch(dir, postfix: new HarmonyMethod(typeof(SkaldIOPatches), nameof(Postfix_NoteOptionNav)));
+                    navStamp++;
+                }
+                if (navStamp < 4)
+                    Plugin.Logger?.LogError($"[SkaldIO] Player-nav stamp incomplete ({navStamp}/4 direction reads)");
+
                 // (5) Keyboard → controller feed
                 ControllerFeedPatch.Apply(harmony);
 
@@ -182,6 +203,13 @@ namespace SkaldAccessibility.Patches
                     || (Seams.CombatBaseStateType != null && Seams.CombatBaseStateType.IsInstanceOfType(state));
             }
             catch { return false; }
+        }
+
+        /// <summary>A direction read answering true IS the player navigating —
+        /// real key, stick, or bridge drive all feed these accessors.</summary>
+        static void Postfix_NoteOptionNav(bool __result)
+        {
+            if (__result) Pump.NotePlayerNav();
         }
 
         /// <summary>One-shot bridge numeric press: fires only on the armed frame

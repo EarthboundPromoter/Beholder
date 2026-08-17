@@ -47,6 +47,14 @@ namespace SkaldAccessibility
         // and the same-frame "Selected:" init write would interrupt after all.
         private static readonly System.Collections.Generic.HashSet<object> _spokenListSelections
             = new System.Collections.Generic.HashSet<object>(new RefComparer());
+        // Player-nav stamp (noted by the SkaldIO direction-read postfixes,
+        // owner ruling 2026-08-17): a frame in which an option-selection
+        // direction read answered true is a frame the player navigated —
+        // focus lines it produces own the interrupt even on first
+        // observation. Confirms never stamp; mounts stay under entry
+        // discipline.
+        private static int _playerNavFrame = -1;
+        public static void NotePlayerNav() => _playerNavFrame = Time.frameCount;
         private sealed class RefComparer : System.Collections.Generic.IEqualityComparer<object>
         {
             bool System.Collections.Generic.IEqualityComparer<object>.Equals(object a, object b)
@@ -639,8 +647,11 @@ namespace SkaldAccessibility
             string line = isButtonRow ? $"Buttons: {text}." : text;
             // A popup announced this frame owns the interrupt — its own zone
             // line queues behind the body instead of cutting it off. A canvas
-            // never heard this state is an arrival observation and queues too.
-            if (_popupSpokeThisFrame || _spokenCanvases.Add(canvas))
+            // never heard this state is an arrival observation and queues too —
+            // unless the player's own direction press produced it (the stamp):
+            // player pane crossings always interrupt.
+            bool arrival = _spokenCanvases.Add(canvas);
+            if (_popupSpokeThisFrame || (arrival && _playerNavFrame != Time.frameCount))
                 Scaffold.SpeechService.SayQueued(line, "Nav");
             else Scaffold.SpeechService.Say(line, "Nav");
 
@@ -747,9 +758,11 @@ namespace SkaldAccessibility
             // index-0 button write lands in the same drain) — the focus line
             // queues behind the body instead of cutting it to nothing. A canvas
             // never heard this state is an arrival observation (engine init
-            // writes focus after content) and queues behind the entry read;
-            // later events on a heard canvas are user moves and interrupt.
-            if (_popupSpokeThisFrame || _spokenCanvases.Add(control))
+            // writes focus after content) and queues behind the entry read —
+            // unless the player's own direction press produced it (the stamp):
+            // player-driven moves always own the interrupt.
+            bool arrival = _spokenCanvases.Add(control);
+            if (_popupSpokeThisFrame || (arrival && _playerNavFrame != Time.frameCount))
                 Scaffold.SpeechService.SayQueued(text, "Nav");
             else Scaffold.SpeechService.Say(text, "Nav");
         }
