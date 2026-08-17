@@ -204,6 +204,20 @@ namespace SkaldBridge
             }
             var patches = AccessTools.TypeByName("SkaldAccessibility.Patches.SkaldIOPatches");
             if (patches == null) return "{\"ok\":false,\"error\":\"SkaldIOPatches not found\"}";
+
+            // Numeric option rows: /press?key=1..9 arms the one-shot index inject
+            // consumed by the mod's getNumericButtonPressIndex postfix.
+            if (key != null && key.Length == 1 && key[0] >= '1' && key[0] <= '9')
+            {
+                var idxField = AccessTools.Field(patches, "InjectNumericIndex");
+                var frameField = AccessTools.Field(patches, "InjectNumericFrame");
+                if (idxField == null || frameField == null)
+                    return "{\"ok\":false,\"error\":\"numeric inject fields not found (old mod build?)\"}";
+                idxField.SetValue(null, key[0] - '1');
+                frameField.SetValue(null, Time.frameCount + 1);
+                return $"{{\"ok\":true,\"pressed\":\"{key}\",\"armedForFrame\":{Time.frameCount + 1}}}";
+            }
+
             string fieldName;
             switch (key)
             {
@@ -213,7 +227,7 @@ namespace SkaldBridge
                 case "right": fieldName = "InjectRightFrame"; break;
                 case "confirm": fieldName = "InjectConfirmFrame"; break;
                 case "cancel": fieldName = "InjectCancelFrame"; break;
-                default: return "{\"ok\":false,\"error\":\"key must be up|down|left|right|confirm|cancel\"}";
+                default: return "{\"ok\":false,\"error\":\"key must be up|down|left|right|confirm|cancel|1-9\"}";
             }
             var field = AccessTools.Field(patches, fieldName);
             if (field == null) return "{\"ok\":false,\"error\":\"inject field not found (old mod build?)\"}";

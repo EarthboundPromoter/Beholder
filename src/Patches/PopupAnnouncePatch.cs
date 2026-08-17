@@ -1,4 +1,3 @@
-using HarmonyLib;
 using System;
 using System.Linq;
 using System.Reflection;
@@ -6,24 +5,32 @@ using System.Reflection;
 namespace SkaldAccessibility.Patches
 {
     /// <summary>
-    /// Announces popup text content when a popup appears.
+    /// Popup arrival composition, called from the Pump's top-of-stack watch
+    /// (CC report build 2026-08-16 — no longer a Harmony patch).
     ///
-    /// Hooks PopUpControl.addPopUp(PopUpBase) — the single entry point (funnel)
-    /// for all 25+ popup types. Reads mainDescription, secondaryDescription, and
-    /// tertiaryDescription text from the popup's UI elements. Does NOT read button
-    /// labels — popup button navigation speaks via the selection join.
-    /// Seam-gated (WP8).
+    /// Why the watch replaced the addPopUp postfix: the game keeps a popup
+    /// STACK, and the add event alone provably misses two real paths — a popup
+    /// revealed by dismissing the one stacked above it (PopUpName's caution
+    /// chain) never re-fires addPopUp, and PopUpSpellSelector builds its UI a
+    /// frame after the add, so an add-time read sees an empty popup. The drain
+    /// reads PopUpControl.getCurrentPopUp() — the game's own authoritative
+    /// current-popup accessor — and announces identity changes, retrying while
+    /// a popup's UI is not yet built (this method returns false).
     ///
-    /// Double-speak guard (WP8): many popup constructors route their initial
-    /// text through the PopUpBase set*TextContent setters (decomp-verified,
-    /// e.g. PopUpLock's ctor), which ContentSpeechPatch also hooks — so popup
-    /// arrival used to fire BOTH mechanisms, the second interrupting and
-    /// re-speaking the first. The drain speaks arrival from here (settled
-    /// field reads), then SEEDS the content diff records so the same-frame
-    /// setter notes dedup away; a genuine post-arrival update still differs
-    /// and still speaks.
+    /// Reads mainDescription, secondaryDescription, and tertiaryDescription
+    /// directly from the popup's UI elements: most popup ctors (PopUpOK,
+    /// PopUpYesNo) write those blocks directly and never touch the hooked
+    /// set*TextContent setters, so the block read is the only complete source.
+    /// Button labels are NOT read here — popup button navigation speaks via
+    /// the selection join (queued on the arrival frame so it can't cut the
+    /// body). Seam-gated (WP8).
+    ///
+    /// Double-speak guards: arrival seeds the Popup* content diffs (ctor-setter
+    /// notes from the same frame collapse — the WP8 pattern) AND the
+    /// SecondaryDesc/SheetDesc diffs, because the CC intro popups push a
+    /// duplicate of their message into those screen sources (addIntroPopUp,
+    /// the feats intro buffer); a genuinely different later value still speaks.
     /// </summary>
-    [HarmonyPatch]
     public static class PopupAnnouncePatch
     {
         private static bool ReadReady =>
@@ -31,37 +38,17 @@ namespace SkaldAccessibility.Patches
             && Seams.PopUpUIBase_mainDescription != null
             && Seams.UITextBlock_content != null;
 
-        [HarmonyPrepare]
-        static bool Prepare()
-        {
-            if (Seams.PopUpControl_addPopUp == null || !ReadReady)
-            {
-                Plugin.Logger?.LogWarning("[PopupAnnounce] addPopUp/read seams missing — popup announce disabled");
-                return false;
-            }
-            return true;
-        }
-
-        [HarmonyTargetMethod]
-        static MethodBase TargetMethod() => Seams.PopUpControl_addPopUp;
-
-        [HarmonyPostfix]
-        static void Postfix(object __0)
-        {
-            // Note-only (WP5): the Pump drains at end of frame, so text set AFTER
-            // addPopUp within the same frame is read at its settled value.
-            if (__0 != null) Pump.NotePopup(__0);
-        }
-
-        /// <summary>Composition, called from the Pump's drain.</summary>
-        public static void SpeakPopupTexts(object popup)
+        /// <summary>Announce a popup's settled text. Returns false only when
+        /// the popup's UI is not yet built (retry next drain); true once
+        /// handled — including degraded (seams missing) and empty popups.</summary>
+        public static bool SpeakPopupTexts(object popup)
         {
             try
             {
-                if (!ReadReady || popup == null) return;
+                if (!ReadReady || popup == null) return true;
 
                 object uiElements = Seams.PopUpBase_uiElements.GetValue(popup);
-                if (uiElements == null) return;
+                if (uiElements == null) return false; // built next frame — retry
 
                 string main = ReadDescription(Seams.PopUpUIBase_mainDescription, uiElements);
                 string secondary = ReadDescription(Seams.PopUpUIBase_secondaryDescription, uiElements);
@@ -77,9 +64,15 @@ namespace SkaldAccessibility.Patches
                 }.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray());
                 if (rawPanel.Length > 0) ReviewLayer.NotePanel(rawPanel);
 
-                // Arrival owns these values now — seed the content diff so the
-                // same frame's ctor-setter notes collapse instead of re-speaking.
-                if (main != null) Pump.SeedContent("PopupMain", main);
+                // Arrival owns these values now — seed the content diffs so the
+                // same frame's setter notes and the intro popups' screen-source
+                // duplicates collapse instead of re-speaking.
+                if (main != null)
+                {
+                    Pump.SeedContent("PopupMain", main);
+                    Pump.SeedContent("SecondaryDesc", main);
+                    Pump.SeedContent("SheetDesc", main);
+                }
                 if (secondary != null) Pump.SeedContent("PopupSecondary", secondary);
                 if (tertiary != null) Pump.SeedContent("PopupTertiary", tertiary);
 
@@ -120,10 +113,12 @@ namespace SkaldAccessibility.Patches
                     }
                     Plugin.Logger?.LogInfo($"[Popup:text3] \"{tertiary}\"");
                 }
+                return true;
             }
             catch (Exception ex)
             {
                 Plugin.Logger?.LogDebug($"[PopupAnnounce] {ex.Message}");
+                return true; // never retry-spam an unreadable popup
             }
         }
 

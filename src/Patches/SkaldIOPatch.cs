@@ -43,6 +43,10 @@ namespace SkaldAccessibility.Patches
         internal static int InjectUpFrame = -1, InjectDownFrame = -1,
             InjectLeftFrame = -1, InjectRightFrame = -1,
             InjectConfirmFrame = -1, InjectCancelFrame = -1;
+        // Numeric option-row drive (/press?key=1..9): consumed one-shot by the
+        // getNumericButtonPressIndex postfix — the exact read the states poll,
+        // so a synthetic numeric press has full native parity.
+        internal static int InjectNumericFrame = -1, InjectNumericIndex = -1;
 
         public static void ApplyPatches(Harmony harmony)
         {
@@ -113,6 +117,15 @@ namespace SkaldAccessibility.Patches
                 else
                     Plugin.Logger?.LogError($"[SkaldIO] Review swallow incomplete ({swallow}/4 readers) — see seam report");
 
+                // (4b) Bridge numeric drive: one-shot injected option-row press
+                // at the game's own read point (dev-only, inert without the
+                // bridge arming the fields).
+                if (Seams.GUIControl_getNumericButtonPressIndex != null)
+                {
+                    harmony.Patch(Seams.GUIControl_getNumericButtonPressIndex,
+                        postfix: new HarmonyMethod(typeof(SkaldIOPatches), nameof(Postfix_InjectNumeric)));
+                }
+
                 // (5) Keyboard → controller feed
                 ControllerFeedPatch.Apply(harmony);
 
@@ -141,6 +154,15 @@ namespace SkaldAccessibility.Patches
         {
             if (__result && (ReviewLayer.ShouldSwallowKey(__0) || OverlandCursor.ShouldSwallowKey(__0)))
                 __result = false;
+        }
+
+        /// <summary>One-shot bridge numeric press: fires only on the armed frame
+        /// and only when no real press happened (__result stays authoritative).</summary>
+        static void Postfix_InjectNumeric(ref int __result)
+        {
+            if (__result != -1 || InjectNumericFrame != UnityEngine.Time.frameCount) return;
+            __result = InjectNumericIndex;
+            InjectNumericFrame = -1;
         }
 
         static void Postfix_SwallowEscape(ref bool __result)

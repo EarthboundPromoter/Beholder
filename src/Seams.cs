@@ -92,6 +92,7 @@ namespace SkaldAccessibility
         internal static MethodInfo UICanvas_canControllerScrollDown;
         internal static MethodInfo SheetComplexSettings_getControllerScrollableList;
         internal static MethodInfo SheetComplexSettings_getListButtons;
+        internal static MethodInfo GUIControl_getNumericButtonPressIndex;
         internal static FieldInfo ConsoleControl_console;
         internal static FieldInfo FeedbackTool_takeInput;
         internal static MethodInfo PopUpControl_getCurrentPopUp;
@@ -149,8 +150,9 @@ namespace SkaldAccessibility
         internal static MethodInfo CombatLog_addEntry;
         internal static ConstructorInfo Bark_ctor;
 
-        // ---- Popup announce ----
-        internal static MethodInfo PopUpControl_addPopUp;
+        // ---- Popup announce (top-of-stack watch — the add event alone misses
+        //      reveals and frame-late UI builds; the drain reads getCurrentPopUp,
+        //      the game's own authoritative current-popup accessor) ----
         internal static FieldInfo PopUpBase_uiElements;
         internal static FieldInfo PopUpUIBase_mainDescription;
         internal static FieldInfo PopUpUIBase_secondaryDescription;
@@ -296,6 +298,37 @@ namespace SkaldAccessibility
         internal static Type PropSpawnerType;
         internal static Type PropTriggerType;
 
+        // ---- Character creation: point pools + feat tree (CC report build,
+        //      2026-08-16 — feat lateral designation, points-remaining speech,
+        //      buy/refund rank lines; FeatBuyState rides the same seams) ----
+        internal static Type UIFeatTreeType;
+        internal static Type FeatTreeCollectionType;   // UIFeatTree+FeatTreeCollection
+        internal static Type FeatTreeType;             // UIFeatTree+FeatTreeCollection+FeatTree
+        internal static Type UIAttributeEditorSheetType;
+        internal static Type CharacterBuilderBaseStateType;
+        internal static MethodInfo UIFeatTree_setPointsText;
+        internal static FieldInfo UIFeatTree_treeCollection;
+        internal static MethodInfo UIFeatTree_updatePressedLeftFeat;
+        internal static MethodInfo UIFeatTree_updatePressedRightFeat;
+        internal static FieldInfo UIFeatTree_pressedLeftFeat;
+        internal static FieldInfo UIFeatTree_pressedRightFeat;
+        internal static FieldInfo FeatTreeCollection_controllerScrollIndex;
+        internal static FieldInfo FeatTree_nodeDictionary;
+        internal static MethodInfo Feat_getRank;
+        internal static MethodInfo Feat_getMaxRankLevel;
+        internal static MethodInfo Feat_isLegal;
+        internal static FieldInfo Feat_legalPrereqFeat;
+        internal static MethodInfo Feat_getPrerequisitFeat;
+        internal static MethodInfo AttrSheet_setAttributePoints;
+        internal static MethodInfo AttrSheet_setSkillPoints;
+        internal static MethodInfo AttrSheet_getAttributePlusObject;
+        internal static MethodInfo AttrSheet_getAttributeMinusObject;
+        internal static MethodInfo AttrSheet_getSkillPlusObject;
+        internal static MethodInfo AttrSheet_getSkillMinusObject;
+        internal static MethodInfo CharacterBuilderBase_getCharacter;
+        internal static MethodInfo Character_getAttributeRank;
+        internal static MethodInfo SkaldBaseObject_getId;
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -358,6 +391,7 @@ namespace SkaldAccessibility
             UICanvas_canControllerScrollDown = M(UICanvasType, "UICanvas", "canControllerScrollDown");
             SheetComplexSettings_getControllerScrollableList = M(SheetComplexSettingsType, "SheetComplexSettings", "getControllerScrollableList");
             SheetComplexSettings_getListButtons = M(SheetComplexSettingsType, "SheetComplexSettings", "getListButtons");
+            GUIControl_getNumericButtonPressIndex = M(typeof(GUIControl), "GUIControl", "getNumericButtonPressIndex");
             ConsoleControl_console = F(ConsoleControlType, "ConsoleControl", "console");
             FeedbackTool_takeInput = F(FeedbackToolType, "FeedbackTool", "takeInput");
             PopUpControl_getCurrentPopUp = M(PopUpControlType, "PopUpControl", "getCurrentPopUp");
@@ -415,9 +449,6 @@ namespace SkaldAccessibility
             Row("Bark..ctor", Bark_ctor != null);
 
             // Popup announce
-            PopUpControl_addPopUp = PopUpControlType == null || PopUpBaseType == null ? null
-                : AccessTools.Method(PopUpControlType, "addPopUp", new[] { PopUpBaseType });
-            Row("PopUpControl.addPopUp", PopUpControl_addPopUp != null);
             PopUpBase_uiElements = F(PopUpBaseType, "PopUpBase", "uiElements");
             PopUpUIBase_mainDescription = F(PopUpUIBaseType, "PopUpUIBase", "mainDescription");
             PopUpUIBase_secondaryDescription = F(PopUpUIBaseType, "PopUpUIBase", "secondaryDescription");
@@ -557,6 +588,35 @@ namespace SkaldAccessibility
             PropBeaconType = T("PropBeacon");
             PropSpawnerType = T("PropSpawner");
             PropTriggerType = T("PropTrigger");
+
+            // Character creation: point pools + feat tree (CC report build)
+            UIFeatTreeType = T("UIFeatTree");
+            FeatTreeCollectionType = T("UIFeatTree+FeatTreeCollection");
+            FeatTreeType = T("UIFeatTree+FeatTreeCollection+FeatTree");
+            UIAttributeEditorSheetType = T("UIAttributeEditorSheet");
+            CharacterBuilderBaseStateType = T("CharacterBuilderBaseState");
+            UIFeatTree_setPointsText = M(UIFeatTreeType, "UIFeatTree", "setPointsText");
+            UIFeatTree_treeCollection = F(UIFeatTreeType, "UIFeatTree", "treeCollection");
+            UIFeatTree_updatePressedLeftFeat = M(UIFeatTreeType, "UIFeatTree", "updatePressedLeftFeat");
+            UIFeatTree_updatePressedRightFeat = M(UIFeatTreeType, "UIFeatTree", "updatePressedRightFeat");
+            UIFeatTree_pressedLeftFeat = F(UIFeatTreeType, "UIFeatTree", "pressedLeftFeat");
+            UIFeatTree_pressedRightFeat = F(UIFeatTreeType, "UIFeatTree", "pressedRightFeat");
+            FeatTreeCollection_controllerScrollIndex = F(FeatTreeCollectionType, "FeatTreeCollection", "controllerScrollIndex");
+            FeatTree_nodeDictionary = F(FeatTreeType, "FeatTree", "nodeDictionary");
+            Feat_getRank = M(FeatType, "Feat", "getRank");
+            Feat_getMaxRankLevel = M(FeatType, "Feat", "getMaxRankLevel");
+            Feat_isLegal = M(FeatType, "Feat", "isLegal");
+            Feat_legalPrereqFeat = F(FeatType, "Feat", "legalPrereqFeat");
+            Feat_getPrerequisitFeat = M(FeatType, "Feat", "getPrerequisitFeat");
+            AttrSheet_setAttributePoints = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "setAttributePoints");
+            AttrSheet_setSkillPoints = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "setSkillPoints");
+            AttrSheet_getAttributePlusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getAttributePlusObject");
+            AttrSheet_getAttributeMinusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getAttributeMinusObject");
+            AttrSheet_getSkillPlusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getSkillPlusObject");
+            AttrSheet_getSkillMinusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getSkillMinusObject");
+            CharacterBuilderBase_getCharacter = M(CharacterBuilderBaseStateType, "CharacterBuilderBaseState", "getCharacter");
+            Character_getAttributeRank = M(CharacterType, "Character", "getAttributeRank", new[] { typeof(string) });
+            SkaldBaseObject_getId = M(SkaldBaseObjectType, "SkaldBaseObject", "getId");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

@@ -28,6 +28,10 @@ namespace SkaldAccessibility
         private static object _pendingSelection;
         private static object _selControl;   // drain-side diff record: which control
         private static int _selIndex = -1;   // ...and which index last spoke/settled
+        private static object _selElement;   // ...and which element sat at that index
+                                             // (feat lateral moves change the element
+                                             // set under a constant index — CC report
+                                             // build 2026-08-16)
 
         // ---- Content stream (noted by ContentSpeechPatch; latest wins PER SOURCE) ----
         private struct ContentNote { public string Raw; public bool Interrupt; }
@@ -36,8 +40,18 @@ namespace SkaldAccessibility
         private static readonly System.Collections.Generic.Dictionary<string, string> _lastContent
             = new System.Collections.Generic.Dictionary<string, string>();
 
-        // ---- Popup stream (noted by PopupAnnouncePatch; latest wins) ----
-        private static object _pendingPopup;
+        // ---- Popup stream: top-of-stack watch (CC report build 2026-08-16).
+        //      The game keeps a popup STACK with multiple top-changing paths
+        //      (add, dismiss-revealing-the-one-beneath, frame-late UI builds) and
+        //      only the add has a single write point — so the drain reads
+        //      PopUpControl.getCurrentPopUp(), the game's own authoritative
+        //      current-popup accessor, and announces identity changes. ----
+        private static object _announcedPopup;      // top-of-stack last announced
+        private static bool _popupWasUp;            // for stack-empty cleanup
+        private static bool _popupSpokeThisFrame;   // demotes same-frame nav lines
+                                                    // to queued so the popup body
+                                                    // is never cut by its own
+                                                    // button row (F1)
 
         // ---- Combat log batch (accumulates within the frame) ----
         private static readonly System.Collections.Generic.List<string> _pendingCombatLog
@@ -63,6 +77,17 @@ namespace SkaldAccessibility
 
         // ---- Travel stream (noted by the WP11 course joins; latest wins) ----
         private static string _pendingTravel;
+
+        // ---- Character-creation point streams (CC report build 2026-08-16;
+        //      noted by PointAllocationPatch; latest wins per slot) ----
+        private struct PointPress { public bool IsAttribute; public bool IsPlus; public object Row; }
+        private static PointPress? _pendingPress;
+        private static int? _pendingAttrPool;
+        private static int? _pendingSkillPool;
+        private static int _lastAttrPool = int.MinValue;   // int.MinValue = unseen
+        private static int _lastSkillPool = int.MinValue;  // (reset per state change)
+        private static object _pendingFeatRank;            // feat whose rank changed
+        private static object _lastFeatTree;               // tree-crossing prefix record
 
         // ---- List-selection stream (noted by ListSelectionPatch; latest wins) ----
         private static object _pendingListSelection;
@@ -126,7 +151,23 @@ namespace SkaldAccessibility
             }
         }
 
-        public static void NotePopup(object popup) => _pendingPopup = popup;
+        /// <summary>Note-only: an attribute/skill plus/minus press surfaced by the
+        /// game's own pressed-object wrappers (UIAttributeEditorSheet). Fires
+        /// pre-mutation; the drain reads post-mutation truth.</summary>
+        public static void NotePointPress(bool isAttribute, bool isPlus, object row)
+            => _pendingPress = new PointPress { IsAttribute = isAttribute, IsPlus = isPlus, Row = row };
+
+        /// <summary>Note-only: a points-pool render write (setAttributePoints /
+        /// setSkillPoints — fires every frame with the settled value).</summary>
+        public static void NotePointPool(bool isAttribute, int value)
+        {
+            if (isAttribute) _pendingAttrPool = value;
+            else _pendingSkillPool = value;
+        }
+
+        /// <summary>Note-only: a feat's rank actually changed under a buy/refund
+        /// press (rank diffed pre/post by the hook).</summary>
+        public static void NoteFeatRank(object feat) => _pendingFeatRank = feat;
 
         public static void NoteCombatLog(string line)
         {
@@ -191,12 +232,16 @@ namespace SkaldAccessibility
         {
             if (Time.frameCount == _lastFrame) return;
             _lastFrame = Time.frameCount;
+            _popupSpokeThisFrame = false;
 
             try { DrainState(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:state] {ex.Message}"); }
 
             try { DrainPopup(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:popup] {ex.Message}"); }
+
+            try { DrainPoints(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:points] {ex.Message}"); }
 
             try { DrainContent(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:content] {ex.Message}"); }
@@ -235,14 +280,38 @@ namespace SkaldAccessibility
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:speech] {ex.Message}"); }
         }
 
-        /// <summary>Popup content reads at the drain — end-of-frame settle kills
-        /// set-text-after-addPopUp races by construction.</summary>
+        /// <summary>The top-of-stack watch: announce whenever the game's own
+        /// current-popup identity changes — covers adds, popups revealed by
+        /// dismissing the one stacked above them (which never re-fire addPopUp),
+        /// and popups that build their UI a frame after the add (retried until
+        /// readable). When the stack empties, the popup diff records die with it
+        /// so a later popup with identical text is a new event, not a dedup.</summary>
         private static void DrainPopup()
         {
-            object popup = _pendingPopup;
-            if (popup == null) return;
-            _pendingPopup = null;
-            Patches.PopupAnnouncePatch.SpeakPopupTexts(popup);
+            if (Seams.PopUpControl_getCurrentPopUp == null) return;
+            object top = Seams.PopUpControl_getCurrentPopUp.Invoke(null, null);
+
+            if (top == null)
+            {
+                if (_popupWasUp)
+                {
+                    _popupWasUp = false;
+                    _announcedPopup = null;
+                    _lastContent.Remove("PopupMain");
+                    _lastContent.Remove("PopupSecondary");
+                    _lastContent.Remove("PopupTertiary");
+                }
+                return;
+            }
+
+            _popupWasUp = true;
+            if (ReferenceEquals(top, _announcedPopup)) return;
+
+            if (Patches.PopupAnnouncePatch.SpeakPopupTexts(top))
+            {
+                _announcedPopup = top;
+                _popupSpokeThisFrame = true;
+            }
         }
 
         /// <summary>One utterance max per content source per frame, spoken only when
@@ -256,6 +325,14 @@ namespace SkaldAccessibility
                 string source = kv.Key;
                 string cleaned = Patches.TextCleaner.CleanText(kv.Value.Raw);
                 if (string.IsNullOrWhiteSpace(cleaned)) continue;
+                if (source == "PopupTertiary")
+                {
+                    // PopUpName repaints its tertiary every frame with a blinking
+                    // trailing "_" text cursor — normalize it out so the blink
+                    // can't defeat the diff and talk over the prompt.
+                    cleaned = cleaned.TrimEnd('_').TrimEnd();
+                    if (cleaned.Length == 0) continue;
+                }
                 _lastContent.TryGetValue(source, out string prev);
                 if (cleaned == prev) continue;
                 _lastContent[source] = cleaned;
@@ -408,13 +485,18 @@ namespace SkaldAccessibility
 
             bool isButtonRow = Seams.UIButtonControlBaseType != null
                 && Seams.UIButtonControlBaseType.IsInstanceOfType(canvas);
-            Scaffold.SpeechService.Say(isButtonRow ? $"Buttons: {text}." : text, "Nav");
+            string line = isButtonRow ? $"Buttons: {text}." : text;
+            // A popup announced this frame owns the interrupt — its own zone
+            // line queues behind the body instead of cutting it off.
+            if (_popupSpokeThisFrame) Scaffold.SpeechService.SayQueued(line, "Nav");
+            else Scaffold.SpeechService.Say(line, "Nav");
 
             // Supersede the frame's selection note and align the dedup records
             // so the next real move on this canvas diffs correctly.
             _pendingSelection = null;
             _selControl = canvas;
             _selIndex = index;
+            _selElement = FocusedElementOf(canvas, index);
             ReviewLayer.OnFocusChanged();
         }
 
@@ -433,16 +515,51 @@ namespace SkaldAccessibility
             if (Seams.UICanvas_currentSelectedButton == null) return;
 
             int index = (int)Seams.UICanvas_currentSelectedButton.GetValue(control);
+            object element = FocusedElementOf(control, index);
 
-            if (ReferenceEquals(control, _selControl) && index == _selIndex) return;
+            if (ReferenceEquals(control, _selControl) && index == _selIndex)
+            {
+                // Feat-tree lateral moves land on index 0 of a DIFFERENT column
+                // or tree (clearCurrentSelectedButton is a write of 0,
+                // UIFeatTree.cs:447-457) — same (control, index) key, changed
+                // element. The escape is scoped to feat nodes: their Node
+                // objects are stable per tree build, so identity is a safe
+                // diff there; a blanket element-identity key could re-speak
+                // per frame on surfaces that rebuild their element lists.
+                bool featMoved = element != null
+                    && Seams.FeatNodeType != null
+                    && Seams.FeatNodeType.IsInstanceOfType(element)
+                    && !ReferenceEquals(element, _selElement);
+                if (!featMoved) return;
+            }
             _selControl = control;
             _selIndex = index;
+            _selElement = element;
             ReviewLayer.OnFocusChanged(); // review cursors reset with focus
             if (index < 0) return;
 
             string text = ComposeSelection(control, index);
             if (text == null) return; // non-conforming control — graceful silence
-            Scaffold.SpeechService.Say(text, "Nav");
+            // A popup announced this frame owns the interrupt (its ctor's own
+            // index-0 button write lands in the same drain) — the focus line
+            // queues behind the body instead of cutting it to nothing.
+            if (_popupSpokeThisFrame) Scaffold.SpeechService.SayQueued(text, "Nav");
+            else Scaffold.SpeechService.Say(text, "Nav");
+        }
+
+        /// <summary>The element sitting at a control's index, resolved through
+        /// the game's own scrollable-elements read. Null when unresolvable.</summary>
+        private static object FocusedElementOf(object control, int index)
+        {
+            try
+            {
+                if (index < 0 || control == null || Seams.UICanvas_getScrollableElements == null) return null;
+                var elements = Seams.UICanvas_getScrollableElements.Invoke(control, null)
+                    as System.Collections.IList;
+                if (elements == null || index >= elements.Count) return null;
+                return elements[index];
+            }
+            catch { return null; }
         }
 
         /// <summary>Rendered-text composition for the focused element. Numeric-class
@@ -524,8 +641,12 @@ namespace SkaldAccessibility
                 catch { }
             }
 
-            // Image-only elements (feat-tree nodes): read the feat name from the
-            // scrollable element's backing object.
+            // Image-only elements (feat-tree nodes): the node renders name-in-icon
+            // pixels, pips, and a padlock — all transcoded from the feat's own
+            // data (rank, legality, prerequisite; phrasing rulings 2026-08-16).
+            // The count trails as nodes-in-current-column (no column ordinals —
+            // owner ruling: geometry doesn't map cleanly to structure; the
+            // prerequisite edge carries the orientation instead).
             if (text == null && Seams.UICanvas_getScrollableElements != null
                 && Seams.FeatNode_feat != null && Seams.Feat_getName != null)
             {
@@ -540,14 +661,17 @@ namespace SkaldAccessibility
                         if (node != null && Seams.FeatNodeType != null && Seams.FeatNodeType.IsInstanceOfType(node))
                         {
                             object feat = Seams.FeatNode_feat.GetValue(node);
-                            string name = feat != null ? Seams.Feat_getName.Invoke(feat, null) as string : null;
-                            if (!string.IsNullOrWhiteSpace(name))
-                                text = Patches.TextCleaner.CleanText(name);
+                            text = ComposeFeatNode(control, feat);
                         }
                     }
                 }
                 catch { }
             }
+
+            // An empty feat column would otherwise be a silent lateral landing.
+            if (text == null && Seams.UIFeatTreeType != null
+                && Seams.UIFeatTreeType.IsInstanceOfType(control))
+                text = "Empty column.";
 
             if (text == null) return null;
 
@@ -590,6 +714,125 @@ namespace SkaldAccessibility
             catch { return null; }
         }
 
+        /// <summary>Feat-node terse line (phrasing rulings 2026-08-16):
+        /// "Cleave, rank 2 of 3" / "Whirlwind, rank 0 of 2, locked, requires
+        /// Cleave", prefixed "Tree: X." when the landing crossed into a
+        /// different root tree (a tree has no name of its own — its root
+        /// feat's name is the game-sanctioned label). Level requirements and
+        /// the full description stay in the review panel. The generic tail
+        /// appends the in-column browse counter.</summary>
+        private static string ComposeFeatNode(object control, object feat)
+        {
+            if (feat == null) return null;
+            string name = Seams.Feat_getName.Invoke(feat, null) as string;
+            if (string.IsNullOrWhiteSpace(name)) return null;
+
+            var parts = new System.Collections.Generic.List<string>
+                { Patches.TextCleaner.CleanText(name) };
+
+            object tree = CurrentFeatTreeOf(control);
+
+            try
+            {
+                if (Seams.Feat_getRank != null && Seams.Feat_getMaxRankLevel != null)
+                {
+                    int rank = (int)Seams.Feat_getRank.Invoke(feat, null);
+                    int max = (int)Seams.Feat_getMaxRankLevel.Invoke(feat, null);
+                    if (max > 0) parts.Add($"rank {rank} of {max}");
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (Seams.Feat_isLegal != null && !(bool)Seams.Feat_isLegal.Invoke(feat, null))
+                {
+                    parts.Add("locked");
+                    // Inline only the prerequisite-feat edge (the padlock's
+                    // in-tree cause); the level gate stays panel-side.
+                    if (Seams.Feat_legalPrereqFeat != null
+                        && !(bool)Seams.Feat_legalPrereqFeat.GetValue(feat))
+                    {
+                        string parent = FeatParentName(tree, feat);
+                        if (parent != null) parts.Add($"requires {parent}");
+                    }
+                }
+            }
+            catch { }
+
+            string line = string.Join(", ", parts.ToArray());
+
+            // Tree-crossing prefix. Mutating the record here is deliberate:
+            // every crossing arrives through a real selection drain; re-compose
+            // paths (review re-anchor) land on the same tree and add nothing.
+            if (tree != null && !ReferenceEquals(tree, _lastFeatTree))
+            {
+                _lastFeatTree = tree;
+                string root = FeatTreeRootName(tree);
+                if (root != null) line = $"Tree: {root}. {line}";
+            }
+            return line;
+        }
+
+        /// <summary>The FeatTree the controller cursor currently sits in, read
+        /// from the game's own collection index.</summary>
+        private static object CurrentFeatTreeOf(object control)
+        {
+            try
+            {
+                if (Seams.UIFeatTree_treeCollection == null
+                    || Seams.FeatTreeCollection_controllerScrollIndex == null
+                    || Seams.UICanvas_getElements == null) return null;
+                object collection = Seams.UIFeatTree_treeCollection.GetValue(control);
+                if (collection == null) return null;
+                int ti = (int)Seams.FeatTreeCollection_controllerScrollIndex.GetValue(collection);
+                var trees = Seams.UICanvas_getElements.Invoke(collection, null)
+                    as System.Collections.IList;
+                if (trees == null || ti < 0 || ti >= trees.Count) return null;
+                return trees[ti];
+            }
+            catch { return null; }
+        }
+
+        /// <summary>A tree's game-sanctioned label: its root feat's name (the
+        /// root node is the first element added in the tree's ctor).</summary>
+        private static string FeatTreeRootName(object tree)
+        {
+            try
+            {
+                var elements = Seams.UICanvas_getElements.Invoke(tree, null)
+                    as System.Collections.IList;
+                if (elements == null || elements.Count == 0) return null;
+                object rootNode = elements[0];
+                if (Seams.FeatNodeType == null || !Seams.FeatNodeType.IsInstanceOfType(rootNode)) return null;
+                object feat = Seams.FeatNode_feat.GetValue(rootNode);
+                string name = feat != null ? Seams.Feat_getName.Invoke(feat, null) as string : null;
+                return string.IsNullOrWhiteSpace(name) ? null : Patches.TextCleaner.CleanText(name);
+            }
+            catch { return null; }
+        }
+
+        /// <summary>The prerequisite feat's display name, resolved through the
+        /// tree's own id→node dictionary (prereq chains stay in-tree by
+        /// construction — children append under their root).</summary>
+        private static string FeatParentName(object tree, object feat)
+        {
+            try
+            {
+                if (tree == null || Seams.Feat_getPrerequisitFeat == null
+                    || Seams.FeatTree_nodeDictionary == null) return null;
+                string prereqId = Seams.Feat_getPrerequisitFeat.Invoke(feat, null) as string;
+                if (string.IsNullOrEmpty(prereqId)) return null;
+                var dict = Seams.FeatTree_nodeDictionary.GetValue(tree)
+                    as System.Collections.IDictionary;
+                if (dict == null || !dict.Contains(prereqId)) return null;
+                object parentFeat = Seams.FeatNode_feat.GetValue(dict[prereqId]);
+                string name = parentFeat != null ? Seams.Feat_getName.Invoke(parentFeat, null) as string : null;
+                return string.IsNullOrWhiteSpace(name) ? null : Patches.TextCleaner.CleanText(name);
+            }
+            catch { return null; }
+        }
+
         /// <summary>The game's own current-row marker, read once from
         /// C64Color.YELLOW_TAG via the Seams handle (colors load with game
         /// data; composition only runs post-ready, so the lazy value read is
@@ -601,6 +844,133 @@ namespace SkaldAccessibility
             if (_yellowTag.Length == 0)
                 Plugin.Logger?.LogWarning("[Pump:sel] C64Color.YELLOW_TAG unavailable — selected-row state unvoiced");
             return _yellowTag.Length == 0 ? null : _yellowTag;
+        }
+
+        /// <summary>Character-creation point speech (rulings 2026-08-16).
+        /// A successful plus/minus press speaks the row's new value and the
+        /// pool in one line ("Strength 2. 3 attribute points remaining."); a
+        /// rejected press speaks its edge, never silence. A feat buy/refund
+        /// speaks the new rank ("Cleave, rank 2 of 3.") with the game's own
+        /// "Ranks to Distribute" line queued behind it via the FeatPoints
+        /// content source. Pool changes without a press (screen entry, resets)
+        /// announce queued.</summary>
+        private static void DrainPoints()
+        {
+            // Feat rank line first — its remaining-pool companion arrives
+            // through the content drain this same frame and queues behind.
+            object feat = _pendingFeatRank;
+            if (feat != null)
+            {
+                _pendingFeatRank = null;
+                try
+                {
+                    string name = Seams.Feat_getName?.Invoke(feat, null) as string;
+                    name = string.IsNullOrWhiteSpace(name) ? null : Patches.TextCleaner.CleanText(name);
+                    if (name != null && Seams.Feat_getRank != null && Seams.Feat_getMaxRankLevel != null)
+                    {
+                        int rank = (int)Seams.Feat_getRank.Invoke(feat, null);
+                        int max = (int)Seams.Feat_getMaxRankLevel.Invoke(feat, null);
+                        Scaffold.SpeechService.Say($"{name}, rank {rank} of {max}.", "Points");
+                    }
+                }
+                catch { }
+            }
+
+            if (_pendingPress.HasValue)
+            {
+                var press = _pendingPress.Value;
+                _pendingPress = null;
+                SpeakPointPress(press);
+            }
+
+            // Pool values not consumed by a press line: entry/reset announcements.
+            if (_pendingAttrPool.HasValue)
+            {
+                int v = _pendingAttrPool.Value;
+                _pendingAttrPool = null;
+                if (v != _lastAttrPool)
+                {
+                    _lastAttrPool = v;
+                    Scaffold.SpeechService.SayQueued(PoolPhrase(v, "attribute"), "Points");
+                }
+            }
+            if (_pendingSkillPool.HasValue)
+            {
+                int v = _pendingSkillPool.Value;
+                _pendingSkillPool = null;
+                if (v != _lastSkillPool)
+                {
+                    _lastSkillPool = v;
+                    Scaffold.SpeechService.SayQueued(PoolPhrase(v, "skill"), "Points");
+                }
+            }
+        }
+
+        private static string PoolPhrase(int v, string kind)
+            => $"{v} {kind} point{(v == 1 ? "" : "s")} remaining.";
+
+        private static void SpeakPointPress(PointPress press)
+        {
+            string kind = press.IsAttribute ? "attribute" : "skill";
+            int? pending = press.IsAttribute ? _pendingAttrPool : _pendingSkillPool;
+            int last = press.IsAttribute ? _lastAttrPool : _lastSkillPool;
+
+            string name = null;
+            try
+            {
+                string raw = Seams.SkaldBaseObject_getName?.Invoke(press.Row, null) as string;
+                if (!string.IsNullOrWhiteSpace(raw)) name = Patches.TextCleaner.CleanText(raw);
+            }
+            catch { }
+
+            bool success = pending.HasValue && pending.Value != last;
+            if (success)
+            {
+                int pool = pending.Value;
+                if (press.IsAttribute) { _pendingAttrPool = null; _lastAttrPool = pool; }
+                else { _pendingSkillPool = null; _lastSkillPool = pool; }
+
+                // The row's new value: the game renders the attribute rank
+                // itself, so the rank read IS the displayed number (the fresh
+                // rendered row is impractical to re-identify at the drain).
+                string value = PressedRowValue(press.Row);
+                string head = name == null ? null
+                    : value != null ? $"{name} {value}." : $"{name}.";
+                string tail = PoolPhrase(pool, kind);
+                Scaffold.SpeechService.Say(head == null ? tail : $"{head} {tail}", "Points");
+                return;
+            }
+
+            // Rejected press — mirror the game's own guard order (pool first,
+            // then rank cap), never silence.
+            int poolNow = pending ?? last;
+            if (press.IsPlus && poolNow == 0)
+                Scaffold.SpeechService.Say($"No {kind} points remaining.", "Points");
+            else if (press.IsPlus)
+                Scaffold.SpeechService.Say($"{(name ?? "Value")} is at maximum.", "Points");
+            else
+                Scaffold.SpeechService.Say($"{(name ?? "Value")} is at minimum.", "Points");
+        }
+
+        /// <summary>The pressed row's post-mutation value, read from the
+        /// character under construction via the game's own accessors.</summary>
+        private static string PressedRowValue(object row)
+        {
+            try
+            {
+                if (Seams.CharacterBuilderBaseStateType == null
+                    || Seams.CharacterBuilderBase_getCharacter == null
+                    || Seams.Character_getAttributeRank == null
+                    || Seams.SkaldBaseObject_getId == null) return null;
+                object state = CurrentStateObject();
+                if (state == null || !Seams.CharacterBuilderBaseStateType.IsInstanceOfType(state)) return null;
+                object character = Seams.CharacterBuilderBase_getCharacter.Invoke(state, null);
+                string id = Seams.SkaldBaseObject_getId.Invoke(row, null) as string;
+                if (character == null || id == null) return null;
+                int rank = (int)Seams.Character_getAttributeRank.Invoke(character, new object[] { id });
+                return rank.ToString();
+            }
+            catch { return null; }
         }
 
         private static void DrainTravel()
@@ -620,6 +990,12 @@ namespace SkaldAccessibility
             _lastStateName = name;
             ReviewLayer.OnStateTransition();    // review never survives a state change
             OverlandCursor.OnStateTransition(); // neither does the cursor or its list
+            // Point-pool records reset per state so re-entering an editor
+            // screen re-announces its pools (the diff records otherwise
+            // outlive the screen and dedup the entry lines to silence).
+            _lastAttrPool = int.MinValue;
+            _lastSkillPool = int.MinValue;
+            _lastContent.Remove("FeatPoints");
             GameStateTracker.OnStateChanged(name, state);
         }
 
