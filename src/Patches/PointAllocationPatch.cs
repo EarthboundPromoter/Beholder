@@ -177,10 +177,43 @@ namespace SkaldAccessibility.Patches
 
             [HarmonyPrefix]
             static void Prefix(out object[] __state)
-                => __state = CaptureRank(Seams.UIFeatTree_pressedRightFeat);
+            {
+                _inDirectRefund = true;
+                __state = CaptureRank(Seams.UIFeatTree_pressedRightFeat);
+            }
 
             [HarmonyPostfix]
-            static void Postfix(object[] __state) => NoteIfRankChanged(__state);
+            static void Postfix(object[] __state)
+            {
+                _inDirectRefund = false;
+                NoteIfRankChanged(__state);
+            }
+        }
+
+        /// <summary>True while the game's own right-click refund handler runs —
+        /// its subtract is voiced by the rank line above, not the cascade line.</summary>
+        private static bool _inDirectRefund;
+
+        /// <summary>Cascade refunds (owner ruling 2026-08-17): dropping a root
+        /// feat makes its dependents illegal, and updateFeatsLegality silently
+        /// drains their staged ranks via subtractPossibleRank. Note every
+        /// successful subtract outside the direct-refund handler; the drain
+        /// composes "Point removed from X." with the remaining-points line
+        /// trailing through the FeatPoints source.</summary>
+        [HarmonyPatch]
+        public static class FeatCascadeRefundHook
+        {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.Feat_subtractPossibleRank != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.Feat_subtractPossibleRank;
+
+            [HarmonyPostfix]
+            static void Postfix(object __instance, int __result)
+            {
+                if (__result > 0 && !_inDirectRefund) Pump.NoteFeatRefund(__instance);
+            }
         }
 
         /// <summary>The pressed feat and its pre-handler rank (the pressed

@@ -153,6 +153,13 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
+                // A popup owns the stick while it is up (the game skips
+                // state.update then) — driving the state's grid underneath
+                // would double-move the shared virtual mouse.
+                if (Seams.PopUpControl_getCurrentPopUp != null
+                    && Seams.PopUpControl_getCurrentPopUp.Invoke(null, null) != null)
+                    return;
+
                 Refresh();
                 if (_grid == null)
                 {

@@ -94,6 +94,34 @@ namespace SkaldAccessibility
             }
         }
 
+        /// <summary>Numeric labels are the keyboard truth (owner ruling
+        /// 2026-08-17): drop the controller glyph prefix the game paints into
+        /// the row ("A) Select" → "Select") — the number IS the key. Config
+        /// docket: a controller-mode setting later restores glyph truth. The
+        /// game's "..." placeholder labels resolve to the action the slot
+        /// actually performs, marked unavailable (the game renders "..."
+        /// exactly when the slot is inert — FeatBuyState.cs:158-165).</summary>
+        internal static string TranscodeQuickLabel(string cleaned, int index, object stateObject)
+        {
+            if (string.IsNullOrWhiteSpace(cleaned)) return cleaned;
+            var m = System.Text.RegularExpressions.Regex.Match(cleaned, "^[ABXY]\\)\\s*");
+            if (m.Success) cleaned = cleaned.Substring(m.Length);
+            string payload = cleaned.Trim();
+            if (payload == "..." || payload == "…" || payload == "." || payload.Length == 0)
+            {
+                // Slot names from the same setGUIData's sibling branch; a
+                // renamed state degrades to the generic word, never garbage.
+                string stateName = stateObject?.GetType().Name ?? "";
+                if (stateName == "FeatBuyState")
+                    return index == 0 ? "Save and Exit, unavailable"
+                         : index == 2 ? "Reset, unavailable" : "unavailable";
+                if (stateName == "CharacterCreationFeatsState")
+                    return index == 0 ? "Continue, unavailable" : "unavailable";
+                return "unavailable";
+            }
+            return cleaned;
+        }
+
         /// <summary>
         /// Read numeric buttons from the active state's GUIControl and announce
         /// them with their number key shortcuts (e.g., "1: Select, 2: Abort").
@@ -128,7 +156,7 @@ namespace SkaldAccessibility
                     if (string.IsNullOrWhiteSpace(raw)) continue;
                     string cleaned = TextCleaner.CleanText(raw);
                     if (string.IsNullOrWhiteSpace(cleaned)) continue;
-                    parts.Add($"{i + 1}: {cleaned}");
+                    parts.Add($"{i + 1}: {TranscodeQuickLabel(cleaned, i, stateObject)}");
                 }
 
                 if (parts.Count > 0)

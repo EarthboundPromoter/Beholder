@@ -72,6 +72,16 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **Fix landed:** (a) browse composition transcodes the game's yellow current-row marker — the focused row that is also the selected row speaks "…, selected, N of M" (transcode markup, don't strip); (b) new join on `setCurrentObject`/`getObjectByIndex` — the drain diffs the list's current object and speaks "Selected: <row>." on actual change, so the click-to-select step is audible. First observation of a list settles silently.
 
+## B7 — Overland status strip reads in full on every party step (OPEN, found 2026-08-16, owner ride; ruling pending)
+
+**Symptom:** every party step speaks the whole overland status bar — "Time: 02:02 Day: 151 X Pos.: 8 Y Pos.: 16 Overcast Night" — burying everything else. Owner: "entirely too noisy."
+
+**Receipts (LogOutput, 2026-08-16 ride):** consecutive steps f60290/f60299/f60308/f60317 each speak the full strip (X Pos. advancing 7→10); the strip also interleaves into loot/list browsing (f60325, f62196, f62476).
+
+**Root cause:** not a mod routine — the game repaints the strip through `setSecondaryDescription` and position changes every step (clock every few steps), so the per-source diff honestly speaks each new value. The source ALSO carries real overland events ("You see: A Door", "Picked up: …", "THEO is now leading the party.") — source-level silencing is off the table.
+
+**Owner constraint (ruled 2026-08-16):** the bar must never read out in full per step. Fix SHAPE undecided — candidates surveyed with the owner: (a) recognize the strip's fixed shape in overland, silence auto-read, diff only rare-change tail components (day, light/weather phrase) as announcements; (b) a dedicated status-bar reader (on-demand key or review-panel section) with full silence otherwise. Design ruling pending; strip stays in the review panel regardless.
+
 ## Closed
 
 (none yet)

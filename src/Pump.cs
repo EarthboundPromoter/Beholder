@@ -88,6 +88,8 @@ namespace SkaldAccessibility
         private static int _lastSkillPool = int.MinValue;  // (reset per state change)
         private static object _pendingFeatRank;            // feat whose rank changed
         private static object _lastFeatTree;               // tree-crossing prefix record
+        private static readonly System.Collections.Generic.List<object> _pendingRefunds
+            = new System.Collections.Generic.List<object>(); // cascade-refunded feats (batch)
 
         // ---- List-selection stream (noted by ListSelectionPatch; latest wins) ----
         private static object _pendingListSelection;
@@ -168,6 +170,13 @@ namespace SkaldAccessibility
         /// <summary>Note-only: a feat's rank actually changed under a buy/refund
         /// press (rank diffed pre/post by the hook).</summary>
         public static void NoteFeatRank(object feat) => _pendingFeatRank = feat;
+
+        /// <summary>Note-only: a staged rank was silently drained by the
+        /// legality cascade (batch — one press can refund several feats).</summary>
+        public static void NoteFeatRefund(object feat)
+        {
+            if (feat != null && !_pendingRefunds.Contains(feat)) _pendingRefunds.Add(feat);
+        }
 
         public static void NoteCombatLog(string line)
         {
@@ -574,6 +583,11 @@ namespace SkaldAccessibility
             if (Seams.UIAbilitySelectorGridType != null && Seams.UIAbilitySelectorGridType.IsInstanceOfType(control))
                 return ComposeGridSelection(control, index);
 
+            // Loot-popup item cells (2026-08-17): image cells in inventory
+            // order — name from the popup's own item list, read-only.
+            if (Seams.UIGridInventoryType != null && Seams.UIGridInventoryType.IsInstanceOfType(control))
+                return ComposeLootCell(control, index);
+
             int count = -1;
             string text = null;
             bool isCurrentListRow = false;
@@ -673,6 +687,36 @@ namespace SkaldAccessibility
                 && Seams.UIFeatTreeType.IsInstanceOfType(control))
                 text = "Empty column.";
 
+            // Generic element-text fallback (2026-08-17): sheet canvases hand
+            // the join the whole sheet, whose scrollable elements are text
+            // rows that already render the game's own "Name: Value" composite
+            // (SkaldDataList.getListName) — read the focused row's rendered
+            // text directly. Unlocks the in-game character/attribute/grimoire
+            // sheets; header rows transcode to a spoken heading.
+            if (text == null && Seams.UICanvas_getScrollableElements != null
+                && Seams.UITextBlock_content != null)
+            {
+                try
+                {
+                    var elements = Seams.UICanvas_getScrollableElements.Invoke(control, null)
+                        as System.Collections.Generic.List<UIElement>;
+                    if (elements != null && index >= 0 && index < elements.Count)
+                    {
+                        string raw = Seams.UITextBlock_content.GetValue(elements[index]) as string;
+                        if (!string.IsNullOrWhiteSpace(raw) && raw != " ")
+                        {
+                            count = elements.Count;
+                            string header = HeaderTag();
+                            bool isHeader = header != null && raw.StartsWith(header);
+                            string cleaned = Patches.TextCleaner.CleanText(raw);
+                            if (!string.IsNullOrWhiteSpace(cleaned))
+                                text = isHeader ? $"Heading: {cleaned}" : cleaned;
+                        }
+                    }
+                }
+                catch { /* element is not a text block — stay silent */ }
+            }
+
             if (text == null) return null;
 
             // Numeric-class rows by registry-audited type identity (WP8) — a
@@ -683,7 +727,7 @@ namespace SkaldAccessibility
                 || controlType == Seams.NumericButtonControlType
                 || controlType == Seams.MenuButtonControlType;
 
-            if (numericClass) return $"{index + 1}: {text}";
+            if (numericClass) return $"{index + 1}: {GameStateTracker.TranscodeQuickLabel(text, index, CurrentStateObject())}";
             if (isCurrentListRow) text = $"{text}, selected";
             if (count > 1) return $"{text}, {index + 1} of {count}";
             return text;
@@ -705,11 +749,59 @@ namespace SkaldAccessibility
                 if (count == 0 || index < 0 || index >= count) return null;
 
                 string raw = Patches.GridNavigationPatch.NameAt(grid, index);
+
+                // Popup spell selector (2026-08-17): its grid is the same
+                // UIAbilitySelectorGrid family but its data lives on the popup
+                // — read the popup's own legal-spells list, index-aligned by
+                // construction (PopUpSpellSelector.handle rebuilds the grid
+                // from that exact list every frame). The game echoes the
+                // hovered name into the tertiary line — seed that instead of
+                // SecondaryDesc.
+                bool fromSpellPopup = false;
+                if (raw == null && Seams.PopUpSpellSelectorType != null
+                    && Seams.PopUpSpellSelector_getLegalSpells != null
+                    && Seams.PopUpControl_getCurrentPopUp != null
+                    && Seams.SkaldBaseObject_getName != null)
+                {
+                    object popup = Seams.PopUpControl_getCurrentPopUp.Invoke(null, null);
+                    if (popup != null && Seams.PopUpSpellSelectorType.IsInstanceOfType(popup))
+                    {
+                        var spells = Seams.PopUpSpellSelector_getLegalSpells.Invoke(popup, null)
+                            as System.Collections.IList;
+                        if (spells != null && index >= 0 && index < spells.Count)
+                        {
+                            raw = Seams.SkaldBaseObject_getName.Invoke(spells[index], null) as string;
+                            fromSpellPopup = true;
+                        }
+                    }
+                }
+
                 string name = string.IsNullOrWhiteSpace(raw) ? null : Patches.TextCleaner.CleanText(raw);
                 if (string.IsNullOrWhiteSpace(name)) return null;
 
-                SeedContent("SecondaryDesc", name);
+                SeedContent(fromSpellPopup ? "PopupTertiary" : "SecondaryDesc", name);
                 return count > 1 ? $"{name}, {index + 1} of {count}" : name;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Loot-popup item cell: name and amount from the popup's own
+        /// inventory list at the cell's index (grid order = inventory order by
+        /// construction), trailing count. The game's own hover echo lands in
+        /// the tertiary line a frame later — seed it so the echo dedups.</summary>
+        private static string ComposeLootCell(object grid, int index)
+        {
+            try
+            {
+                var items = Patches.PopupGridNavPatch.CurrentLootItemList();
+                if (items == null || index < 0 || index >= items.Count) return null;
+                string raw = Seams.Item_getNameAndAmount != null
+                    ? Seams.Item_getNameAndAmount.Invoke(items[index], null) as string
+                    : Seams.SkaldBaseObject_getName?.Invoke(items[index], null) as string;
+                string name = string.IsNullOrWhiteSpace(raw) ? null : Patches.TextCleaner.CleanText(raw);
+                if (name == null) return null;
+                SeedContent("PopupTertiary", name);
+                return items.Count > 1 ? $"{name}, {index + 1} of {items.Count}" : name;
             }
             catch { return null; }
         }
@@ -833,6 +925,17 @@ namespace SkaldAccessibility
             catch { return null; }
         }
 
+        /// <summary>The game's header markup tag (lazy, post-ready — the
+        /// element-text fallback transcodes header rows to a spoken heading
+        /// instead of stripping the markup flat).</summary>
+        private static string _headerTag;
+        private static string HeaderTag()
+        {
+            if (_headerTag != null) return _headerTag.Length == 0 ? null : _headerTag;
+            _headerTag = Seams.TagValue(Seams.C64_HeaderTag) ?? "";
+            return _headerTag.Length == 0 ? null : _headerTag;
+        }
+
         /// <summary>The game's own current-row marker, read once from
         /// C64Color.YELLOW_TAG via the Seams handle (colors load with game
         /// data; composition only runs post-ready, so the lazy value read is
@@ -874,6 +977,30 @@ namespace SkaldAccessibility
                     }
                 }
                 catch { }
+            }
+
+            // Cascade refunds (owner phrasing 2026-08-17): state the diff,
+            // remaining points trail via the FeatPoints line this same frame.
+            // Queued — the triggering press's own rank line owns the interrupt.
+            if (_pendingRefunds.Count > 0)
+            {
+                var names = new System.Collections.Generic.List<string>();
+                foreach (object refunded in _pendingRefunds)
+                {
+                    try
+                    {
+                        string n = Seams.Feat_getName?.Invoke(refunded, null) as string;
+                        n = string.IsNullOrWhiteSpace(n) ? null : Patches.TextCleaner.CleanText(n);
+                        if (n != null) names.Add(n);
+                    }
+                    catch { }
+                }
+                _pendingRefunds.Clear();
+                if (names.Count == 1)
+                    Scaffold.SpeechService.SayQueued($"Point removed from {names[0]}.", "Points");
+                else if (names.Count > 1)
+                    Scaffold.SpeechService.SayQueued(
+                        $"Points removed from {string.Join(", ", names.ToArray())}.", "Points");
             }
 
             if (_pendingPress.HasValue)

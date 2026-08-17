@@ -329,6 +329,27 @@ namespace SkaldAccessibility
         internal static MethodInfo Character_getAttributeRank;
         internal static MethodInfo SkaldBaseObject_getId;
 
+        // ---- Loot-popup grid nav + spell-selector naming + refund cascade
+        //      (owner rulings 2026-08-17) ----
+        internal static Type PopUpLootType;
+        internal static Type PopUpUISystemInventoryType;  // PopUpBase+PopUpUISystemInventory
+        internal static Type UIGridInventoryType;
+        internal static Type PopUpSpellSelectorType;
+        internal static Type ItemType;
+        internal static FieldInfo PopUpLoot_inventory;
+        internal static FieldInfo PopUpUI_grid;            // PopUpUISystemInventory.grid
+        internal static FieldInfo PopUpUIBase_buttons;
+        internal static MethodInfo PopUpUIBase_setMouseToClosestButtonAbove;
+        internal static MethodInfo PopUpUIBase_setMouseToClosestButtonBelow;
+        internal static MethodInfo PopUpUIBase_getControllerScrollableUICanvas;
+        internal static MethodInfo PopUpUIBase_setMouseToSelectedButton;
+        internal static MethodInfo UICanvas_incrementCurrentSelectedButton;
+        internal static MethodInfo UICanvas_decrementCurrentSelectedButton;
+        internal static MethodInfo SkaldObjectList_getObjectList;
+        internal static MethodInfo Item_getNameAndAmount;
+        internal static MethodInfo PopUpSpellSelector_getLegalSpells;
+        internal static MethodInfo Feat_subtractPossibleRank;
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -617,6 +638,26 @@ namespace SkaldAccessibility
             CharacterBuilderBase_getCharacter = M(CharacterBuilderBaseStateType, "CharacterBuilderBaseState", "getCharacter");
             Character_getAttributeRank = M(CharacterType, "Character", "getAttributeRank", new[] { typeof(string) });
             SkaldBaseObject_getId = M(SkaldBaseObjectType, "SkaldBaseObject", "getId");
+
+            // Loot-popup grid nav + spell-selector naming + refund cascade
+            PopUpLootType = T("PopUpLoot");
+            PopUpUISystemInventoryType = T("PopUpBase+PopUpUISystemInventory");
+            UIGridInventoryType = T("UIGridInventory");
+            PopUpSpellSelectorType = T("PopUpSpellSelector");
+            ItemType = T("Item");
+            PopUpLoot_inventory = F(PopUpLootType, "PopUpLoot", "inventory");
+            PopUpUI_grid = F(PopUpUISystemInventoryType, "PopUpUISystemInventory", "grid");
+            PopUpUIBase_buttons = F(PopUpUIBaseType, "PopUpUIBase", "buttons");
+            PopUpUIBase_setMouseToClosestButtonAbove = M(PopUpUIBaseType, "PopUpUIBase", "setMouseToClosestButtonAbove");
+            PopUpUIBase_setMouseToClosestButtonBelow = M(PopUpUIBaseType, "PopUpUIBase", "setMouseToClosestButtonBelow");
+            PopUpUIBase_getControllerScrollableUICanvas = M(PopUpUIBaseType, "PopUpUIBase", "getControllerScrollableUICanvas");
+            PopUpUIBase_setMouseToSelectedButton = M(PopUpUIBaseType, "PopUpUIBase", "setMouseToSelectedButton");
+            UICanvas_incrementCurrentSelectedButton = M(UICanvasType, "UICanvas", "incrementCurrentSelectedButton");
+            UICanvas_decrementCurrentSelectedButton = M(UICanvasType, "UICanvas", "decrementCurrentSelectedButton");
+            SkaldObjectList_getObjectList = M(SkaldObjectListType, "SkaldObjectList", "getObjectList");
+            Item_getNameAndAmount = M(ItemType, "Item", "getNameAndAmount");
+            PopUpSpellSelector_getLegalSpells = M(PopUpSpellSelectorType, "PopUpSpellSelector", "getLegalSpells");
+            Feat_subtractPossibleRank = M(FeatType, "Feat", "subtractPossibleRank");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");
