@@ -69,6 +69,8 @@ All four opening rulings **APPROVED by the owner, 2026-08-16**: WP0 diff disposi
 
 **Config docket (future, owner-flagged 2026-08-17):** numeric quick-button labels speak number-first with controller glyphs dropped (keyboard truth); a player-facing config should restore glyph-first speech for players on a physical controller, where the glyphs are the truth.
 
+**Config docket (future, 2026-08-17): mouse-guard off-switch for physical-controller players.** The snap latch (MouseGuardPatch) wipes right-stick cursor movement between snaps — correct for the keyboard idiom, hostile to a player steering the cursor with the right stick. The controller-mode config that restores glyph speech should also disable the guard.
+
 **Config docket (future, owner-flagged 2026-08-17): terse/long focus reads on describer surfaces.** Where focus changes live-update a describer panel (the CC editor's SheetDesc pane is the type case), auto-reading the full body on every focus move happens only when the config is TRUE. Default/terse: speak the element's name plus its most salient detail — score for attributes and skills — and leave the body to the review layer / an explicit read. Long: current behavior (body auto-read per focus change). Composer note: this is a verbosity tier decision and belongs in the composer's per-source tier config when it lands ([[reference_string_composer_stub]]).
 
 **Parked (owner, 2026-08-17): speech-pipeline architecture pass** — queuing, string composition, and buffers restructured so precedence collisions (the Zephyr class) are impossible by construction: transitions immediate, precedence windows as explicit hold-and-flush. The locality hold is the first instance; audit when the collision classes have accumulated enough shape.
