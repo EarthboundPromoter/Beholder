@@ -41,10 +41,9 @@ namespace SkaldAccessibility.Patches
             && Seams.PopUpUIBase_getControllerScrollableUICanvas != null
             && Seams.PopUpUIBase_setControllerScrollableUICanvas != null
             && Seams.PopUpUIBase_setMouseToSelectedButton != null
-            && Seams.UICanvas_canControllerScrollUp != null
-            && Seams.UICanvas_canControllerScrollDown != null
-            && Seams.UICanvas_incrementCurrentSelectedButton != null
-            && Seams.UICanvas_decrementCurrentSelectedButton != null;
+            && Seams.UICanvas_getCurrentSelectedButtonIndex != null
+            && Seams.UICanvas_setCurrentSelectedButton != null
+            && Seams.UICanvas_getScrollableElements != null;
 
         [HarmonyPatch]
         public static class LootRotateAboveHook
@@ -81,8 +80,16 @@ namespace SkaldAccessibility.Patches
             static bool Prefix(object __instance) => !Rotate(__instance, up: false);
         }
 
-        /// <summary>The spell selector's rotation, replayed on the loot popup's
-        /// UI. Returns true when handled (native call skipped).</summary>
+        /// <summary>One linear ribbon: [grid cells…] then [buttons]. All four
+        /// directions in the base popup are the same two calls (sideways
+        /// aliases Above/Below, PopUpBase.cs:64-72), so a single cursor is
+        /// the honest model: decrement walks buttons→grid→cell 1, increment
+        /// walks the other way, edges speak. Index writes go through the
+        /// game's own setter (deterministic — the native hover-walk stalls
+        /// whenever the tooltip or a stray pixel steals hover; the first
+        /// build's canScrollUp guard was true almost always on a button row,
+        /// so the rotation never fired — owner ride 2026-08-17).
+        /// Returns true when handled (native call skipped).</summary>
         private static bool Rotate(object uiElements, bool up)
         {
             try
@@ -91,28 +98,62 @@ namespace SkaldAccessibility.Patches
                     return false; // every other popup keeps its native behavior
 
                 object canvas = Seams.PopUpUIBase_getControllerScrollableUICanvas.Invoke(uiElements, null);
-                if (canvas == null) return false;
+                object grid = Seams.PopUpUI_grid.GetValue(uiElements);
+                object buttons = Seams.PopUpUIBase_buttons.GetValue(uiElements);
+                if (canvas == null || grid == null || buttons == null) return false;
+
+                bool onGrid = ReferenceEquals(canvas, grid);
+                int index = (int)Seams.UICanvas_getCurrentSelectedButtonIndex.Invoke(canvas, null);
+                int count = CountOf(canvas);
 
                 if (up)
                 {
-                    if ((bool)Seams.UICanvas_canControllerScrollUp.Invoke(canvas, null))
-                        Seams.UICanvas_decrementCurrentSelectedButton.Invoke(canvas, null);
-                    else
-                        Seams.PopUpUIBase_setControllerScrollableUICanvas.Invoke(uiElements,
-                            new[] { Seams.PopUpUI_grid.GetValue(uiElements) });
+                    if (index > 0)
+                    {
+                        Seams.UICanvas_setCurrentSelectedButton.Invoke(canvas, new object[] { index - 1 });
+                    }
+                    else if (!onGrid)
+                    {
+                        int cells = CountOf(grid);
+                        if (cells > 0)
+                        {
+                            Seams.PopUpUIBase_setControllerScrollableUICanvas.Invoke(uiElements, new[] { grid });
+                            Seams.UICanvas_setCurrentSelectedButton.Invoke(grid, new object[] { cells - 1 });
+                        }
+                        else Scaffold.SpeechService.Say("Top of list.", "Nav");
+                    }
+                    else Scaffold.SpeechService.Say("Top of list.", "Nav");
                 }
                 else
                 {
-                    if ((bool)Seams.UICanvas_canControllerScrollDown.Invoke(canvas, null))
-                        Seams.UICanvas_incrementCurrentSelectedButton.Invoke(canvas, null);
-                    else
-                        Seams.PopUpUIBase_setControllerScrollableUICanvas.Invoke(uiElements,
-                            new[] { Seams.PopUpUIBase_buttons.GetValue(uiElements) });
+                    if (index < count - 1)
+                    {
+                        Seams.UICanvas_setCurrentSelectedButton.Invoke(canvas, new object[] { index + 1 });
+                    }
+                    else if (onGrid)
+                    {
+                        Seams.PopUpUIBase_setControllerScrollableUICanvas.Invoke(uiElements, new[] { buttons });
+                        int bIndex = (int)Seams.UICanvas_getCurrentSelectedButtonIndex.Invoke(buttons, null);
+                        if (bIndex < 0)
+                            Seams.UICanvas_setCurrentSelectedButton.Invoke(buttons, new object[] { 0 });
+                    }
+                    else Scaffold.SpeechService.Say("Bottom of list.", "Nav");
                 }
                 Seams.PopUpUIBase_setMouseToSelectedButton.Invoke(uiElements, null);
                 return true;
             }
             catch { return false; }
+        }
+
+        private static int CountOf(object canvas)
+        {
+            try
+            {
+                var elements = Seams.UICanvas_getScrollableElements.Invoke(canvas, null)
+                    as System.Collections.ICollection;
+                return elements?.Count ?? 0;
+            }
+            catch { return 0; }
         }
 
         // ---- Tooltip discipline (WP11 class, popup edition — owner ride
