@@ -392,6 +392,12 @@ namespace SkaldAccessibility
         internal static Type UIInventorySheetBaseType;
         internal static FieldInfo InvSheet_currentControllerSurface;
         internal static FieldInfo InvSheet_mainInventoryGrid;
+        // Hover join (owner direction 2026-08-17): the hovered cell is the
+        // inventory surface's focus truth.
+        internal static FieldInfo InvSegment_grid;
+        internal static MethodInfo InvSegment_update;
+        internal static MethodInfo UIGridBase_getScrollableElementColumn;
+        internal static MethodInfo UIElement_getHover;
 
         // ---- Mouse guard + attribute-editor flip join (owner rulings
         //      2026-08-17: latch snaps against jitter; speak the flip side) ----
@@ -757,6 +763,10 @@ namespace SkaldAccessibility
             UIInventorySheetBaseType = T("UIInventorySheetBase");
             InvSheet_currentControllerSurface = F(UIInventorySheetBaseType, "UIInventorySheetBase", "currentControllerSurface");
             InvSheet_mainInventoryGrid = F(UIInventorySheetBaseType, "UIInventorySheetBase", "mainInventoryGrid");
+            InvSegment_grid = F(InventorySegmentType, "UIGridCharacterInventorySegment", "grid");
+            InvSegment_update = M(InventorySegmentType, "UIGridCharacterInventorySegment", "update");
+            UIGridBase_getScrollableElementColumn = M(T("UIGridBase"), "UIGridBase", "getScrollableElementColumn");
+            UIElement_getHover = M(T("UIElement"), "UIElement", "getHover");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

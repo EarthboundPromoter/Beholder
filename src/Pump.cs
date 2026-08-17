@@ -100,6 +100,14 @@ namespace SkaldAccessibility
         //      sheet instance — the drain reads its entry flag at the clock) ----
         private static object _pendingEditorFlip;
 
+        // ---- Inventory hover stream (noted by InventoryHoverPatch during the
+        //      segment's own update pass; the hovered cell is the surface's
+        //      focus truth — owner direction 2026-08-17) ----
+        private static object _pendingInvHoverSegment;
+        private static int _pendingInvHoverRow = -1, _pendingInvHoverCol = -1;
+        private static object _invHoverSegment;   // drain-side diff record
+        private static int _invHoverRow = -1, _invHoverCol = -1;
+
         // ---- List-edge stream (noted by the B4 edge observer; latest wins) ----
         private static object _pendingEdgeList;
         private static string _pendingEdgePreLine;
@@ -314,6 +322,17 @@ namespace SkaldAccessibility
         /// row cursor (A/D sideways). The drain reads the settled flag.</summary>
         public static void NoteEditorFlip(object sheet) => _pendingEditorFlip = sheet;
 
+        /// <summary>Note-only: the virtual cursor sits on an inventory cell
+        /// (found during the segment's own update). Latest wins; only noted
+        /// when a hovered cell exists, so an idle segment never clobbers
+        /// another's hover.</summary>
+        public static void NoteInventoryHover(object segment, int row, int col)
+        {
+            _pendingInvHoverSegment = segment;
+            _pendingInvHoverRow = row;
+            _pendingInvHoverCol = col;
+        }
+
         /// <summary>Called from Plugin.LateUpdate. Drain order encodes precedence
         /// (state → popup → content → selection → slider → combat batch → barks);
         /// SpeechService.Tick runs last so anything drained this frame can still
@@ -341,6 +360,9 @@ namespace SkaldAccessibility
 
             try { DrainSelection(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:sel] {ex.Message}"); }
+
+            try { DrainInventoryHover(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:invhover] {ex.Message}"); }
 
             try { DrainEdge(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:edge] {ex.Message}"); }
@@ -598,6 +620,32 @@ namespace SkaldAccessibility
             else Scaffold.SpeechService.Say($"Selected: {name}.", "Nav");
         }
 
+        /// <summary>Speak the item under the hovered inventory cell on change
+        /// — the hovered cell is the surface's focus truth (mouse and keyboard
+        /// snaps both land here). Arrival observations queue per the entry
+        /// discipline; stamped player-nav frames interrupt.</summary>
+        private static void DrainInventoryHover()
+        {
+            object segment = _pendingInvHoverSegment;
+            if (segment == null) return;
+            int row = _pendingInvHoverRow, col = _pendingInvHoverCol;
+            _pendingInvHoverSegment = null;
+            _pendingInvHoverRow = _pendingInvHoverCol = -1;
+
+            if (ReferenceEquals(segment, _invHoverSegment)
+                && row == _invHoverRow && col == _invHoverCol) return;
+            _invHoverSegment = segment;
+            _invHoverRow = row;
+            _invHoverCol = col;
+
+            string text = ComposeInventoryCellAt(segment, row, col);
+            if (text == null) return;
+            bool arrival = _spokenCanvases.Add(segment);
+            if (arrival && _playerNavFrame != Time.frameCount)
+                Scaffold.SpeechService.SayQueued(text, "Nav");
+            else Scaffold.SpeechService.Say(text, "Nav");
+        }
+
         /// <summary>Speak which arrow column the attribute editor's row cursor
         /// flipped onto — "Plus." / "Minus." ONLY, never the row body (owner
         /// ruling 2026-08-17) — read from the game's own
@@ -775,6 +823,19 @@ namespace SkaldAccessibility
                         || (Seams.UIInventorySheetBaseType != null && Seams.UIInventorySheetBaseType.IsInstanceOfType(control)));
                 if (!elementMoved) return;
             }
+            // The hover join owns inventory-sheet cell speech: a W/S or A/D
+            // snap produces BOTH a funnel note and a hover note in the same
+            // frame — the hover names the cell the cursor actually landed on,
+            // the funnel only its own belief. Align records, yield the voice.
+            if (_pendingInvHoverSegment != null && Seams.UIInventorySheetBaseType != null
+                && Seams.UIInventorySheetBaseType.IsInstanceOfType(control))
+            {
+                _selControl = control;
+                _selIndex = index;
+                _selElement = element;
+                return;
+            }
+
             _selControl = control;
             _selIndex = index;
             _selElement = element;
@@ -1248,8 +1309,22 @@ namespace SkaldAccessibility
         {
             try
             {
+                if (Seams.InvSegment_column == null) return null;
+                return ComposeInventoryCellAt(segment, row,
+                    (int)Seams.InvSegment_column.GetValue(segment));
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Same map with an explicit column — the hover join names
+        /// the cell the cursor actually sits on, independent of the funnel's
+        /// column field.</summary>
+        internal static string ComposeInventoryCellAt(object segment, int row, int column)
+        {
+            try
+            {
                 if (Seams.InvSegment_inventory == null || Seams.Inventory_getListByType == null
-                    || Seams.InvSegment_gridWidth == null || Seams.InvSegment_column == null
+                    || Seams.InvSegment_gridWidth == null
                     || Seams.InvSegment_offsetIndex == null) return null;
 
                 object inventory = Seams.InvSegment_inventory.GetValue(segment);
@@ -1261,7 +1336,6 @@ namespace SkaldAccessibility
                 if (items == null) return null;
 
                 int width = (int)Seams.InvSegment_gridWidth.GetValue(segment);
-                int column = (int)Seams.InvSegment_column.GetValue(segment);
                 int offset = (int)Seams.InvSegment_offsetIndex.GetValue(segment);
                 int itemIndex = offset + row * width + column;
 
@@ -1528,6 +1602,8 @@ namespace SkaldAccessibility
             _stripSeenSinceState = false;
             _spokenCanvases.Clear();       // every canvas's next focus line is an
             _spokenListSelections.Clear(); // arrival observation in the new state
+            _invHoverSegment = null;       // hover records die with the screen
+            _invHoverRow = _invHoverCol = -1;
             GameStateTracker.OnStateChanged(name, state);
         }
 
