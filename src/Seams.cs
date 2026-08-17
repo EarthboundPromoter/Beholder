@@ -209,6 +209,93 @@ namespace SkaldAccessibility
             "getDownUpKey", "getDownDownKey", "getDownLeftKey", "getDownRightKey",
         };
 
+        // ---- Overland cursor (WP11) ----
+        internal static Type MainControlType;
+        internal static Type DataControlType;
+        internal static Type MapType;
+        internal static Type MapTileType;
+        internal static Type MapTileGridType;
+        internal static Type MapIllustratorType;
+        internal static Type ScrollControlType;            // MapIllustrator+ScrollControl
+        internal static Type PartyType;
+        internal static Type NavigationCourseType;
+        internal static Type SKALDKeyBindingsType;
+        internal static Type InventoryType;
+        internal static MethodInfo MainControl_getDataControl;
+        internal static FieldInfo DataControl_currentMap;
+        internal static MethodInfo Map_getMouseTile;
+        internal static MethodInfo Map_isScrollReady;
+        internal static MethodInfo Map_getTile;
+        internal static MethodInfo Map_isTileValid;
+        internal static MethodInfo Map_getXPos;
+        internal static MethodInfo Map_getYPos;
+        internal static MethodInfo Map_getViewportX;
+        internal static MethodInfo Map_getViewportY;
+        internal static MethodInfo Map_findPathToMouseTile;
+        internal static FieldInfo Map_playerParty;
+        internal static FieldInfo Map_tileGrid;
+        internal static FieldInfo Map_mapIllustrator;
+        internal static FieldInfo Map_viewDistance;
+        internal static FieldInfo Map_northernEdgeMapId;
+        internal static FieldInfo Map_easternEdgeMapId;
+        internal static FieldInfo Map_westernEdgeMapId;
+        internal static FieldInfo Map_southernEdgeMapId;
+        internal static MethodInfo MapTileGrid_testLineOfSight;
+        internal static FieldInfo MapIllustrator_scrollControl;
+        internal static FieldInfo ScrollControl_scrollX;
+        internal static FieldInfo ScrollControl_scrollY;
+        internal static MethodInfo MapTile_getLiveCharacter;
+        internal static MethodInfo MapTile_getPropOrGuestProp;
+        internal static MethodInfo MapTile_isSpotted;
+        internal static MethodInfo MapTile_isIlluminated;
+        internal static MethodInfo MapTile_isConcealment;
+        internal static MethodInfo MapTile_isPassable;
+        internal static MethodInfo MapTile_isWater;
+        internal static MethodInfo MapTile_isVoidTile;
+        internal static MethodInfo MapTile_getNestedMapId;
+        internal static MethodInfo MapTile_getInventory;
+        internal static MethodInfo MapTile_getVehicle;
+        internal static MethodInfo MapTile_hasVehicle;
+        internal static MethodInfo MapTile_getDeadParty;
+        internal static MethodInfo MapTile_getInspectDescription;
+        internal static MethodInfo MapTile_getVerb;
+        internal static MethodInfo MapTile_getTileX;
+        internal static MethodInfo MapTile_getTileY;
+        internal static MethodInfo SkaldBaseObject_getName;
+        internal static MethodInfo SkaldWorldObject_getTileX;
+        internal static MethodInfo SkaldWorldObject_getTileY;
+        internal static MethodInfo SkaldWorldObject_getContainerMapId;
+        internal static MethodInfo Inventory_isEmpty;
+        internal static MethodInfo Party_getObjectList;
+        internal static MethodInfo Party_setNavigationCourse;
+        internal static MethodInfo Party_clearNavigationCourse;
+        internal static MethodInfo Party_navigationCourseHasNodes;
+        internal static MethodInfo NavigationCourse_getLength;
+        internal static MethodInfo Character_isHostile;
+        internal static MethodInfo Character_isPC;
+        internal static MethodInfo Character_isSpotted;
+        internal static MethodInfo Prop_isHidden;
+        internal static MethodInfo Prop_shouldNotBeDrawn;
+        internal static MethodInfo SkaldIO_setVirtualMousePosition;
+        internal static MethodInfo ToolTipPrinter_clearToolTip;
+        internal static MethodInfo ToolTipPrinter_hasToolTip;
+        internal static MethodInfo OverlandState_setMouseInput;
+        internal static MethodInfo KeyBindings_getUpAltKey;
+        internal static MethodInfo KeyBindings_getDownAltKey;
+        internal static MethodInfo KeyBindings_getLeftAltKey;
+        internal static MethodInfo KeyBindings_getRightAltKey;
+
+        // Prop classification types (WP11 scan categories)
+        internal static Type PropType;
+        internal static Type PropDoorType;
+        internal static Type PropContType;
+        internal static Type PropWarpType;
+        internal static Type PropPickupType;
+        internal static Type PropDecorativeType;
+        internal static Type PropBeaconType;
+        internal static Type PropSpawnerType;
+        internal static Type PropTriggerType;
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -382,6 +469,94 @@ namespace SkaldAccessibility
             CombatSelectorGrid_textBlock = F(UICombatSelectorGridType, "UICombatAbilitySelectorGrid", "textBlock");
             foreach (string name in MovementReaderNames)
                 MovementReaders[name] = M(SkaldIOType, "SkaldIO", name);
+
+            // Overland cursor (WP11)
+            MainControlType = T("MainControl");
+            DataControlType = T("DataControl");
+            MapType = T("Map");
+            MapTileType = T("MapTile");
+            MapTileGridType = T("MapTileGrid");
+            MapIllustratorType = T("MapIllustrator");
+            ScrollControlType = T("MapIllustrator+ScrollControl");
+            PartyType = T("Party");
+            NavigationCourseType = T("NavigationCourse");
+            SKALDKeyBindingsType = T("SKALDKeyBindings");
+            InventoryType = T("Inventory");
+            MainControl_getDataControl = M(MainControlType, "MainControl", "getDataControl");
+            DataControl_currentMap = F(DataControlType, "DataControl", "currentMap");
+            Map_getMouseTile = M(MapType, "Map", "getMouseTile");
+            Map_isScrollReady = M(MapType, "Map", "isScrollReady");
+            Map_getTile = M(MapType, "Map", "getTile", new[] { typeof(int), typeof(int) });
+            Map_isTileValid = M(MapType, "Map", "isTileValid", new[] { typeof(int), typeof(int) });
+            Map_getXPos = M(MapType, "Map", "getXPos");
+            Map_getYPos = M(MapType, "Map", "getYPos");
+            Map_getViewportX = M(MapType, "Map", "getViewportX");
+            Map_getViewportY = M(MapType, "Map", "getViewportY");
+            Map_findPathToMouseTile = M(MapType, "Map", "findPathToMouseTile");
+            Map_playerParty = F(MapType, "Map", "playerParty");
+            Map_tileGrid = F(MapType, "Map", "tileGrid");
+            Map_mapIllustrator = F(MapType, "Map", "mapIllustrator");
+            Map_viewDistance = F(MapType, "Map", "viewDistance");
+            Map_northernEdgeMapId = F(MapType, "Map", "northernEdgeMapId");
+            Map_easternEdgeMapId = F(MapType, "Map", "easternEdgeMapId");
+            Map_westernEdgeMapId = F(MapType, "Map", "westernEdgeMapId");
+            Map_southernEdgeMapId = F(MapType, "Map", "southernEdgeMapId");
+            MapTileGrid_testLineOfSight = M(MapTileGridType, "MapTileGrid", "testLineOfSight",
+                new[] { typeof(int), typeof(int), typeof(int), typeof(int) });
+            MapIllustrator_scrollControl = F(MapIllustratorType, "MapIllustrator", "scrollControl");
+            ScrollControl_scrollX = F(ScrollControlType, "ScrollControl", "scrollX");
+            ScrollControl_scrollY = F(ScrollControlType, "ScrollControl", "scrollY");
+            MapTile_getLiveCharacter = M(MapTileType, "MapTile", "getLiveCharacter");
+            MapTile_getPropOrGuestProp = M(MapTileType, "MapTile", "getPropOrGuestProp");
+            MapTile_isSpotted = M(MapTileType, "MapTile", "isSpotted");
+            MapTile_isIlluminated = M(MapTileType, "MapTile", "isIlluminated");
+            MapTile_isConcealment = M(MapTileType, "MapTile", "isConcealment");
+            MapTile_isPassable = M(MapTileType, "MapTile", "isPassable");
+            MapTile_isWater = M(MapTileType, "MapTile", "isWater");
+            MapTile_isVoidTile = M(MapTileType, "MapTile", "isVoidTile");
+            MapTile_getNestedMapId = M(MapTileType, "MapTile", "getNestedMapId");
+            MapTile_getInventory = M(MapTileType, "MapTile", "getInventory");
+            MapTile_getVehicle = M(MapTileType, "MapTile", "getVehicle");
+            MapTile_hasVehicle = M(MapTileType, "MapTile", "hasVehicle");
+            MapTile_getDeadParty = M(MapTileType, "MapTile", "getDeadParty");
+            MapTile_getInspectDescription = M(MapTileType, "MapTile", "getInspectDescription");
+            MapTile_getVerb = M(MapTileType, "MapTile", "getVerb");
+            MapTile_getTileX = M(MapTileType, "MapTile", "getTileX");
+            MapTile_getTileY = M(MapTileType, "MapTile", "getTileY");
+            SkaldBaseObject_getName = M(SkaldBaseObjectType, "SkaldBaseObject", "getName");
+            var worldObjectType = T("SkaldWorldObject");
+            SkaldWorldObject_getTileX = M(worldObjectType, "SkaldWorldObject", "getTileX");
+            SkaldWorldObject_getTileY = M(worldObjectType, "SkaldWorldObject", "getTileY");
+            SkaldWorldObject_getContainerMapId = M(worldObjectType, "SkaldWorldObject", "getContainerMapId");
+            Inventory_isEmpty = M(InventoryType, "Inventory", "isEmpty");
+            Party_getObjectList = M(PartyType, "Party", "getObjectList");
+            Party_setNavigationCourse = M(PartyType, "Party", "setNavigationCourse");
+            Party_clearNavigationCourse = M(PartyType, "Party", "clearNavigationCourse");
+            Party_navigationCourseHasNodes = M(PartyType, "Party", "navigationCourseHasNodes");
+            NavigationCourse_getLength = M(NavigationCourseType, "NavigationCourse", "getLength");
+            Character_isHostile = M(CharacterType, "Character", "isHostile");
+            Character_isPC = M(CharacterType, "Character", "isPC");
+            Character_isSpotted = M(CharacterType, "Character", "isSpotted");
+            PropType = T("Prop");
+            Prop_isHidden = M(PropType, "Prop", "isHidden");
+            Prop_shouldNotBeDrawn = M(PropType, "Prop", "shouldNotBeDrawn");
+            SkaldIO_setVirtualMousePosition = M(SkaldIOType, "SkaldIO", "setVirtualMousePosition",
+                new[] { typeof(int), typeof(int) });
+            ToolTipPrinter_clearToolTip = M(ToolTipPrinterType, "ToolTipPrinter", "clearToolTip");
+            ToolTipPrinter_hasToolTip = M(ToolTipPrinterType, "ToolTipPrinter", "hasToolTip");
+            OverlandState_setMouseInput = M(OverlandStateType, "OverlandState", "setMouseInput");
+            KeyBindings_getUpAltKey = M(SKALDKeyBindingsType, "SKALDKeyBindings", "getUpAltKey");
+            KeyBindings_getDownAltKey = M(SKALDKeyBindingsType, "SKALDKeyBindings", "getDownAltKey");
+            KeyBindings_getLeftAltKey = M(SKALDKeyBindingsType, "SKALDKeyBindings", "getLeftAltKey");
+            KeyBindings_getRightAltKey = M(SKALDKeyBindingsType, "SKALDKeyBindings", "getRightAltKey");
+            PropDoorType = T("PropDoor");
+            PropContType = T("PropCont");
+            PropWarpType = T("PropWarp");
+            PropPickupType = T("PropPickup");
+            PropDecorativeType = T("PropDecorative");
+            PropBeaconType = T("PropBeacon");
+            PropSpawnerType = T("PropSpawner");
+            PropTriggerType = T("PropTrigger");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

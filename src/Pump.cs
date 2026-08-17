@@ -61,6 +61,9 @@ namespace SkaldAccessibility
         // ---- Canvas-switch stream (noted by CanvasSwitchPatch; latest wins) ----
         private static object _pendingCanvasSwitch;
 
+        // ---- Travel stream (noted by the WP11 course joins; latest wins) ----
+        private static string _pendingTravel;
+
         // ---- List-selection stream (noted by ListSelectionPatch; latest wins) ----
         private static object _pendingListSelection;
         private static object _lastSelList;   // drain-side diff record: which list
@@ -175,6 +178,11 @@ namespace SkaldAccessibility
         /// (zone crossing — no index write involved).</summary>
         public static void NoteCanvasSwitch(object canvas) => _pendingCanvasSwitch = canvas;
 
+        /// <summary>Note-only: a travel event line from the WP11 course joins
+        /// ("Walking, N steps." / "Stopped." / "No path."). Latest wins — a
+        /// clear-then-set in one frame (re-route) speaks only the new walk.</summary>
+        public static void NoteTravel(string line) => _pendingTravel = line;
+
         /// <summary>Called from Plugin.LateUpdate. Drain order encodes precedence
         /// (state → popup → content → selection → slider → combat batch → barks);
         /// SpeechService.Tick runs last so anything drained this frame can still
@@ -210,6 +218,9 @@ namespace SkaldAccessibility
 
             try { DrainListSelection(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:listsel] {ex.Message}"); }
+
+            try { DrainTravel(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:travel] {ex.Message}"); }
 
             try { DrainCombatLog(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:combat] {ex.Message}"); }
@@ -592,6 +603,14 @@ namespace SkaldAccessibility
             return _yellowTag.Length == 0 ? null : _yellowTag;
         }
 
+        private static void DrainTravel()
+        {
+            string line = _pendingTravel;
+            if (line == null) return;
+            _pendingTravel = null;
+            Scaffold.SpeechService.SayQueued(line, "Nav");
+        }
+
         private static void DrainState()
         {
             object state = CurrentStateObject();
@@ -599,7 +618,8 @@ namespace SkaldAccessibility
             string name = state.GetType().Name;
             if (name == _lastStateName) return;
             _lastStateName = name;
-            ReviewLayer.OnStateTransition(); // review never survives a state change
+            ReviewLayer.OnStateTransition();    // review never survives a state change
+            OverlandCursor.OnStateTransition(); // neither does the cursor or its list
             GameStateTracker.OnStateChanged(name, state);
         }
 

@@ -120,6 +120,10 @@ namespace SkaldAccessibility.Patches
                 // so they belong to this deferred batch like every SkaldIO
                 // patch (frame-0 detours force the cctor — the boot-kill).
                 GridNavigationPatch.ApplyMovementSuppression(harmony);
+
+                // (7) Overland cursor patches (WP11) — game-type detours, so
+                // deferred like everything else here.
+                OverlandCursorPatches.Apply(harmony);
             }
             catch (Exception ex)
             {
@@ -135,12 +139,15 @@ namespace SkaldAccessibility.Patches
 
         static void Postfix_SwallowKey(UnityEngine.KeyCode __0, ref bool __result)
         {
-            if (__result && ReviewLayer.ShouldSwallowKey(__0)) __result = false;
+            if (__result && (ReviewLayer.ShouldSwallowKey(__0) || OverlandCursor.ShouldSwallowKey(__0)))
+                __result = false;
         }
 
         static void Postfix_SwallowEscape(ref bool __result)
         {
-            if (__result && ReviewLayer.ShouldSwallowKey(UnityEngine.KeyCode.Escape)) __result = false;
+            if (__result && (ReviewLayer.ShouldSwallowKey(UnityEngine.KeyCode.Escape)
+                || OverlandCursor.ShouldSwallowKey(UnityEngine.KeyCode.Escape)))
+                __result = false;
         }
 
         /// <summary>Above = decrement; the game's own canControllerScrollDown

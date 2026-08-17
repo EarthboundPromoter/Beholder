@@ -42,6 +42,13 @@ namespace SkaldAccessibility
             // funnel calls. No-op when no grid is live.
             Patches.GridNavigationPatch.Tick();
 
+            // Overland cursor (WP11): arrows nudge, scan keys jump, K opens
+            // the catalog list. Consumed presses stop here. The latch tick
+            // runs regardless (re-asserts the virtual mouse each frame).
+            bool cursorConsumed = OverlandCursor.ProcessInput();
+            OverlandCursor.Tick();
+            if (cursorConsumed) return;
+
             // Repeat last speech: F1
             if (Input.GetKeyDown(KeyCode.F1))
             {
