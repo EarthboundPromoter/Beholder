@@ -371,6 +371,16 @@ namespace SkaldAccessibility
         internal static FieldInfo AbilitySheet_passiveList;
         internal static FieldInfo BaseCharacterSheet_leftColumn;
 
+        // ---- Character-inventory grid segments (owner ride 2026-08-17:
+        //      cells navigated but composed blank; columns moved silently) ----
+        internal static Type InventorySegmentType;   // UIInventorySheetBase+UIGridCharacterInventorySegment
+        internal static FieldInfo InvSegment_inventory;
+        internal static FieldInfo InvSegment_itemTypes;
+        internal static FieldInfo InvSegment_gridWidth;
+        internal static FieldInfo InvSegment_column;
+        internal static FieldInfo InvSegment_offsetIndex;
+        internal static MethodInfo Inventory_getListByType;
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -699,6 +709,15 @@ namespace SkaldAccessibility
             AbilitySheet_triggeredList = F(UIAbilitySheetType, "UIAbilitySheet", "triggeredAbilityList");
             AbilitySheet_passiveList = F(UIAbilitySheetType, "UIAbilitySheet", "passiveAbilityList");
             BaseCharacterSheet_leftColumn = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "leftColumn");
+
+            // Character-inventory grid segments
+            InventorySegmentType = T("UIInventorySheetBase+UIGridCharacterInventorySegment");
+            InvSegment_inventory = F(InventorySegmentType, "UIGridCharacterInventorySegment", "inventory");
+            InvSegment_itemTypes = F(InventorySegmentType, "UIGridCharacterInventorySegment", "itemTypes");
+            InvSegment_gridWidth = F(InventorySegmentType, "UIGridCharacterInventorySegment", "gridWidth");
+            InvSegment_column = F(InventorySegmentType, "UIGridCharacterInventorySegment", "controllerSelectColumn");
+            InvSegment_offsetIndex = F(InventorySegmentType, "UIGridCharacterInventorySegment", "offsetIndex");
+            Inventory_getListByType = M(InventoryType, "Inventory", "getListByType");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

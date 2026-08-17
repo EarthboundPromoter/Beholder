@@ -547,18 +547,19 @@ namespace SkaldAccessibility
 
             if (ReferenceEquals(control, _selControl) && index == _selIndex)
             {
-                // Feat-tree lateral moves land on index 0 of a DIFFERENT column
-                // or tree (clearCurrentSelectedButton is a write of 0,
-                // UIFeatTree.cs:447-457) — same (control, index) key, changed
-                // element. The escape is scoped to feat nodes: their Node
-                // objects are stable per tree build, so identity is a safe
-                // diff there; a blanket element-identity key could re-speak
-                // per frame on surfaces that rebuild their element lists.
-                bool featMoved = element != null
-                    && Seams.FeatNodeType != null
-                    && Seams.FeatNodeType.IsInstanceOfType(element)
-                    && !ReferenceEquals(element, _selElement);
-                if (!featMoved) return;
+                // Same-(control,index) writes that land on a DIFFERENT element:
+                // feat-tree laterals (a column/tree cursor moves, then index is
+                // rewritten 0 — UIFeatTree.cs:447-457) and inventory-segment
+                // column moves (the column cursor changes which cell each row
+                // index means). The escape is scoped to surfaces whose element
+                // objects are verified stable — a blanket element-identity key
+                // could re-speak per frame on surfaces that rebuild their
+                // element lists.
+                bool elementMoved = element != null
+                    && !ReferenceEquals(element, _selElement)
+                    && ((Seams.FeatNodeType != null && Seams.FeatNodeType.IsInstanceOfType(element))
+                        || (Seams.InventorySegmentType != null && Seams.InventorySegmentType.IsInstanceOfType(control)));
+                if (!elementMoved) return;
             }
             _selControl = control;
             _selIndex = index;
@@ -612,6 +613,12 @@ namespace SkaldAccessibility
             // order — name from the popup's own item list, read-only.
             if (Seams.UIGridInventoryType != null && Seams.UIGridInventoryType.IsInstanceOfType(control))
                 return ComposeLootCell(control, index);
+
+            // Character-inventory segment cells (2026-08-17): the selection
+            // index is a ROW at the segment's current column — map onto the
+            // inventory's own filtered list.
+            if (Seams.InventorySegmentType != null && Seams.InventorySegmentType.IsInstanceOfType(control))
+                return ComposeInventoryCell(control, index);
 
             int count = -1;
             string text = null;
@@ -946,6 +953,44 @@ namespace SkaldAccessibility
                 object parentFeat = Seams.FeatNode_feat.GetValue(dict[prereqId]);
                 string name = parentFeat != null ? Seams.Feat_getName.Invoke(parentFeat, null) as string : null;
                 return string.IsNullOrWhiteSpace(name) ? null : Patches.TextCleaner.CleanText(name);
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Inventory-segment cell: item index = page offset +
+        /// row * gridWidth + column over the same type-filtered list the
+        /// segment renders from (UIInventorySheetBase.cs:113-137). Speaks
+        /// name-and-amount with the item's position among the segment's
+        /// items; a cell past the list's end is honestly empty.</summary>
+        private static string ComposeInventoryCell(object segment, int row)
+        {
+            try
+            {
+                if (Seams.InvSegment_inventory == null || Seams.Inventory_getListByType == null
+                    || Seams.InvSegment_gridWidth == null || Seams.InvSegment_column == null
+                    || Seams.InvSegment_offsetIndex == null) return null;
+
+                object inventory = Seams.InvSegment_inventory.GetValue(segment);
+                object itemTypes = Seams.InvSegment_itemTypes?.GetValue(segment);
+                if (inventory == null || itemTypes == null) return null;
+
+                var items = Seams.Inventory_getListByType.Invoke(inventory, new[] { itemTypes, (object)false })
+                    as System.Collections.IList;
+                if (items == null) return null;
+
+                int width = (int)Seams.InvSegment_gridWidth.GetValue(segment);
+                int column = (int)Seams.InvSegment_column.GetValue(segment);
+                int offset = (int)Seams.InvSegment_offsetIndex.GetValue(segment);
+                int itemIndex = offset + row * width + column;
+
+                if (itemIndex < 0 || itemIndex >= items.Count) return "Empty.";
+
+                string raw = Seams.Item_getNameAndAmount != null
+                    ? Seams.Item_getNameAndAmount.Invoke(items[itemIndex], null) as string
+                    : Seams.SkaldBaseObject_getName?.Invoke(items[itemIndex], null) as string;
+                string name = string.IsNullOrWhiteSpace(raw) ? null : Patches.TextCleaner.CleanText(raw);
+                if (name == null) return "Empty.";
+                return items.Count > 1 ? $"{name}, {itemIndex + 1} of {items.Count}" : name;
             }
             catch { return null; }
         }
