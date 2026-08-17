@@ -190,29 +190,39 @@ namespace SkaldAccessibility.Patches
         static void Postfix_RightTriggerHeld(ref bool __result) { if (!__result && !TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKey(KeyCode.X)) __result = true; }
         static void Postfix_RightTriggerUp(ref bool __result) { if (!__result && !TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKeyUp(KeyCode.X)) __result = true; }
 
+        // The stick postfixes also carry the player-nav stamp (owner ruling
+        // 2026-08-17): a direction read answering true IS the player
+        // navigating — real key, stick, or bridge drive. The stamp lives HERE,
+        // on the already-detoured inner accessors, because detouring the
+        // one-line SkaldIO wrappers instead broke the keyboard outright:
+        // Harmony's stub for a patched wrapper is a fresh JIT that inlines the
+        // inner's PRISTINE IL, bypassing these postfixes (a8de251-class Mono
+        // lesson, second occurrence — owner-caught regression, same day).
+        // Confirms deliberately never stamp: they mount surfaces whose
+        // same-frame init writes must stay queued behind the entry read.
         static void Postfix_StickUpPressed(ref bool __result)
         {
-            if (__result) return;
-            if (Emulate(KeyCode.W) || Time.frameCount == SkaldIOPatches.InjectUpFrame) __result = true;
+            if (!__result && (Emulate(KeyCode.W) || Time.frameCount == SkaldIOPatches.InjectUpFrame)) __result = true;
+            if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickDownPressed(ref bool __result)
         {
-            if (__result) return;
-            if (Emulate(KeyCode.S) || Time.frameCount == SkaldIOPatches.InjectDownFrame) __result = true;
+            if (!__result && (Emulate(KeyCode.S) || Time.frameCount == SkaldIOPatches.InjectDownFrame)) __result = true;
+            if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickLeftPressed(ref bool __result)
         {
-            if (__result) return;
-            if (Emulate(KeyCode.A) || Time.frameCount == SkaldIOPatches.InjectLeftFrame) __result = true;
+            if (!__result && (Emulate(KeyCode.A) || Time.frameCount == SkaldIOPatches.InjectLeftFrame)) __result = true;
+            if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickRightPressed(ref bool __result)
         {
-            if (__result) return;
-            if (Emulate(KeyCode.D) || Time.frameCount == SkaldIOPatches.InjectRightFrame) __result = true;
+            if (!__result && (Emulate(KeyCode.D) || Time.frameCount == SkaldIOPatches.InjectRightFrame)) __result = true;
+            if (__result) Pump.NotePlayerNav();
         }
-        static void Postfix_StickUpHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.W)) __result = true; }
-        static void Postfix_StickDownHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.S)) __result = true; }
-        static void Postfix_StickLeftHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.A)) __result = true; }
-        static void Postfix_StickRightHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.D)) __result = true; }
+        static void Postfix_StickUpHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.W)) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickDownHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.S)) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickLeftHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.A)) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickRightHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.D)) __result = true; if (__result) Pump.NotePlayerNav(); }
     }
 }
