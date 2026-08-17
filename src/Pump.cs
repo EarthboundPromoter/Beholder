@@ -1,6 +1,4 @@
 using System;
-using System.Reflection;
-using HarmonyLib;
 using UnityEngine;
 
 namespace SkaldAccessibility
@@ -20,22 +18,16 @@ namespace SkaldAccessibility
     /// </summary>
     public static class Pump
     {
+        // All game reflection handles live in the WP8 Seams registry.
+
         // ---- State stream (noted by StateChangePatch; latest wins) ----
         private static object _stateControl;
-        private static FieldInfo _currentStateField;
         private static string _lastStateName;
 
         // ---- Selection stream (noted by SelectionJoinPatch; latest wins) ----
         private static object _pendingSelection;
         private static object _selControl;   // drain-side diff record: which control
         private static int _selIndex = -1;   // ...and which index last spoke/settled
-        private static FieldInfo _selIndexField;            // UICanvas.currentSelectedButton
-        private static MethodInfo _getButtonsListMethod;    // UIButtonControlBase.getButtonsList
-        private static MethodInfo _getScrollableElementsMethod; // UICanvas.getScrollableElements
-        private static FieldInfo _contentField;             // UITextBlock.content
-        private static FieldInfo _featField;                // UIFeatTree+FeatTreeCollection+Node.feat
-        private static MethodInfo _featGetNameMethod;       // FeatContainer+Feat.getName
-        private static bool _selReflectionReady;
 
         // ---- Content stream (noted by ContentSpeechPatch; latest wins PER SOURCE) ----
         private struct ContentNote { public string Raw; public bool Interrupt; }
@@ -73,8 +65,9 @@ namespace SkaldAccessibility
         private static object _pendingListSelection;
         private static object _lastSelList;   // drain-side diff record: which list
         private static object _lastSelObject; // ...and which current object last spoke
-        private static string _yellowTag;     // C64Color.YELLOW_TAG — the game's
+        private static string _yellowTag;     // C64Color.YELLOW_TAG value — the game's
                                               // rendered marker for the current row
+                                              // (lazy read via Seams, post-ready)
 
         private static int _lastFrame = -1;
 
@@ -93,13 +86,8 @@ namespace SkaldAccessibility
         public static object CurrentStateObject()
         {
             var sc = _stateControl;
-            if (sc == null) return null;
-            if (_currentStateField == null)
-            {
-                _currentStateField = AccessTools.Field(sc.GetType(), "currentState");
-                if (_currentStateField == null) return null;
-            }
-            return _currentStateField.GetValue(sc);
+            if (sc == null || Seams.StateControl_currentState == null) return null;
+            return Seams.StateControl_currentState.GetValue(sc);
         }
 
         /// <summary>Note-only: called from the setCurrentSelectedButton postfix.
@@ -165,9 +153,8 @@ namespace SkaldAccessibility
         {
             try
             {
-                if (!_selReflectionReady) InitSelectionReflection();
-                if (_selIndexField == null || control == null) return null;
-                int index = (int)_selIndexField.GetValue(control);
+                if (Seams.UICanvas_currentSelectedButton == null || control == null) return null;
+                int index = (int)Seams.UICanvas_currentSelectedButton.GetValue(control);
                 if (index < 0) return null;
                 return ComposeSelection(control, index);
             }
@@ -267,6 +254,15 @@ namespace SkaldAccessibility
                     Scaffold.SpeechService.SayQueued(cleaned, source);
             }
             _pendingContent.Clear();
+        }
+
+        /// <summary>Align a source's diff record with text another mechanism
+        /// just spoke (popup arrival reads the same blocks the ctor setters
+        /// write — WP8 double-speak guard). A pending note with the SAME text
+        /// then dedups away; a genuinely newer value still differs and speaks.</summary>
+        internal static void SeedContent(string source, string cleaned)
+        {
+            if (!string.IsNullOrWhiteSpace(cleaned)) _lastContent[source] = cleaned;
         }
 
         /// <summary>Combat log lines batch within the frame; identical consecutive
@@ -391,17 +387,16 @@ namespace SkaldAccessibility
             if (canvas == null) return;
             _pendingCanvasSwitch = null;
 
-            if (!_selReflectionReady) InitSelectionReflection();
-            if (_selIndexField == null) return;
+            if (Seams.UICanvas_currentSelectedButton == null) return;
 
-            int index = (int)_selIndexField.GetValue(canvas);
+            int index = (int)Seams.UICanvas_currentSelectedButton.GetValue(canvas);
             if (index < 0) index = 0;
 
             string text = ComposeSelection(canvas, index);
             if (text == null) return;
 
-            bool isButtonRow = _getButtonsListMethod != null
-                && _getButtonsListMethod.DeclaringType.IsInstanceOfType(canvas);
+            bool isButtonRow = Seams.UIButtonControlBaseType != null
+                && Seams.UIButtonControlBaseType.IsInstanceOfType(canvas);
             Scaffold.SpeechService.Say(isButtonRow ? $"Buttons: {text}." : text, "Nav");
 
             // Supersede the frame's selection note and align the dedup records
@@ -424,10 +419,9 @@ namespace SkaldAccessibility
             if (control == null) return;
             _pendingSelection = null;
 
-            if (!_selReflectionReady) InitSelectionReflection();
-            if (_selIndexField == null) return;
+            if (Seams.UICanvas_currentSelectedButton == null) return;
 
-            int index = (int)_selIndexField.GetValue(control);
+            int index = (int)Seams.UICanvas_currentSelectedButton.GetValue(control);
 
             if (ReferenceEquals(control, _selControl) && index == _selIndex) return;
             _selControl = control;
@@ -438,27 +432,6 @@ namespace SkaldAccessibility
             string text = ComposeSelection(control, index);
             if (text == null) return; // non-conforming control — graceful silence
             Scaffold.SpeechService.Say(text, "Nav");
-        }
-
-        private static void InitSelectionReflection()
-        {
-            _selReflectionReady = true;
-            var uiCanvas = AccessTools.TypeByName("UICanvas");
-            var buttonBase = AccessTools.TypeByName("UIButtonControlBase");
-            if (uiCanvas != null)
-            {
-                _selIndexField = AccessTools.Field(uiCanvas, "currentSelectedButton");
-                _getScrollableElementsMethod = AccessTools.Method(uiCanvas, "getScrollableElements");
-            }
-            if (buttonBase != null)
-                _getButtonsListMethod = AccessTools.Method(buttonBase, "getButtonsList");
-            _contentField = AccessTools.Field(AccessTools.TypeByName("UITextBlock"), "content");
-            var nodeType = AccessTools.TypeByName("UIFeatTree+FeatTreeCollection+Node");
-            if (nodeType != null) _featField = AccessTools.Field(nodeType, "feat");
-            var featType = AccessTools.TypeByName("FeatContainer+Feat");
-            if (featType != null) _featGetNameMethod = AccessTools.Method(featType, "getName");
-            if (_selIndexField == null)
-                Plugin.Logger?.LogError("[Pump:sel] currentSelectedButton field not found — selection speech disabled");
         }
 
         /// <summary>Rendered-text composition for the focused element. Numeric-class
@@ -472,16 +445,16 @@ namespace SkaldAccessibility
             string text = null;
             bool isCurrentListRow = false;
 
-            if (_getButtonsListMethod != null && _contentField != null)
+            if (Seams.UIButtonControlBase_getButtonsList != null && Seams.UITextBlock_content != null)
             {
                 try
                 {
-                    var buttons = _getButtonsListMethod.Invoke(control, null) as System.Collections.IList;
+                    var buttons = Seams.UIButtonControlBase_getButtonsList.Invoke(control, null) as System.Collections.IList;
                     if (buttons != null && index >= 0 && index < buttons.Count)
                     {
                         count = buttons.Count;
                         object button = buttons[index];
-                        string raw = button != null ? _contentField.GetValue(button) as string : null;
+                        string raw = button != null ? Seams.UITextBlock_content.GetValue(button) as string : null;
                         // List sheets render the SkaldObjectList current object
                         // wrapped in the yellow tag at position 0
                         // (SkaldObjectList.getScrolledStringList) — transcode the
@@ -514,11 +487,11 @@ namespace SkaldAccessibility
             // minus/plus arrow, so the buttons-list path never matches. Map the
             // arrow back to its owning row and speak the slider composition
             // (closes the B2-class silence on vertical nav over slider rows).
-            if (text == null && _getScrollableElementsMethod != null)
+            if (text == null && Seams.UICanvas_getScrollableElements != null)
             {
                 try
                 {
-                    var elements = _getScrollableElementsMethod.Invoke(control, null)
+                    var elements = Seams.UICanvas_getScrollableElements.Invoke(control, null)
                         as System.Collections.Generic.List<UIElement>;
                     if (elements != null && index >= 0 && index < elements.Count)
                     {
@@ -537,20 +510,21 @@ namespace SkaldAccessibility
 
             // Image-only elements (feat-tree nodes): read the feat name from the
             // scrollable element's backing object.
-            if (text == null && _getScrollableElementsMethod != null && _featField != null && _featGetNameMethod != null)
+            if (text == null && Seams.UICanvas_getScrollableElements != null
+                && Seams.FeatNode_feat != null && Seams.Feat_getName != null)
             {
                 try
                 {
-                    var elements = _getScrollableElementsMethod.Invoke(control, null)
+                    var elements = Seams.UICanvas_getScrollableElements.Invoke(control, null)
                         as System.Collections.Generic.List<UIElement>;
                     if (elements != null && index >= 0 && index < elements.Count)
                     {
                         count = elements.Count;
                         object node = elements[index];
-                        if (node != null && _featField.DeclaringType.IsInstanceOfType(node))
+                        if (node != null && Seams.FeatNodeType != null && Seams.FeatNodeType.IsInstanceOfType(node))
                         {
-                            object feat = _featField.GetValue(node);
-                            string name = feat != null ? _featGetNameMethod.Invoke(feat, null) as string : null;
+                            object feat = Seams.FeatNode_feat.GetValue(node);
+                            string name = feat != null ? Seams.Feat_getName.Invoke(feat, null) as string : null;
                             if (!string.IsNullOrWhiteSpace(name))
                                 text = Patches.TextCleaner.CleanText(name);
                         }
@@ -561,10 +535,13 @@ namespace SkaldAccessibility
 
             if (text == null) return null;
 
-            string typeName = control.GetType().Name;
-            bool numericClass = typeName == "SheetButtonControl"
-                || typeName == "NumericButtonControl"
-                || typeName == "MenuButtonControl";
+            // Numeric-class rows by registry-audited type identity (WP8) — a
+            // rename shows up in the boot report instead of silently demoting
+            // the row to a browse counter.
+            Type controlType = control.GetType();
+            bool numericClass = controlType == Seams.SheetButtonControlType
+                || controlType == Seams.NumericButtonControlType
+                || controlType == Seams.MenuButtonControlType;
 
             if (numericClass) return $"{index + 1}: {text}";
             if (isCurrentListRow) text = $"{text}, selected";
@@ -573,17 +550,13 @@ namespace SkaldAccessibility
         }
 
         /// <summary>The game's own current-row marker, read once from
-        /// C64Color.YELLOW_TAG (colors load with game data; composition only
-        /// runs post-ready, so the type is long initialized).</summary>
+        /// C64Color.YELLOW_TAG via the Seams handle (colors load with game
+        /// data; composition only runs post-ready, so the lazy value read is
+        /// safe here — never at Awake).</summary>
         private static string YellowTag()
         {
             if (_yellowTag != null) return _yellowTag.Length == 0 ? null : _yellowTag;
-            try
-            {
-                var prop = AccessTools.Property(AccessTools.TypeByName("C64Color"), "YELLOW_TAG");
-                _yellowTag = prop?.GetValue(null, null) as string ?? "";
-            }
-            catch { _yellowTag = ""; }
+            _yellowTag = Seams.TagValue(Seams.C64_YellowTag) ?? "";
             if (_yellowTag.Length == 0)
                 Plugin.Logger?.LogWarning("[Pump:sel] C64Color.YELLOW_TAG unavailable — selected-row state unvoiced");
             return _yellowTag.Length == 0 ? null : _yellowTag;

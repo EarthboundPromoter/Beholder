@@ -1,53 +1,30 @@
 using HarmonyLib;
 using System;
 using System.Reflection;
-using UnityEngine;
 
 namespace SkaldAccessibility.Patches
 {
     /// <summary>
     /// Intercepts floating text/speech bubbles created via BarkControl.Bark constructor.
     /// These are transient positional text elements (NPC speech, combat barks, etc.)
+    /// Seam-gated (WP8).
     /// </summary>
     [HarmonyPatch]
     public static class BarkInterceptPatch
     {
-        [HarmonyTargetMethod]
-        static MethodBase TargetMethod()
+        [HarmonyPrepare]
+        static bool Prepare()
         {
-            var barkControlType = AccessTools.TypeByName("BarkControl");
-            if (barkControlType == null)
+            if (Seams.Bark_ctor == null)
             {
-                Plugin.Logger?.LogError("[BarkIntercept] BarkControl type not found");
-                return null;
+                Plugin.Logger?.LogError("[BarkIntercept] Bark constructor seam missing — barks unvoiced");
+                return false;
             }
-
-            var barkType = barkControlType.GetNestedType("Bark", BindingFlags.NonPublic);
-            if (barkType == null)
-            {
-                Plugin.Logger?.LogError("[BarkIntercept] Bark nested type not found");
-                return null;
-            }
-
-            var constructor = AccessTools.Constructor(barkType, new[]
-            {
-                typeof(string),  // message
-                typeof(int),     // x
-                typeof(int),     // y
-                typeof(Color),   // textColor
-                typeof(Color),   // shadowColor
-                typeof(int)      // delay
-            });
-
-            if (constructor == null)
-            {
-                Plugin.Logger?.LogError("[BarkIntercept] Bark constructor not found");
-                return null;
-            }
-
-            Plugin.Logger?.LogInfo("[BarkIntercept] Found Bark constructor for patching");
-            return constructor;
+            return true;
         }
+
+        [HarmonyTargetMethod]
+        static MethodBase TargetMethod() => Seams.Bark_ctor;
 
         [HarmonyPostfix]
         static void Postfix(string __0, int __1, int __2)

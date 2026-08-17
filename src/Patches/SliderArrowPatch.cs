@@ -8,7 +8,7 @@ namespace SkaldAccessibility.Patches
     /// <summary>
     /// Slider voicing on the NATIVE controller idiom (owner ruling 2026-08-16:
     /// follow the game's expectations — the WP6 arrow-key adjust layer is
-    /// deleted, freeing the arrows for the future review layer).
+    /// deleted, freeing the arrows for the review layer).
     ///
     /// The game's slider mechanic under controller mode: each row's focusable
     /// element is its currently-chosen minus/plus arrow button; stick-sideways
@@ -24,89 +24,39 @@ namespace SkaldAccessibility.Patches
     ///  - a click landing while a slider row is hovered → note → drain speaks
     ///    the row's rendered value. The mutation and the value re-render happen
     ///    inside the same row update BEFORE this control-level postfix runs, so
-    ///    the drain reads a fresh value the same frame (the arrow-key path's
-    ///    one-frame-stale bug, ledger B3, died with that path).
+    ///    the drain reads a fresh value the same frame.
     ///
     /// Also hosts the slider-row describer used by the Pump's selection
     /// composition ("Header: Value, plus/minus" + queued description).
+    /// Seam-gated (WP8); all game handles live in the Seams registry.
     /// </summary>
     [HarmonyPatch]
     public static class SliderArrowPatch
     {
-        private static FieldInfo _hoverButtonField;
-        private static FieldInfo _headerTextBlockField;
-        private static FieldInfo _currentValueTextBlockField;
-        private static FieldInfo _contentField;
-        private static FieldInfo _selectPlusField;   // UITextSliderButton.controllerSelectPlusButton
-        private static FieldInfo _minusButtonField;  // UITextSliderButton.minusButton
-        private static FieldInfo _plusButtonField;   // UITextSliderButton.plusButton
-        private static FieldInfo _settingField;      // UITextSliderSettingsButton.setting
-        private static MethodInfo _getFullDescriptionMethod; // SkaldBaseObject.getFullDescription
-        private static MethodInfo _getElementsMethod; // UICanvas.getElements
-        private static MethodInfo _getMouseUpMethod; // SkaldIO.getMouseUp(int)
+        // Per-runtime-type getDescription lookup (polymorphic — stays local,
+        // not a fixed seam; a type with no getDescription caches null).
         private static readonly Dictionary<Type, MethodInfo> _descMethods = new Dictionary<Type, MethodInfo>();
-        private static bool _initialized;
-        private static bool _initFailed;
+
+        private static bool RowReadReady =>
+            Seams.SliderButton_headerTextBlock != null
+            && Seams.SliderButton_currentValueTextBlock != null
+            && Seams.UITextBlock_content != null;
+
+        [HarmonyPrepare]
+        static bool Prepare()
+        {
+            if (Seams.UITextSliderControl_update == null
+                || Seams.UITextSliderControl_hoverButton == null
+                || Seams.SkaldIO_getMouseUp == null)
+            {
+                Plugin.Logger?.LogWarning("[SliderArrow] click-join seams missing — slider values unvoiced");
+                return false;
+            }
+            return true;
+        }
 
         [HarmonyTargetMethod]
-        static MethodBase TargetMethod()
-        {
-            var type = AccessTools.TypeByName("UITextSliderControl");
-            if (type == null)
-            {
-                Plugin.Logger?.LogWarning("[SliderArrow] UITextSliderControl not found");
-                return null;
-            }
-            var method = AccessTools.Method(type, "update");
-            if (method == null)
-            {
-                Plugin.Logger?.LogWarning("[SliderArrow] UITextSliderControl.update not found");
-                return null;
-            }
-            Plugin.Logger?.LogInfo("[SliderArrow] Patching UITextSliderControl.update");
-            return method;
-        }
-
-        private static void Initialize()
-        {
-            if (_initFailed) return;
-            try
-            {
-                var controlType = AccessTools.TypeByName("UITextSliderControl");
-                var buttonType = AccessTools.TypeByName("UITextSliderControl+UITextSliderButton");
-                var skaldIOType = AccessTools.TypeByName("SkaldIO");
-                if (controlType == null || buttonType == null || skaldIOType == null) { _initFailed = true; return; }
-
-                _hoverButtonField = AccessTools.Field(controlType, "hoverButton");
-                _headerTextBlockField = AccessTools.Field(buttonType, "headerTextBlock");
-                _currentValueTextBlockField = AccessTools.Field(buttonType, "currentValueTextBlock");
-                _selectPlusField = AccessTools.Field(buttonType, "controllerSelectPlusButton");
-                _minusButtonField = AccessTools.Field(buttonType, "minusButton");
-                _plusButtonField = AccessTools.Field(buttonType, "plusButton");
-                _getElementsMethod = AccessTools.Method(AccessTools.TypeByName("UICanvas"), "getElements");
-                _contentField = AccessTools.Field(typeof(UITextBlock), "content");
-                _getMouseUpMethod = AccessTools.Method(skaldIOType, "getMouseUp", new[] { typeof(int) });
-
-                var settingsButtonType = AccessTools.TypeByName("UITextSliderControl+UITextSliderSettingsButton");
-                if (settingsButtonType != null)
-                    _settingField = AccessTools.Field(settingsButtonType, "setting");
-                var baseObjectType = AccessTools.TypeByName("SkaldBaseObject");
-                if (baseObjectType != null)
-                    _getFullDescriptionMethod = AccessTools.Method(baseObjectType, "getFullDescription");
-
-                _initialized = _hoverButtonField != null && _headerTextBlockField != null
-                    && _currentValueTextBlockField != null && _contentField != null
-                    && _getMouseUpMethod != null;
-                if (!_initialized) { Plugin.Logger?.LogError("[SliderArrow] Init failed — missing fields"); _initFailed = true; }
-                if (_selectPlusField == null)
-                    Plugin.Logger?.LogWarning("[SliderArrow] controllerSelectPlusButton not found — arrow position unvoiced");
-            }
-            catch (Exception ex)
-            {
-                Plugin.Logger?.LogError($"[SliderArrow] Init: {ex.Message}");
-                _initFailed = true;
-            }
-        }
+        static MethodBase TargetMethod() => Seams.UITextSliderControl_update;
 
         /// <summary>Click join: a left-click release landing this frame while a
         /// slider row is hovered (the game's own hoverButton, virtual mouse
@@ -118,10 +68,8 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                if (!_initialized) { if (_initFailed) return; Initialize(); if (!_initialized) return; }
-
-                if (!(bool)_getMouseUpMethod.Invoke(null, new object[] { 0 })) return;
-                object hoverButton = _hoverButtonField.GetValue(__instance);
+                if (!(bool)Seams.SkaldIO_getMouseUp.Invoke(null, new object[] { 0 })) return;
+                object hoverButton = Seams.UITextSliderControl_hoverButton.GetValue(__instance);
                 if (hoverButton == null) return;
                 Pump.NoteSliderValue(hoverButton);
             }
@@ -140,20 +88,25 @@ namespace SkaldAccessibility.Patches
         [HarmonyPatch]
         public static class ArrowFlipJoin
         {
+            [HarmonyPrepare]
+            static bool Prepare()
+            {
+                if (Seams.SliderButton_controllerScrollSidewaysLeft == null
+                    && Seams.SliderButton_controllerScrollSidewaysRight == null)
+                {
+                    Plugin.Logger?.LogWarning("[SliderArrow] controllerScrollSideways seams missing — arrow flips unvoiced");
+                    return false;
+                }
+                return true;
+            }
+
             [HarmonyTargetMethods]
             static IEnumerable<MethodBase> TargetMethods()
             {
-                var buttonType = AccessTools.TypeByName("UITextSliderControl+UITextSliderButton");
-                if (buttonType == null)
-                {
-                    Plugin.Logger?.LogWarning("[SliderArrow] UITextSliderButton not found — arrow flips unvoiced");
-                    yield break;
-                }
-                var left = AccessTools.Method(buttonType, "controllerScrollSidewaysLeft");
-                var right = AccessTools.Method(buttonType, "controllerScrollSidewaysRight");
-                if (left != null) yield return left;
-                if (right != null) yield return right;
-                Plugin.Logger?.LogInfo("[SliderArrow] Patching UITextSliderButton.controllerScrollSideways*");
+                if (Seams.SliderButton_controllerScrollSidewaysLeft != null)
+                    yield return Seams.SliderButton_controllerScrollSidewaysLeft;
+                if (Seams.SliderButton_controllerScrollSidewaysRight != null)
+                    yield return Seams.SliderButton_controllerScrollSidewaysRight;
             }
 
             [HarmonyPostfix]
@@ -174,18 +127,18 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                if (!_initialized) { if (_initFailed) return null; Initialize(); if (!_initialized) return null; }
-                if (element == null) return null;
-                if (_headerTextBlockField.DeclaringType.IsInstanceOfType(element)) return element;
-                if (_minusButtonField == null || _plusButtonField == null || _getElementsMethod == null) return null;
+                if (Seams.SliderButtonType == null || element == null) return null;
+                if (Seams.SliderButtonType.IsInstanceOfType(element)) return element;
+                if (Seams.SliderButton_minusButton == null || Seams.SliderButton_plusButton == null
+                    || Seams.UICanvas_getElements == null) return null;
 
-                var elements = _getElementsMethod.Invoke(control, null) as System.Collections.IEnumerable;
+                var elements = Seams.UICanvas_getElements.Invoke(control, null) as System.Collections.IEnumerable;
                 if (elements == null) return null;
                 foreach (var e in elements)
                 {
-                    if (e == null || !_headerTextBlockField.DeclaringType.IsInstanceOfType(e)) continue;
-                    if (ReferenceEquals(_minusButtonField.GetValue(e), element)
-                        || ReferenceEquals(_plusButtonField.GetValue(e), element))
+                    if (e == null || !Seams.SliderButtonType.IsInstanceOfType(e)) continue;
+                    if (ReferenceEquals(Seams.SliderButton_minusButton.GetValue(e), element)
+                        || ReferenceEquals(Seams.SliderButton_plusButton.GetValue(e), element))
                         return e;
                 }
             }
@@ -199,10 +152,9 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                if (!_initialized) { if (_initFailed) return null; Initialize(); if (!_initialized) return null; }
-                if (_selectPlusField == null) return null;
-                if (!_selectPlusField.DeclaringType.IsInstanceOfType(button)) return null;
-                return (bool)_selectPlusField.GetValue(button) ? "plus" : "minus";
+                if (Seams.SliderButton_controllerSelectPlusButton == null) return null;
+                if (Seams.SliderButtonType == null || !Seams.SliderButtonType.IsInstanceOfType(button)) return null;
+                return (bool)Seams.SliderButton_controllerSelectPlusButton.GetValue(button) ? "plus" : "minus";
             }
             catch { return null; }
         }
@@ -216,14 +168,13 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                if (!_initialized) { if (_initFailed) return null; Initialize(); if (!_initialized) return null; }
-                if (_headerTextBlockField == null) return null;
-                if (!_headerTextBlockField.DeclaringType.IsInstanceOfType(button)) return null;
+                if (!RowReadReady) return null;
+                if (Seams.SliderButtonType == null || !Seams.SliderButtonType.IsInstanceOfType(button)) return null;
 
-                object headerBlock = _headerTextBlockField.GetValue(button);
-                object valueBlock = _currentValueTextBlockField.GetValue(button);
-                string header = headerBlock != null ? _contentField.GetValue(headerBlock) as string : null;
-                string value = valueBlock != null ? _contentField.GetValue(valueBlock) as string : null;
+                object headerBlock = Seams.SliderButton_headerTextBlock.GetValue(button);
+                object valueBlock = Seams.SliderButton_currentValueTextBlock.GetValue(button);
+                string header = headerBlock != null ? Seams.UITextBlock_content.GetValue(headerBlock) as string : null;
+                string value = valueBlock != null ? Seams.UITextBlock_content.GetValue(valueBlock) as string : null;
                 string cleanedHeader = string.IsNullOrWhiteSpace(header) ? null : TextCleaner.CleanText(header);
                 string cleanedValue = string.IsNullOrWhiteSpace(value) ? null : TextCleaner.CleanText(value);
 
@@ -250,12 +201,14 @@ namespace SkaldAccessibility.Patches
             try
             {
                 string desc = null;
-                if (_settingField != null && _getFullDescriptionMethod != null
-                    && _settingField.DeclaringType.IsInstanceOfType(button))
+                if (Seams.SliderSettingsButton_setting != null
+                    && Seams.SkaldBaseObject_getFullDescription != null
+                    && Seams.SliderSettingsButtonType != null
+                    && Seams.SliderSettingsButtonType.IsInstanceOfType(button))
                 {
-                    object setting = _settingField.GetValue(button);
+                    object setting = Seams.SliderSettingsButton_setting.GetValue(button);
                     if (setting != null)
-                        desc = _getFullDescriptionMethod.Invoke(setting, null) as string;
+                        desc = Seams.SkaldBaseObject_getFullDescription.Invoke(setting, null) as string;
                 }
                 if (desc == null)
                 {

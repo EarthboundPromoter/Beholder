@@ -13,31 +13,24 @@ namespace SkaldAccessibility.Patches
     ///
     /// Note-only: records the instance; the Pump's drain reads the final index at
     /// end of frame (set-then-clamp sequences resolve automatically) and speaks
-    /// once per actual index change. Replaces the per-frame GUIControl.update and
-    /// UIButtonControlBase.update navigation pollers, NavigationCursor, and the
-    /// popup init-suppression window.
+    /// once per actual index change. Seam-gated (WP8).
     /// </summary>
     [HarmonyPatch]
     public static class SelectionJoinPatch
     {
-        [HarmonyTargetMethod]
-        static MethodBase TargetMethod()
+        [HarmonyPrepare]
+        static bool Prepare()
         {
-            var type = AccessTools.TypeByName("UICanvas");
-            if (type == null)
+            if (Seams.UICanvas_setCurrentSelectedButton == null)
             {
-                Plugin.Logger?.LogError("[Selection] UICanvas not found");
-                return null;
+                Plugin.Logger?.LogError("[Selection] setCurrentSelectedButton seam missing — selection speech disabled");
+                return false;
             }
-            var method = AccessTools.Method(type, "setCurrentSelectedButton");
-            if (method == null)
-            {
-                Plugin.Logger?.LogError("[Selection] setCurrentSelectedButton not found");
-                return null;
-            }
-            Plugin.Logger?.LogInfo("[Selection] Patching UICanvas.setCurrentSelectedButton");
-            return method;
+            return true;
         }
+
+        [HarmonyTargetMethod]
+        static MethodBase TargetMethod() => Seams.UICanvas_setCurrentSelectedButton;
 
         [HarmonyPostfix]
         static void Postfix(object __instance)

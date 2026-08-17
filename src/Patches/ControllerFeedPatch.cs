@@ -38,11 +38,8 @@ namespace SkaldAccessibility.Patches
     /// </summary>
     public static class ControllerFeedPatch
     {
-        // ---- Text-entry gate (game truth, memoized once per frame) ----
-        private static FieldInfo _consoleOpenField;      // ConsoleControl.console
-        private static FieldInfo _feedbackTakeInputField; // FeedbackTool.takeInput
-        private static MethodInfo _getCurrentPopUp;      // PopUpControl.getCurrentPopUp
-        private static bool _gateInitialized;
+        // ---- Text-entry gate (game truth, memoized once per frame; all
+        //      handles from the WP8 Seams registry) ----
         private static int _gateFrame = -1;
         private static bool _gateActive;
 
@@ -71,18 +68,17 @@ namespace SkaldAccessibility.Patches
 
         private static bool ComputeTextEntryActive()
         {
-            if (!_gateInitialized) InitializeGate();
             try
             {
-                if (_consoleOpenField != null && (bool)_consoleOpenField.GetValue(null)) return true;
-                if (_feedbackTakeInputField != null && (bool)_feedbackTakeInputField.GetValue(null)) return true;
-                if (_getCurrentPopUp != null)
+                if (Seams.ConsoleControl_console != null && (bool)Seams.ConsoleControl_console.GetValue(null)) return true;
+                if (Seams.FeedbackTool_takeInput != null && (bool)Seams.FeedbackTool_takeInput.GetValue(null)) return true;
+                if (Seams.PopUpControl_getCurrentPopUp != null)
                 {
-                    object popup = _getCurrentPopUp.Invoke(null, null);
+                    object popup = Seams.PopUpControl_getCurrentPopUp.Invoke(null, null);
                     if (popup != null)
                     {
-                        string name = popup.GetType().Name;
-                        if (name == "PopUpName" || name == "PopUpCreateSave" || name == "PopUpSaveRename")
+                        Type t = popup.GetType();
+                        if (t == Seams.PopUpNameType || t == Seams.PopUpCreateSaveType || t == Seams.PopUpSaveRenameType)
                             return true;
                     }
                 }
@@ -94,57 +90,44 @@ namespace SkaldAccessibility.Patches
             return false;
         }
 
-        private static void InitializeGate()
-        {
-            _gateInitialized = true;
-            var consoleType = AccessTools.TypeByName("ConsoleControl");
-            if (consoleType != null) _consoleOpenField = AccessTools.Field(consoleType, "console");
-            var feedbackType = AccessTools.TypeByName("FeedbackTool");
-            if (feedbackType != null) _feedbackTakeInputField = AccessTools.Field(feedbackType, "takeInput");
-            var popUpControlType = AccessTools.TypeByName("PopUpControl");
-            if (popUpControlType != null) _getCurrentPopUp = AccessTools.Method(popUpControlType, "getCurrentPopUp");
-            if (_consoleOpenField == null || _feedbackTakeInputField == null || _getCurrentPopUp == null)
-                Plugin.Logger?.LogError("[Feed] Text-entry gate incomplete — "
-                    + $"console={_consoleOpenField != null} feedback={_feedbackTakeInputField != null} popup={_getCurrentPopUp != null}");
-        }
-
-        // ---- Patch application ----
+        // ---- Patch application (accessor handles from the Seams registry;
+        //      a missing accessor costs that one button, already counted in
+        //      the boot audit) ----
 
         public static void Apply(Harmony harmony)
         {
-            var type = AccessTools.TypeByName("SkaldIO+ControllerInputControl");
-            if (type == null)
+            if (Seams.ControllerInputControlType == null)
             {
                 Plugin.Logger?.LogError("[Feed] SkaldIO+ControllerInputControl not found — keyboard feed unavailable");
                 return;
             }
 
             int applied = 0;
-            applied += Patch(harmony, type, "buttonBPressed", nameof(Postfix_ButtonB));
-            applied += Patch(harmony, type, "buttonXPressed", nameof(Postfix_ButtonX));
-            applied += Patch(harmony, type, "buttonYPressed", nameof(Postfix_ButtonY));
-            applied += Patch(harmony, type, "leftBumperPressed", nameof(Postfix_LeftBumper));
-            applied += Patch(harmony, type, "rightBumperPressed", nameof(Postfix_RightBumper));
-            applied += Patch(harmony, type, "leftTriggerPressed", nameof(Postfix_LeftTriggerPressed));
-            applied += Patch(harmony, type, "leftTriggerHeld", nameof(Postfix_LeftTriggerHeld));
-            applied += Patch(harmony, type, "leftTriggerUp", nameof(Postfix_LeftTriggerUp));
-            applied += Patch(harmony, type, "rightTriggerPressed", nameof(Postfix_RightTriggerPressed));
-            applied += Patch(harmony, type, "rightTriggerHeld", nameof(Postfix_RightTriggerHeld));
-            applied += Patch(harmony, type, "rightTriggerUp", nameof(Postfix_RightTriggerUp));
-            applied += Patch(harmony, type, "isLeftStickUpPressed", nameof(Postfix_StickUpPressed));
-            applied += Patch(harmony, type, "isLeftStickUpHeld", nameof(Postfix_StickUpHeld));
-            applied += Patch(harmony, type, "isLeftStickDownPressed", nameof(Postfix_StickDownPressed));
-            applied += Patch(harmony, type, "isLeftStickDownHeld", nameof(Postfix_StickDownHeld));
-            applied += Patch(harmony, type, "isLeftStickLeftPressed", nameof(Postfix_StickLeftPressed));
-            applied += Patch(harmony, type, "isLeftStickLeftHeld", nameof(Postfix_StickLeftHeld));
-            applied += Patch(harmony, type, "isLeftStickRightPressed", nameof(Postfix_StickRightPressed));
-            applied += Patch(harmony, type, "isLeftStickRightHeld", nameof(Postfix_StickRightHeld));
+            applied += Patch(harmony, "buttonBPressed", nameof(Postfix_ButtonB));
+            applied += Patch(harmony, "buttonXPressed", nameof(Postfix_ButtonX));
+            applied += Patch(harmony, "buttonYPressed", nameof(Postfix_ButtonY));
+            applied += Patch(harmony, "leftBumperPressed", nameof(Postfix_LeftBumper));
+            applied += Patch(harmony, "rightBumperPressed", nameof(Postfix_RightBumper));
+            applied += Patch(harmony, "leftTriggerPressed", nameof(Postfix_LeftTriggerPressed));
+            applied += Patch(harmony, "leftTriggerHeld", nameof(Postfix_LeftTriggerHeld));
+            applied += Patch(harmony, "leftTriggerUp", nameof(Postfix_LeftTriggerUp));
+            applied += Patch(harmony, "rightTriggerPressed", nameof(Postfix_RightTriggerPressed));
+            applied += Patch(harmony, "rightTriggerHeld", nameof(Postfix_RightTriggerHeld));
+            applied += Patch(harmony, "rightTriggerUp", nameof(Postfix_RightTriggerUp));
+            applied += Patch(harmony, "isLeftStickUpPressed", nameof(Postfix_StickUpPressed));
+            applied += Patch(harmony, "isLeftStickUpHeld", nameof(Postfix_StickUpHeld));
+            applied += Patch(harmony, "isLeftStickDownPressed", nameof(Postfix_StickDownPressed));
+            applied += Patch(harmony, "isLeftStickDownHeld", nameof(Postfix_StickDownHeld));
+            applied += Patch(harmony, "isLeftStickLeftPressed", nameof(Postfix_StickLeftPressed));
+            applied += Patch(harmony, "isLeftStickLeftHeld", nameof(Postfix_StickLeftHeld));
+            applied += Patch(harmony, "isLeftStickRightPressed", nameof(Postfix_StickRightPressed));
+            applied += Patch(harmony, "isLeftStickRightHeld", nameof(Postfix_StickRightHeld));
             Plugin.Logger?.LogInfo($"[Feed] Keyboard→controller feed live: {applied}/19 accessors");
         }
 
-        private static int Patch(Harmony harmony, Type type, string methodName, string postfixName)
+        private static int Patch(Harmony harmony, string methodName, string postfixName)
         {
-            var method = AccessTools.Method(type, methodName);
+            Seams.FeedAccessors.TryGetValue(methodName, out var method);
             if (method == null)
             {
                 Plugin.Logger?.LogError($"[Feed] Accessor not found: {methodName} — that button's keyboard feed is dead");

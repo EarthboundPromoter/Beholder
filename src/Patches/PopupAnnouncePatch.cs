@@ -11,80 +11,39 @@ namespace SkaldAccessibility.Patches
     /// Hooks PopUpControl.addPopUp(PopUpBase) — the single entry point (funnel)
     /// for all 25+ popup types. Reads mainDescription, secondaryDescription, and
     /// tertiaryDescription text from the popup's UI elements. Does NOT read button
-    /// labels — popup button navigation speaks via the selection join
-    /// (SelectionJoinPatch + Pump), which replaced the old per-frame
-    /// PopupNavigationPatch and its init-suppression window in WP4.
+    /// labels — popup button navigation speaks via the selection join.
+    /// Seam-gated (WP8).
+    ///
+    /// Double-speak guard (WP8): many popup constructors route their initial
+    /// text through the PopUpBase set*TextContent setters (decomp-verified,
+    /// e.g. PopUpLock's ctor), which ContentSpeechPatch also hooks — so popup
+    /// arrival used to fire BOTH mechanisms, the second interrupting and
+    /// re-speaking the first. The drain speaks arrival from here (settled
+    /// field reads), then SEEDS the content diff records so the same-frame
+    /// setter notes dedup away; a genuine post-arrival update still differs
+    /// and still speaks.
     /// </summary>
     [HarmonyPatch]
     public static class PopupAnnouncePatch
     {
-        private static FieldInfo _uiElementsField;
-        private static FieldInfo _mainDescField;
-        private static FieldInfo _secondaryDescField;
-        private static FieldInfo _tertiaryDescField;
-        private static FieldInfo _contentField;
-        private static bool _initialized;
-        private static bool _initFailed;
+        private static bool ReadReady =>
+            Seams.PopUpBase_uiElements != null
+            && Seams.PopUpUIBase_mainDescription != null
+            && Seams.UITextBlock_content != null;
+
+        [HarmonyPrepare]
+        static bool Prepare()
+        {
+            if (Seams.PopUpControl_addPopUp == null || !ReadReady)
+            {
+                Plugin.Logger?.LogWarning("[PopupAnnounce] addPopUp/read seams missing — popup announce disabled");
+                return false;
+            }
+            return true;
+        }
 
         [HarmonyTargetMethod]
-        static MethodBase TargetMethod()
-        {
-            var type = AccessTools.TypeByName("PopUpControl");
-            if (type == null)
-            {
-                Plugin.Logger?.LogWarning("[PopupAnnounce] PopUpControl not found");
-                return null;
-            }
-            var method = AccessTools.Method(type, "addPopUp",
-                new[] { AccessTools.TypeByName("PopUpBase") });
-            if (method == null)
-            {
-                Plugin.Logger?.LogWarning("[PopupAnnounce] addPopUp method not found");
-                return null;
-            }
-            Plugin.Logger?.LogInfo("[PopupAnnounce] Found PopUpControl.addPopUp for patching");
-            return method;
-        }
-
-        private static void Initialize()
-        {
-            if (_initFailed) return;
-            try
-            {
-                var popUpBaseType = AccessTools.TypeByName("PopUpBase");
-                var popUpUIBaseType = AccessTools.TypeByName("PopUpBase+PopUpUIBase");
-
-                if (popUpBaseType == null || popUpUIBaseType == null)
-                {
-                    Plugin.Logger?.LogError("[PopupAnnounce] Required types not found");
-                    _initFailed = true;
-                    return;
-                }
-
-                _uiElementsField = AccessTools.Field(popUpBaseType, "uiElements");
-                _mainDescField = AccessTools.Field(popUpUIBaseType, "mainDescription");
-                _secondaryDescField = AccessTools.Field(popUpUIBaseType, "secondaryDescription");
-                _tertiaryDescField = AccessTools.Field(popUpUIBaseType, "tertiaryDescription");
-                _contentField = AccessTools.Field(typeof(UITextBlock), "content");
-
-                _initialized = _uiElementsField != null
-                    && _mainDescField != null
-                    && _contentField != null;
-
-                if (_initialized)
-                    Plugin.Logger?.LogInfo("[PopupAnnounce] Initialized successfully");
-                else
-                {
-                    Plugin.Logger?.LogError("[PopupAnnounce] Init failed — missing fields");
-                    _initFailed = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Logger?.LogError($"[PopupAnnounce] Init: {ex.Message}");
-                _initFailed = true;
-            }
-        }
+        static MethodBase TargetMethod() => Seams.PopUpControl_addPopUp;
 
         [HarmonyPostfix]
         static void Postfix(object __0)
@@ -99,25 +58,30 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                if (!_initialized) { if (_initFailed) return; Initialize(); if (!_initialized) return; }
-                if (popup == null) return;
+                if (!ReadReady || popup == null) return;
 
-                object uiElements = _uiElementsField.GetValue(popup);
+                object uiElements = Seams.PopUpBase_uiElements.GetValue(popup);
                 if (uiElements == null) return;
 
-                string main = ReadDescription(_mainDescField, uiElements);
-                string secondary = ReadDescription(_secondaryDescField, uiElements);
-                string tertiary = ReadDescription(_tertiaryDescField, uiElements);
+                string main = ReadDescription(Seams.PopUpUIBase_mainDescription, uiElements);
+                string secondary = ReadDescription(Seams.PopUpUIBase_secondaryDescription, uiElements);
+                string tertiary = ReadDescription(Seams.PopUpUIBase_tertiaryDescription, uiElements);
 
                 // The popup's combined raw text is the review layer's panel
                 // while the popup is up (WP10).
                 string rawPanel = string.Join("\n\n", new[]
                 {
-                    ReadRaw(_mainDescField, uiElements),
-                    ReadRaw(_secondaryDescField, uiElements),
-                    ReadRaw(_tertiaryDescField, uiElements),
+                    ReadRaw(Seams.PopUpUIBase_mainDescription, uiElements),
+                    ReadRaw(Seams.PopUpUIBase_secondaryDescription, uiElements),
+                    ReadRaw(Seams.PopUpUIBase_tertiaryDescription, uiElements),
                 }.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray());
                 if (rawPanel.Length > 0) ReviewLayer.NotePanel(rawPanel);
+
+                // Arrival owns these values now — seed the content diff so the
+                // same frame's ctor-setter notes collapse instead of re-speaking.
+                if (main != null) Pump.SeedContent("PopupMain", main);
+                if (secondary != null) Pump.SeedContent("PopupSecondary", secondary);
+                if (tertiary != null) Pump.SeedContent("PopupTertiary", tertiary);
 
                 // Speak the first non-empty description with interrupt; remaining
                 // descriptions queue behind it.
@@ -174,7 +138,7 @@ namespace SkaldAccessibility.Patches
             if (field == null) return null;
             object textBlock = field.GetValue(uiElements);
             if (textBlock == null) return null;
-            string raw = _contentField.GetValue(textBlock) as string;
+            string raw = Seams.UITextBlock_content.GetValue(textBlock) as string;
             return string.IsNullOrWhiteSpace(raw) ? null : raw;
         }
     }

@@ -34,9 +34,21 @@ namespace SkaldAccessibility
                 UnityEngine.Application.quitting += SpeechService.Shutdown;
                 SpeechService.Say($"Skald Accessibility {Version} loaded.", "Init");
 
-                // Apply Harmony patches (excludes SkaldIOPatches — deferred to Update)
+                // WP8: resolve the full seam manifest first (metadata only —
+                // frame-0 safe), so patch classes Prepare() against it.
+                Seams.ResolveAll();
+
+                // Apply Harmony patches (excludes SkaldIOPatches — deferred to
+                // Update). Class-by-class with isolation: Harmony's own
+                // PatchAll aborts every remaining class when one throws
+                // (verified against the shipped 0Harmony.dll) — one broken
+                // seam must cost one stream, not the mod.
                 _harmony = new Harmony(Guid);
-                _harmony.PatchAll(Assembly.GetExecutingAssembly());
+                foreach (var type in AccessTools.GetTypesFromAssembly(Assembly.GetExecutingAssembly()))
+                {
+                    try { _harmony.CreateClassProcessor(type).Patch(); }
+                    catch (Exception e) { Seams.NotePatchFailure(type.FullName, e); }
+                }
 
                 var patchedMethods = _harmony.GetPatchedMethods();
                 int count = 0;
@@ -46,6 +58,10 @@ namespace SkaldAccessibility
                     count++;
                 }
                 Logger.LogInfo($"Harmony patches applied: {count} methods.");
+
+                // The audit receipt: every missing row logged, one spoken line
+                // if anything is gone ("N game hooks missing after an update").
+                Seams.Report();
             }
             catch (Exception e)
             {

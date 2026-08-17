@@ -1,7 +1,5 @@
 using System;
 using System.Collections;
-using System.Reflection;
-using HarmonyLib;
 using SkaldAccessibility.Patches;
 
 namespace SkaldAccessibility
@@ -60,18 +58,8 @@ namespace SkaldAccessibility
         private static GameMode _previousMode = GameMode.Unknown;
         private static string _currentStateName = "";
 
-        // Reflection for reading numeric buttons from active state's GUIControl
-        private static FieldInfo _stateGuiControlField;
-        private static FieldInfo _numericButtonsField;
-        private static MethodInfo _getButtonsListMethod;
-        private static FieldInfo _contentField;
-        private static bool _buttonReflectionInitialized;
-
         /// <summary>Current game mode.</summary>
         public static GameMode CurrentMode => _currentMode;
-
-        /// <summary>Previous game mode (for transition detection).</summary>
-        public static GameMode PreviousMode => _previousMode;
 
         /// <summary>Raw state class name (for logging/debugging).</summary>
         public static string CurrentStateName => _currentStateName;
@@ -114,32 +102,21 @@ namespace SkaldAccessibility
         {
             try
             {
-                if (!_buttonReflectionInitialized)
-                {
-                    _buttonReflectionInitialized = true;
-                    var stateBaseType = AccessTools.TypeByName("StateBase");
-                    var buttonBaseType = AccessTools.TypeByName("UIButtonControlBase");
-                    if (stateBaseType != null)
-                        _stateGuiControlField = AccessTools.Field(stateBaseType, "guiControl");
-                    if (buttonBaseType != null)
-                        _getButtonsListMethod = AccessTools.Method(buttonBaseType, "getButtonsList");
-                    _numericButtonsField = AccessTools.Field(typeof(GUIControl), "numericButtons");
-                    _contentField = AccessTools.Field(typeof(UITextBlock), "content");
-                }
-
-                if (_stateGuiControlField == null || _numericButtonsField == null
-                    || _getButtonsListMethod == null || _contentField == null)
+                // Handles from the WP8 Seams registry — any missing row was
+                // logged and counted at boot.
+                if (Seams.StateBase_guiControl == null || Seams.GUIControl_numericButtons == null
+                    || Seams.UIButtonControlBase_getButtonsList == null || Seams.UITextBlock_content == null)
                     return;
 
                 if (stateObject == null) return;
 
-                object guiControl = _stateGuiControlField.GetValue(stateObject);
+                object guiControl = Seams.StateBase_guiControl.GetValue(stateObject);
                 if (guiControl == null) return;
 
-                object numericButtons = _numericButtonsField.GetValue(guiControl);
+                object numericButtons = Seams.GUIControl_numericButtons.GetValue(guiControl);
                 if (numericButtons == null) return;
 
-                var buttons = _getButtonsListMethod.Invoke(numericButtons, null) as IList;
+                var buttons = Seams.UIButtonControlBase_getButtonsList.Invoke(numericButtons, null) as IList;
                 if (buttons == null || buttons.Count == 0) return;
 
                 var parts = new System.Collections.Generic.List<string>();
@@ -147,7 +124,7 @@ namespace SkaldAccessibility
                 {
                     object button = buttons[i];
                     if (button == null) continue;
-                    string raw = _contentField.GetValue(button) as string;
+                    string raw = Seams.UITextBlock_content.GetValue(button) as string;
                     if (string.IsNullOrWhiteSpace(raw)) continue;
                     string cleaned = TextCleaner.CleanText(raw);
                     if (string.IsNullOrWhiteSpace(cleaned)) continue;
@@ -294,23 +271,9 @@ namespace SkaldAccessibility
             }
         }
 
-        /// <summary>
-        /// Whether we're in an active gameplay mode (vs menu/settings/cutscene).
-        /// Used for P11 context-dependent relevance.
-        /// </summary>
-        public static bool IsActiveGameplay =>
-            _currentMode == GameMode.Overland ||
-            _currentMode == GameMode.Combat ||
-            _currentMode == GameMode.CombatPlacement ||
-            _currentMode == GameMode.CombatPlanning ||
-            _currentMode == GameMode.CombatResolve ||
-            _currentMode == GameMode.Scene;
-
-        /// <summary>Whether we're in any combat sub-state.</summary>
-        public static bool IsInCombat =>
-            _currentMode == GameMode.Combat ||
-            _currentMode == GameMode.CombatPlacement ||
-            _currentMode == GameMode.CombatPlanning ||
-            _currentMode == GameMode.CombatResolve;
+        // WP8: PreviousMode / IsActiveGameplay / IsInCombat deleted — no
+        // consumers, and the mode mirrors were exactly the proxy-determiner
+        // shape the discipline bans (anything gated on game state asks the
+        // game's own current state at time of use).
     }
 }

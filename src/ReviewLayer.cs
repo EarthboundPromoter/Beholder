@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using HarmonyLib;
 using UnityEngine;
 
 namespace SkaldAccessibility
@@ -256,30 +255,19 @@ namespace SkaldAccessibility
         private static string _headerTag, _attrNameTag, _attrValueTag, _greenTag, _redTag;
         private static bool _tagsInitialized;
 
+        /// <summary>Tag VALUES read lazily (post-ready — review only runs on
+        /// rendered panels) through the WP8 Seams metadata handles.</summary>
         private static void InitTags()
         {
             _tagsInitialized = true;
-            _headerTag = ReadTag("HEADER_TAG");
-            _attrNameTag = ReadTag("ATTRIBUTE_NAME_TAG");
-            _attrValueTag = ReadTag("ATTRIBUTE_VALUE_TAG");
-            _greenTag = ReadTag("GREEN_LIGHT_TAG");
-            _redTag = ReadTag("RED_LIGHT_TAG");
+            _headerTag = Seams.TagValue(Seams.C64_HeaderTag);
+            _attrNameTag = Seams.TagValue(Seams.C64_AttributeNameTag);
+            _attrValueTag = Seams.TagValue(Seams.C64_AttributeValueTag);
+            _greenTag = Seams.TagValue(Seams.C64_GreenLightTag);
+            _redTag = Seams.TagValue(Seams.C64_RedLightTag);
             if (_headerTag == null || _attrNameTag == null)
                 Plugin.Logger?.LogWarning("[Review] Markup tags incomplete — sectioning degrades to paragraphs "
                     + $"(header={_headerTag != null} attrName={_attrNameTag != null})");
-        }
-
-        private static string ReadTag(string name)
-        {
-            try
-            {
-                var type = AccessTools.TypeByName("C64Color");
-                var prop = AccessTools.Property(type, name);
-                if (prop != null) return prop.GetValue(null, null) as string;
-                var field = AccessTools.Field(type, name);
-                return field?.GetValue(null) as string;
-            }
-            catch { return null; }
         }
 
         private static List<Section> Parse()

@@ -9,29 +9,16 @@ namespace SkaldAccessibility.Patches
     /// StateControl.update() (decompiled MainControl.cs:117/212). The postfix
     /// records the StateControl instance and nothing else; the Pump's drain reads
     /// currentState and diffs at end of frame. Replaces the WP3-retired PollState
-    /// poller (build-plan WP3).
+    /// poller (build-plan WP3). Seam-gated (WP8).
     /// </summary>
     [HarmonyPatch]
     public static class StateChangePatch
     {
+        [HarmonyPrepare]
+        static bool Prepare() => Seams.StateControl_setState != null;
+
         [HarmonyTargetMethod]
-        static MethodBase TargetMethod()
-        {
-            var type = AccessTools.TypeByName("MainControl+StateControl");
-            if (type == null)
-            {
-                Plugin.Logger?.LogError("[StateChange] MainControl+StateControl not found");
-                return null;
-            }
-            var method = AccessTools.Method(type, "setState");
-            if (method == null)
-            {
-                Plugin.Logger?.LogError("[StateChange] setState not found");
-                return null;
-            }
-            Plugin.Logger?.LogInfo("[StateChange] Patching StateControl.setState");
-            return method;
-        }
+        static MethodBase TargetMethod() => Seams.StateControl_setState;
 
         [HarmonyPostfix]
         static void Postfix(object __instance)

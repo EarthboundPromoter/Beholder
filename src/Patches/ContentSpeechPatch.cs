@@ -13,8 +13,8 @@ namespace SkaldAccessibility.Patches
     /// Note-only since WP5: several of these setters are called every frame by
     /// setGUIData, so the hooks note into the Pump — latest value per source wins
     /// within the frame, and the drain diffs against the last drained value at
-    /// the clock. The old per-hook _lastSpoken dictionary and its ClearAll
-    /// invalidation are deleted.
+    /// the clock. Every hook is seam-gated through the WP8 registry: a setter
+    /// the game renames costs that one source, logged and counted at boot.
     /// </summary>
     public static class ContentSpeechPatch
     {
@@ -30,9 +30,15 @@ namespace SkaldAccessibility.Patches
         /// <summary>
         /// Dialogue/scene body text. Fires once per scene node entry.
         /// </summary>
-        [HarmonyPatch(typeof(GUIControl), "setSceneDescription")]
+        [HarmonyPatch]
         public static class SceneDescriptionHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.GUIControl_setSceneDescription != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.GUIControl_setSceneDescription;
+
             [HarmonyPostfix]
             static void Postfix(string __0)
             {
@@ -44,9 +50,15 @@ namespace SkaldAccessibility.Patches
         /// Context/status text — combat hover, location description, item description, etc.
         /// Called every frame on some screens; dedup catches same-content repeats.
         /// </summary>
-        [HarmonyPatch(typeof(GUIControl), "setSecondaryDescription")]
+        [HarmonyPatch]
         public static class SecondaryDescriptionHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.GUIControl_setSecondaryDescription != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.GUIControl_setSecondaryDescription;
+
             [HarmonyPostfix]
             static void Postfix(string __0)
             {
@@ -57,9 +69,15 @@ namespace SkaldAccessibility.Patches
         /// <summary>
         /// Area/encounter title.
         /// </summary>
-        [HarmonyPatch(typeof(GUIControl), "setPrimaryHeader")]
+        [HarmonyPatch]
         public static class PrimaryHeaderHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.GUIControl_setPrimaryHeader != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.GUIControl_setPrimaryHeader;
+
             [HarmonyPostfix]
             static void Postfix(string __0)
             {
@@ -70,9 +88,15 @@ namespace SkaldAccessibility.Patches
         /// <summary>
         /// Large screen title (main menu, etc).
         /// </summary>
-        [HarmonyPatch(typeof(GUIControl), "setBigHeader")]
+        [HarmonyPatch]
         public static class BigHeaderHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.GUIControl_setBigHeader != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.GUIControl_setBigHeader;
+
             [HarmonyPostfix]
             static void Postfix(string __0)
             {
@@ -84,9 +108,15 @@ namespace SkaldAccessibility.Patches
         /// Right-column detail panel on sheet screens — class/ability/item/setting descriptions.
         /// Called every frame; dedup catches same-content repeats.
         /// </summary>
-        [HarmonyPatch(typeof(GUIControl), "setSheetDescription")]
+        [HarmonyPatch]
         public static class SheetDescriptionHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.GUIControl_setSheetDescription != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.GUIControl_setSheetDescription;
+
             [HarmonyPostfix]
             static void Postfix(string __0)
             {
@@ -97,9 +127,15 @@ namespace SkaldAccessibility.Patches
         /// <summary>
         /// Sheet title ("Pick a Difficulty", "Key Bindings", "Select a Class").
         /// </summary>
-        [HarmonyPatch(typeof(GUIControl), "setSheetHeader")]
+        [HarmonyPatch]
         public static class SheetHeaderHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.GUIControl_setSheetHeader != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.GUIControl_setSheetHeader;
+
             [HarmonyPostfix]
             static void Postfix(string __0)
             {
@@ -110,9 +146,15 @@ namespace SkaldAccessibility.Patches
         /// <summary>
         /// Context-sensitive action label ("Begin Combat!", "End Turn").
         /// </summary>
-        [HarmonyPatch(typeof(GUIControl), "setContextualButton")]
+        [HarmonyPatch]
         public static class ContextualButtonHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.GUIControl_setContextualButton != null;
+
+            [HarmonyTargetMethod]
+            static MethodBase TargetMethod() => Seams.GUIControl_setContextualButton;
+
             [HarmonyPostfix]
             static void Postfix(string __0)
             {
@@ -126,30 +168,15 @@ namespace SkaldAccessibility.Patches
 
         /// <summary>
         /// Tooltip text from right-click/Right Shift inspect.
-        /// Hooked via HarmonyTargetMethod since ToolTipPrinter is resolved by name.
         /// </summary>
         [HarmonyPatch]
         public static class TooltipHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.ToolTipPrinter_setToolTip != null;
+
             [HarmonyTargetMethod]
-            static MethodBase TargetMethod()
-            {
-                var type = AccessTools.TypeByName("ToolTipPrinter");
-                if (type == null)
-                {
-                    Plugin.Logger?.LogWarning("[Content] ToolTipPrinter not found");
-                    return null;
-                }
-                var method = AccessTools.Method(type, "setToolTip",
-                    new[] { typeof(string), AccessTools.TypeByName("ToolTipControl+ToolTipCategory") });
-                if (method == null)
-                {
-                    Plugin.Logger?.LogWarning("[Content] ToolTipPrinter.setToolTip not found");
-                    return null;
-                }
-                Plugin.Logger?.LogInfo("[Content] Found ToolTipPrinter.setToolTip for patching");
-                return method;
-            }
+            static MethodBase TargetMethod() => Seams.ToolTipPrinter_setToolTip;
 
             [HarmonyPostfix]
             static void Postfix(string __0)
@@ -169,15 +196,11 @@ namespace SkaldAccessibility.Patches
         [HarmonyPatch]
         public static class PopupMainTextHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.PopUpBase_setMainTextContent != null;
+
             [HarmonyTargetMethod]
-            static MethodBase TargetMethod()
-            {
-                var type = AccessTools.TypeByName("PopUpBase");
-                if (type == null) return null;
-                var method = AccessTools.Method(type, "setMainTextContent", new[] { typeof(string) });
-                if (method != null) Plugin.Logger?.LogInfo("[Content] Found PopUpBase.setMainTextContent for patching");
-                return method;
-            }
+            static MethodBase TargetMethod() => Seams.PopUpBase_setMainTextContent;
 
             [HarmonyPostfix]
             static void Postfix(string __0)
@@ -192,15 +215,11 @@ namespace SkaldAccessibility.Patches
         [HarmonyPatch]
         public static class PopupSecondaryTextHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.PopUpBase_setSecondaryTextContent != null;
+
             [HarmonyTargetMethod]
-            static MethodBase TargetMethod()
-            {
-                var type = AccessTools.TypeByName("PopUpBase");
-                if (type == null) return null;
-                var method = AccessTools.Method(type, "setSecondaryTextContent", new[] { typeof(string) });
-                if (method != null) Plugin.Logger?.LogInfo("[Content] Found PopUpBase.setSecondaryTextContent for patching");
-                return method;
-            }
+            static MethodBase TargetMethod() => Seams.PopUpBase_setSecondaryTextContent;
 
             [HarmonyPostfix]
             static void Postfix(string __0)
@@ -216,15 +235,11 @@ namespace SkaldAccessibility.Patches
         [HarmonyPatch]
         public static class PopupTertiaryTextHook
         {
+            [HarmonyPrepare]
+            static bool Prepare() => Seams.PopUpBase_setTertiaryTextContent != null;
+
             [HarmonyTargetMethod]
-            static MethodBase TargetMethod()
-            {
-                var type = AccessTools.TypeByName("PopUpBase");
-                if (type == null) return null;
-                var method = AccessTools.Method(type, "setTertiaryTextContent", new[] { typeof(string) });
-                if (method != null) Plugin.Logger?.LogInfo("[Content] Found PopUpBase.setTertiaryTextContent for patching");
-                return method;
-            }
+            static MethodBase TargetMethod() => Seams.PopUpBase_setTertiaryTextContent;
 
             [HarmonyPostfix]
             static void Postfix(string __0)
