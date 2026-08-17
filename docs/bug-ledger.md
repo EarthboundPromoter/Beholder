@@ -82,6 +82,8 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **Owner constraint (ruled 2026-08-16):** the bar must never read out in full per step. Fix SHAPE undecided — candidates surveyed with the owner: (a) recognize the strip's fixed shape in overland, silence auto-read, diff only rare-change tail components (day, light/weather phrase) as announcements; (b) a dedicated status-bar reader (on-demand key or review-panel section) with full silence otherwise. Design ruling pending; strip stays in the review panel regardless.
 
+**PARTIAL RULING + FIX (owner, 2026-08-17):** the strip was overrunning the game-opening dialogue on load. Ruled: forced quiet on initial load and whenever dialogue or other UI takes precedence. Landed same day: the strip (recognized by its rendered "Time: " shape on the SecondaryDesc source) speaks only while OverlandState is the settled, popup-free state, and its first value after any state transition settles silently (the B1 shape) — the diff record still updates so a suppressed value can never speak late. Per-step chatter during plain overland walking remains the OPEN half of this row.
+
 ## Closed
 
 (none yet)

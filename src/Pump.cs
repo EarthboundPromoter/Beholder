@@ -203,6 +203,10 @@ namespace SkaldAccessibility
         private static string _pendingZoneLabel;
         public static void NoteZoneLabel(string label) => _pendingZoneLabel = label;
 
+        // Overland status strip: first value after a state transition settles
+        // silently (owner ruling 2026-08-17 — quiet on load).
+        private static bool _stripSeenSinceState;
+
         public static void NoteCombatLog(string line)
         {
             if (!string.IsNullOrWhiteSpace(line)) _pendingCombatLog.Add(line);
@@ -371,6 +375,36 @@ namespace SkaldAccessibility
                     // can't defeat the diff and talk over the prompt.
                     cleaned = cleaned.TrimEnd('_').TrimEnd();
                     if (cleaned.Length == 0) continue;
+                }
+
+                // Overland status strip (ledger B7 family; owner ruling
+                // 2026-08-17: forced quiet on initial load and whenever
+                // dialogue or other UI takes precedence). Recognized by its
+                // own rendered shape; the diff record still updates so a
+                // suppressed value can never speak late over other UI. The
+                // first value after any state transition settles silently
+                // (the B1 shape), so a fresh load says nothing; changes
+                // while overland itself is the settled, popup-free state
+                // speak as before (per-step noise remains B7, parked).
+                if (source == "SecondaryDesc" && cleaned.StartsWith("Time: "))
+                {
+                    bool overlandActive = false;
+                    try
+                    {
+                        object st = CurrentStateObject();
+                        overlandActive = st != null && Seams.OverlandStateType != null
+                            && Seams.OverlandStateType.IsInstanceOfType(st)
+                            && (Seams.PopUpControl_getCurrentPopUp == null
+                                || Seams.PopUpControl_getCurrentPopUp.Invoke(null, null) == null);
+                    }
+                    catch { }
+                    bool firstSinceTransition = !_stripSeenSinceState;
+                    _stripSeenSinceState = true;
+                    if (!overlandActive || firstSinceTransition)
+                    {
+                        _lastContent[source] = cleaned;
+                        continue;
+                    }
                 }
                 _lastContent.TryGetValue(source, out string prev);
                 if (cleaned == prev) continue;
@@ -1252,6 +1286,7 @@ namespace SkaldAccessibility
             _lastContent.Remove("FeatPoints");
             _pendingRefunds.Clear();   // a mid-settle exit must not carry a
             _refundTally.Clear();      // refund line into the next state
+            _stripSeenSinceState = false;
             GameStateTracker.OnStateChanged(name, state);
         }
 
