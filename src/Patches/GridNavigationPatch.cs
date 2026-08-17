@@ -253,7 +253,14 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                if (grid == null || Seams.ButtonData_hoverText == null) return null;
+                if (grid == null) return null;
+
+                // Sheet-owned grids (Grimoire / Abilities zones) resolve from
+                // their sheet's own lists.
+                string sheetName = SheetGridZonePatch.NameAt(grid, index);
+                if (sheetName != null) return sheetName;
+
+                if (Seams.ButtonData_hoverText == null) return null;
                 object state = Pump.CurrentStateObject();
                 if (state == null) return null;
 

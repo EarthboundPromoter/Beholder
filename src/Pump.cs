@@ -178,6 +178,12 @@ namespace SkaldAccessibility
             if (feat != null && !_pendingRefunds.Contains(feat)) _pendingRefunds.Add(feat);
         }
 
+        // ---- Zone-label slot (sheet-grid crossings): prepended to the next
+        //      selection line so "Maneuver Abilities. Cleave, 1 of 5" arrives
+        //      as one utterance. Latest wins; consumed on speak. ----
+        private static string _pendingZoneLabel;
+        public static void NoteZoneLabel(string label) => _pendingZoneLabel = label;
+
         public static void NoteCombatLog(string line)
         {
             if (!string.IsNullOrWhiteSpace(line)) _pendingCombatLog.Add(line);
@@ -549,6 +555,11 @@ namespace SkaldAccessibility
 
             string text = ComposeSelection(control, index);
             if (text == null) return; // non-conforming control — graceful silence
+            if (_pendingZoneLabel != null)
+            {
+                text = $"{_pendingZoneLabel}. {text}";
+                _pendingZoneLabel = null;
+            }
             // A popup announced this frame owns the interrupt (its ctor's own
             // index-0 button write lands in the same drain) — the focus line
             // queues behind the body instead of cutting it to nothing.
@@ -1117,6 +1128,8 @@ namespace SkaldAccessibility
             _lastStateName = name;
             ReviewLayer.OnStateTransition();    // review never survives a state change
             OverlandCursor.OnStateTransition(); // neither does the cursor or its list
+            Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone
+            _pendingZoneLabel = null;
             // Point-pool records reset per state so re-entering an editor
             // screen re-announces its pools (the diff records otherwise
             // outlive the screen and dedup the entry lines to silence).

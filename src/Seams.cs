@@ -350,6 +350,27 @@ namespace SkaldAccessibility
         internal static MethodInfo PopUpSpellSelector_getLegalSpells;
         internal static MethodInfo Feat_subtractPossibleRank;
 
+        // ---- Sheet-grid zones: Grimoire spell grid + Abilities grids
+        //      (owner ruling 2026-08-17: A/D crosses rows ↔ grids) ----
+        internal static Type SheetClassType;
+        internal static Type UISpellBookSheetType;
+        internal static Type UIAbilitySheetType;
+        internal static Type UIBaseCharacterSheetType;
+        internal static MethodInfo SheetClass_getControllerScrollableList;
+        internal static MethodInfo GUIControl_controllerScrollSidewaysLeft;
+        internal static MethodInfo GUIControl_controllerScrollSidewaysRight;
+        internal static MethodInfo UICanvas_getCurrentSelectedButtonIndex;
+        internal static FieldInfo SpellBookSheet_grid;
+        internal static FieldInfo SpellBookSheet_spellList;
+        internal static FieldInfo SpellList_spells;
+        internal static FieldInfo AbilitySheet_gridManeuvers;
+        internal static FieldInfo AbilitySheet_gridTriggered;
+        internal static FieldInfo AbilitySheet_gridPassive;
+        internal static FieldInfo AbilitySheet_maneuverList;
+        internal static FieldInfo AbilitySheet_triggeredList;
+        internal static FieldInfo AbilitySheet_passiveList;
+        internal static FieldInfo BaseCharacterSheet_leftColumn;
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -658,6 +679,26 @@ namespace SkaldAccessibility
             Item_getNameAndAmount = M(ItemType, "Item", "getNameAndAmount");
             PopUpSpellSelector_getLegalSpells = M(PopUpSpellSelectorType, "PopUpSpellSelector", "getLegalSpells");
             Feat_subtractPossibleRank = M(FeatType, "Feat", "subtractPossibleRank");
+
+            // Sheet-grid zones (Grimoire / Abilities)
+            SheetClassType = T("SheetClass");
+            UISpellBookSheetType = T("UISpellBookSheet");
+            UIAbilitySheetType = T("UIAbilitySheet");
+            UIBaseCharacterSheetType = T("UIBaseCharacterSheet");
+            SheetClass_getControllerScrollableList = M(SheetClassType, "SheetClass", "getControllerScrollableList");
+            GUIControl_controllerScrollSidewaysLeft = M(typeof(GUIControl), "GUIControl", "controllerScrollSidewaysLeft");
+            GUIControl_controllerScrollSidewaysRight = M(typeof(GUIControl), "GUIControl", "controllerScrollSidewaysRight");
+            UICanvas_getCurrentSelectedButtonIndex = M(UICanvasType, "UICanvas", "getCurrentSelectedButtonIndex");
+            SpellBookSheet_grid = F(UISpellBookSheetType, "UISpellBookSheet", "grid");
+            SpellBookSheet_spellList = F(UISpellBookSheetType, "UISpellBookSheet", "spellList");
+            SpellList_spells = F(T("SpellContainer+SpellList"), "SpellContainer.SpellList", "spells");
+            AbilitySheet_gridManeuvers = F(UIAbilitySheetType, "UIAbilitySheet", "gridManeuvers");
+            AbilitySheet_gridTriggered = F(UIAbilitySheetType, "UIAbilitySheet", "gridTriggered");
+            AbilitySheet_gridPassive = F(UIAbilitySheetType, "UIAbilitySheet", "gridPassive");
+            AbilitySheet_maneuverList = F(UIAbilitySheetType, "UIAbilitySheet", "maneuverList");
+            AbilitySheet_triggeredList = F(UIAbilitySheetType, "UIAbilitySheet", "triggeredAbilityList");
+            AbilitySheet_passiveList = F(UIAbilitySheetType, "UIAbilitySheet", "passiveAbilityList");
+            BaseCharacterSheet_leftColumn = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "leftColumn");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");
