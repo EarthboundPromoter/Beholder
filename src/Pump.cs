@@ -444,7 +444,12 @@ namespace SkaldAccessibility
                 // state change, so the entry-time announcement never re-fires
                 // and the new choices went unspoken. The prose change IS the
                 // node event; re-announce the choice row queued behind it
-                // (the queue's dedup absorbs the state-entry overlap).
+                // (the queue's dedup absorbs the state-entry overlap). The
+                // list earmarks the focused row (", selected"), so the focus
+                // event is absorbed into it — a node mount speaks exactly two
+                // utterances, prose then the earmarked list, and the separate
+                // focus line can never interrupt the prose (owner ruling
+                // 2026-08-17, hold-and-flush doctrine).
                 if (source == "SceneDesc")
                 {
                     try
@@ -452,7 +457,10 @@ namespace SkaldAccessibility
                         object state = CurrentStateObject();
                         if (state != null && Seams.SceneBaseStateType != null
                             && Seams.SceneBaseStateType.IsInstanceOfType(state))
-                            GameStateTracker.AnnounceNumericButtons(state);
+                        {
+                            object choices = GameStateTracker.AnnounceNumericButtons(state);
+                            if (choices != null) AbsorbFocus(choices);
+                        }
                     }
                     catch { }
                 }
@@ -613,6 +621,46 @@ namespace SkaldAccessibility
             _selControl = canvas;
             _selIndex = index;
             _selElement = FocusedElementOf(canvas, index);
+            ReviewLayer.OnFocusChanged();
+        }
+
+        /// <summary>Absorb a focus event whose truth was just spoken inside a
+        /// composed utterance (the earmarked choice list): align the selection
+        /// dedup records to the canvas's settled focus and retire any pending
+        /// note targeting the SAME canvas, so no separate focus line races the
+        /// prose. A focus write landing frames later (the scene reveal's mouse
+        /// snap re-writes the same value when the prose finishes revealing)
+        /// hits the aligned records and dedups silently; a genuine later move
+        /// diffs and speaks normally. Pending notes for other canvases are
+        /// left alone — that focus is information this utterance didn't carry.
+        /// The index clamp mirrors the game's boundCurrentSelectedButtons over
+        /// the scrollable elements — the value its own snap path settles on.</summary>
+        internal static void AbsorbFocus(object canvas)
+        {
+            if (canvas == null || Seams.UICanvas_currentSelectedButton == null) return;
+            int index;
+            try { index = (int)Seams.UICanvas_currentSelectedButton.GetValue(canvas); }
+            catch { return; }
+            try
+            {
+                var elements = Seams.UICanvas_getScrollableElements?.Invoke(canvas, null)
+                    as System.Collections.IList;
+                int count = elements != null ? elements.Count : 0;
+                if (count > 0 && index >= count) index = count - 1;
+            }
+            catch { }
+            if (index < 0) index = 0;
+
+            _selControl = canvas;
+            _selIndex = index;
+            _selElement = FocusedElementOf(canvas, index);
+            if (ReferenceEquals(_pendingSelection, canvas))
+            {
+                _pendingSelection = null;
+                _pendingZoneLabel = null;
+            }
+            if (ReferenceEquals(_pendingCanvasSwitch, canvas))
+                _pendingCanvasSwitch = null;
             ReviewLayer.OnFocusChanged();
         }
 

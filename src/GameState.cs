@@ -127,9 +127,21 @@ namespace SkaldAccessibility
 
         /// <summary>
         /// Read numeric buttons from the active state's GUIControl and announce
-        /// them with their number key shortcuts (e.g., "1: Select, 2: Abort").
+        /// them with their number key shortcuts, earmarking the focused row
+        /// ("1: Continue, selected, 2: Leave" — the B6 word). The focus truth is
+        /// the row's own currentSelectedButton, clamped over the non-empty
+        /// buttons exactly as the game's boundCurrentSelectedButtons clamps it:
+        /// the canvas is reused across rebuilds and setButtons never resets the
+        /// index, so a stale value here settles to the same element the game's
+        /// own reveal-time mouse snap will land on. Empty trailing slots are
+        /// excluded from the game's scrollable elements
+        /// (UITextBlock.useableAsScrollableElement = !isEmpty), so the index
+        /// counts only content-bearing buttons. Returns the numeric canvas when
+        /// an earmark was spoken so the caller can absorb the focus event into
+        /// this utterance (Pump.AbsorbFocus); null when nothing spoke or the
+        /// focus index was unreadable.
         /// </summary>
-        internal static void AnnounceNumericButtons(object stateObject)
+        internal static object AnnounceNumericButtons(object stateObject)
         {
             try
             {
@@ -137,19 +149,44 @@ namespace SkaldAccessibility
                 // logged and counted at boot.
                 if (Seams.StateBase_guiControl == null || Seams.GUIControl_numericButtons == null
                     || Seams.UIButtonControlBase_getButtonsList == null || Seams.UITextBlock_content == null)
-                    return;
+                    return null;
 
-                if (stateObject == null) return;
+                if (stateObject == null) return null;
 
                 object guiControl = Seams.StateBase_guiControl.GetValue(stateObject);
-                if (guiControl == null) return;
+                if (guiControl == null) return null;
 
                 object numericButtons = Seams.GUIControl_numericButtons.GetValue(guiControl);
-                if (numericButtons == null) return;
+                if (numericButtons == null) return null;
 
                 var buttons = Seams.UIButtonControlBase_getButtonsList.Invoke(numericButtons, null) as IList;
-                if (buttons == null || buttons.Count == 0) return;
+                if (buttons == null || buttons.Count == 0) return null;
 
+                bool focusKnown = false;
+                int focus = 0;
+                if (Seams.UICanvas_currentSelectedButton != null && Seams.UICanvasType != null
+                    && Seams.UICanvasType.IsInstanceOfType(numericButtons))
+                {
+                    focus = (int)Seams.UICanvas_currentSelectedButton.GetValue(numericButtons);
+                    focusKnown = true;
+                }
+
+                int scrollableCount = 0;
+                for (int i = 0; i < buttons.Count; i++)
+                {
+                    object b = buttons[i];
+                    if (b == null) continue;
+                    string r = Seams.UITextBlock_content.GetValue(b) as string;
+                    if (!string.IsNullOrWhiteSpace(r)) scrollableCount++;
+                }
+                if (focusKnown && scrollableCount > 0)
+                {
+                    if (focus < 0) focus = 0;
+                    else if (focus >= scrollableCount) focus = scrollableCount - 1;
+                }
+
+                bool earmarked = false;
+                int scrollOrdinal = -1;
                 var parts = new System.Collections.Generic.List<string>();
                 for (int i = 0; i < buttons.Count; i++)
                 {
@@ -157,21 +194,28 @@ namespace SkaldAccessibility
                     if (button == null) continue;
                     string raw = Seams.UITextBlock_content.GetValue(button) as string;
                     if (string.IsNullOrWhiteSpace(raw)) continue;
+                    scrollOrdinal++;
                     string cleaned = TextCleaner.CleanText(raw);
                     if (string.IsNullOrWhiteSpace(cleaned)) continue;
-                    parts.Add($"{i + 1}: {TranscodeQuickLabel(cleaned, i, stateObject)}");
+                    string part = $"{i + 1}: {TranscodeQuickLabel(cleaned, i, stateObject)}";
+                    if (focusKnown && scrollableCount > 0 && scrollOrdinal == focus)
+                    {
+                        part += ", selected";
+                        earmarked = true;
+                    }
+                    parts.Add(part);
                 }
 
-                if (parts.Count > 0)
-                {
-                    string buttonList = string.Join(", ", parts);
-                    Scaffold.SpeechService.SayQueued(buttonList, "NumericButtons");
-                    Plugin.Logger?.LogInfo($"[State:buttons] {buttonList}");
-                }
+                if (parts.Count == 0) return null;
+                string buttonList = string.Join(", ", parts);
+                Scaffold.SpeechService.SayQueued(buttonList, "NumericButtons");
+                Plugin.Logger?.LogInfo($"[State:buttons] {buttonList}");
+                return earmarked ? numericButtons : null;
             }
             catch (Exception ex)
             {
                 Plugin.Logger?.LogDebug($"[State:buttons] {ex.Message}");
+                return null;
             }
         }
 
