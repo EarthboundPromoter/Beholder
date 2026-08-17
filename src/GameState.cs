@@ -89,8 +89,14 @@ namespace SkaldAccessibility
                     Scaffold.SpeechService.Say(announcement, "State");
                 }
 
-                // Announce numeric button options with their key shortcuts
-                AnnounceNumericButtons(stateObject);
+                // Announce numeric button options with their key shortcuts.
+                // When the list earmarked the focused row, the entry focus
+                // event is absorbed into it — engine order is content first,
+                // focus write second (BaseMenuState ctor: setGUIData then
+                // clearCurrentSelectedOptionAndSnap), and the separate focus
+                // line must not interrupt the entry read.
+                object choices = AnnounceNumericButtons(stateObject);
+                if (choices != null) Pump.AbsorbFocus(choices);
             }
         }
 
@@ -165,7 +171,8 @@ namespace SkaldAccessibility
                 bool focusKnown = false;
                 int focus = 0;
                 if (Seams.UICanvas_currentSelectedButton != null && Seams.UICanvasType != null
-                    && Seams.UICanvasType.IsInstanceOfType(numericButtons))
+                    && Seams.UICanvasType.IsInstanceOfType(numericButtons)
+                    && FocusRestsOnNumericRow(guiControl, numericButtons))
                 {
                     focus = (int)Seams.UICanvas_currentSelectedButton.GetValue(numericButtons);
                     focusKnown = true;
@@ -217,6 +224,25 @@ namespace SkaldAccessibility
                 Plugin.Logger?.LogDebug($"[State:buttons] {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>The game's own focus-routing truth: the numeric row is the
+        /// focus surface exactly when getControllerScrollableList returns it
+        /// (scenes, menus, prompts). Sheets route W/S to their lists and grids —
+        /// there the numeric row renders no highlight and must not claim
+        /// "selected"; their entry focus speaks as its own queued line instead
+        /// (the Pump's first-observation demotion). The reflection call
+        /// dispatches virtually and runs the mod's own prefixes (an open WP9
+        /// grid answers with the grid — correctly not the numeric row).</summary>
+        private static bool FocusRestsOnNumericRow(object guiControl, object numericButtons)
+        {
+            try
+            {
+                if (Seams.GUIControl_getControllerScrollableList == null) return false;
+                object list = Seams.GUIControl_getControllerScrollableList.Invoke(guiControl, null);
+                return ReferenceEquals(list, numericButtons);
+            }
+            catch { return false; }
         }
 
         /// <summary>

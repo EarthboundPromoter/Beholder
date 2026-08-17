@@ -33,6 +33,28 @@ namespace SkaldAccessibility
                                              // set under a constant index — CC report
                                              // build 2026-08-16)
 
+        // A canvas's FIRST focus utterance in a state is an arrival observation
+        // (engine init writes focus after content — BaseMenuState ctor, list
+        // inits), so it queues behind the entry read; only later events on an
+        // already-heard canvas are user moves that own the interrupt (owner
+        // policy 2026-08-17: joins respect engine init order). Reference
+        // identity — game UI objects must not be compared by value.
+        private static readonly System.Collections.Generic.HashSet<object> _spokenCanvases
+            = new System.Collections.Generic.HashSet<object>(new RefComparer());
+        // B6 two-cursor lists carry BOTH joins on the same canvas object
+        // (funnel focus and current-object), and each is its own arrival —
+        // a shared set would let the entry focus line consume the first-touch
+        // and the same-frame "Selected:" init write would interrupt after all.
+        private static readonly System.Collections.Generic.HashSet<object> _spokenListSelections
+            = new System.Collections.Generic.HashSet<object>(new RefComparer());
+        private sealed class RefComparer : System.Collections.Generic.IEqualityComparer<object>
+        {
+            bool System.Collections.Generic.IEqualityComparer<object>.Equals(object a, object b)
+                => ReferenceEquals(a, b);
+            int System.Collections.Generic.IEqualityComparer<object>.GetHashCode(object o)
+                => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o);
+        }
+
         // ---- Content stream (noted by ContentSpeechPatch; latest wins PER SOURCE) ----
         private struct ContentNote { public string Raw; public bool Interrupt; }
         private static readonly System.Collections.Generic.Dictionary<string, ContentNote> _pendingContent
@@ -533,7 +555,10 @@ namespace SkaldAccessibility
         /// game's current-object write, read back at the clock and diffed, so
         /// the click-to-select step of every list sheet is audible (ledger B6).
         /// A first observation speaks too (owner ruling 2026-08-16: settled
-        /// state on arrival is always voiced); only repeats stay silent.</summary>
+        /// state on arrival is always voiced) but QUEUES — list inits write
+        /// their current object during screen build, and the arrival line must
+        /// trail the entry read, not cut it (owner policy 2026-08-17). Repeats
+        /// stay silent; real selection changes interrupt.</summary>
         private static void DrainListSelection()
         {
             object list = _pendingListSelection;
@@ -549,7 +574,9 @@ namespace SkaldAccessibility
 
             string name = Patches.ListSelectionPatch.ListNameOf(current);
             if (name == null) return;
-            Scaffold.SpeechService.Say($"Selected: {name}.", "Nav");
+            if (_spokenListSelections.Add(list))
+                Scaffold.SpeechService.SayQueued($"Selected: {name}.", "Nav");
+            else Scaffold.SpeechService.Say($"Selected: {name}.", "Nav");
         }
 
         /// <summary>Speak which arrow the cursor flipped onto ("Plus." /
@@ -611,8 +638,10 @@ namespace SkaldAccessibility
                 && Seams.UIButtonControlBaseType.IsInstanceOfType(canvas);
             string line = isButtonRow ? $"Buttons: {text}." : text;
             // A popup announced this frame owns the interrupt — its own zone
-            // line queues behind the body instead of cutting it off.
-            if (_popupSpokeThisFrame) Scaffold.SpeechService.SayQueued(line, "Nav");
+            // line queues behind the body instead of cutting it off. A canvas
+            // never heard this state is an arrival observation and queues too.
+            if (_popupSpokeThisFrame || _spokenCanvases.Add(canvas))
+                Scaffold.SpeechService.SayQueued(line, "Nav");
             else Scaffold.SpeechService.Say(line, "Nav");
 
             // Supersede the frame's selection note and align the dedup records
@@ -654,6 +683,9 @@ namespace SkaldAccessibility
             _selControl = canvas;
             _selIndex = index;
             _selElement = FocusedElementOf(canvas, index);
+            _spokenCanvases.Add(canvas); // the list utterance carried this
+                                         // canvas's arrival — its next focus
+                                         // event is a user move
             if (ReferenceEquals(_pendingSelection, canvas))
             {
                 _pendingSelection = null;
@@ -713,8 +745,12 @@ namespace SkaldAccessibility
             if (zoneLabel != null) text = $"{zoneLabel}. {text}";
             // A popup announced this frame owns the interrupt (its ctor's own
             // index-0 button write lands in the same drain) — the focus line
-            // queues behind the body instead of cutting it to nothing.
-            if (_popupSpokeThisFrame) Scaffold.SpeechService.SayQueued(text, "Nav");
+            // queues behind the body instead of cutting it to nothing. A canvas
+            // never heard this state is an arrival observation (engine init
+            // writes focus after content) and queues behind the entry read;
+            // later events on a heard canvas are user moves and interrupt.
+            if (_popupSpokeThisFrame || _spokenCanvases.Add(control))
+                Scaffold.SpeechService.SayQueued(text, "Nav");
             else Scaffold.SpeechService.Say(text, "Nav");
         }
 
@@ -1407,6 +1443,8 @@ namespace SkaldAccessibility
             _pendingRefunds.Clear();   // a mid-settle exit must not carry a
             _refundTally.Clear();      // refund line into the next state
             _stripSeenSinceState = false;
+            _spokenCanvases.Clear();       // every canvas's next focus line is an
+            _spokenListSelections.Clear(); // arrival observation in the new state
             GameStateTracker.OnStateChanged(name, state);
         }
 
