@@ -89,7 +89,15 @@ namespace SkaldAccessibility
         private static object _pendingFeatRank;            // feat whose rank changed
         private static object _lastFeatTree;               // tree-crossing prefix record
         private static readonly System.Collections.Generic.List<object> _pendingRefunds
-            = new System.Collections.Generic.List<object>(); // cascade-refunded feats (batch)
+            = new System.Collections.Generic.List<object>(); // cascade-refunded feats (this frame)
+        // The legality cascade drains ONE rank per feat per FRAME, so a
+        // multi-rank refund arrives across consecutive frames (adversarial
+        // review F4) — tally per feat and speak once after a quiet frame,
+        // holding the FeatPoints trailer until the tally settles.
+        private static readonly System.Collections.Generic.Dictionary<object, int> _refundTally
+            = new System.Collections.Generic.Dictionary<object, int>();
+        private static int _refundQuietFrames;
+        private static bool RefundSettling => _refundTally.Count > 0;
 
         // ---- List-selection stream (noted by ListSelectionPatch; latest wins) ----
         private static object _pendingListSelection;
@@ -338,6 +346,11 @@ namespace SkaldAccessibility
             foreach (var kv in _pendingContent)
             {
                 string source = kv.Key;
+                // While a multi-frame refund cascade settles, hold its
+                // remaining-points trailer — the setter refires every frame,
+                // so the settled value re-notes and speaks once, after the
+                // refund line (F4).
+                if (source == "FeatPoints" && RefundSettling) continue;
                 string cleaned = Patches.TextCleaner.CleanText(kv.Value.Raw);
                 if (string.IsNullOrWhiteSpace(cleaned)) continue;
                 if (source == "PopupTertiary")
@@ -553,13 +566,14 @@ namespace SkaldAccessibility
             ReviewLayer.OnFocusChanged(); // review cursors reset with focus
             if (index < 0) return;
 
+            // Consume the zone label before the null check — a failed
+            // composition must never leave it to prefix an unrelated later
+            // line (adversarial review F2; a lost label beats a leaked one).
+            string zoneLabel = _pendingZoneLabel;
+            _pendingZoneLabel = null;
             string text = ComposeSelection(control, index);
             if (text == null) return; // non-conforming control — graceful silence
-            if (_pendingZoneLabel != null)
-            {
-                text = $"{_pendingZoneLabel}. {text}";
-                _pendingZoneLabel = null;
-            }
+            if (zoneLabel != null) text = $"{zoneLabel}. {text}";
             // A popup announced this frame owns the interrupt (its ctor's own
             // index-0 button write lands in the same drain) — the focus line
             // queues behind the body instead of cutting it to nothing.
@@ -991,27 +1005,42 @@ namespace SkaldAccessibility
             }
 
             // Cascade refunds (owner phrasing 2026-08-17): state the diff,
-            // remaining points trail via the FeatPoints line this same frame.
-            // Queued — the triggering press's own rank line owns the interrupt.
+            // remaining points trail via the FeatPoints line once the tally
+            // settles. Queued — the triggering press's rank line owns the
+            // interrupt.
             if (_pendingRefunds.Count > 0)
             {
-                var names = new System.Collections.Generic.List<string>();
                 foreach (object refunded in _pendingRefunds)
                 {
+                    _refundTally.TryGetValue(refunded, out int n);
+                    _refundTally[refunded] = n + 1;
+                }
+                _pendingRefunds.Clear();
+                _refundQuietFrames = 0;
+            }
+            else if (RefundSettling && ++_refundQuietFrames >= 2)
+            {
+                int total = 0;
+                var names = new System.Collections.Generic.List<string>();
+                foreach (var kv in _refundTally)
+                {
+                    total += kv.Value;
                     try
                     {
-                        string n = Seams.Feat_getName?.Invoke(refunded, null) as string;
+                        string n = Seams.Feat_getName?.Invoke(kv.Key, null) as string;
                         n = string.IsNullOrWhiteSpace(n) ? null : Patches.TextCleaner.CleanText(n);
                         if (n != null) names.Add(n);
                     }
                     catch { }
                 }
-                _pendingRefunds.Clear();
-                if (names.Count == 1)
-                    Scaffold.SpeechService.SayQueued($"Point removed from {names[0]}.", "Points");
-                else if (names.Count > 1)
-                    Scaffold.SpeechService.SayQueued(
-                        $"Points removed from {string.Join(", ", names.ToArray())}.", "Points");
+                _refundTally.Clear();
+                if (names.Count > 0)
+                {
+                    string joined = string.Join(", ", names.ToArray());
+                    Scaffold.SpeechService.SayQueued(total == 1
+                        ? $"Point removed from {joined}."
+                        : $"{total} points removed from {joined}.", "Points");
+                }
             }
 
             if (_pendingPress.HasValue)
@@ -1136,6 +1165,8 @@ namespace SkaldAccessibility
             _lastAttrPool = int.MinValue;
             _lastSkillPool = int.MinValue;
             _lastContent.Remove("FeatPoints");
+            _pendingRefunds.Clear();   // a mid-settle exit must not carry a
+            _refundTally.Clear();      // refund line into the next state
             GameStateTracker.OnStateChanged(name, state);
         }
 

@@ -115,8 +115,11 @@ namespace SkaldAccessibility
                 if (stateName == "FeatBuyState")
                     return index == 0 ? "Save and Exit, unavailable"
                          : index == 2 ? "Reset, unavailable" : "unavailable";
+                // The CC feats screen passes no exitPrompt override, so slot 0
+                // is the literal "Exit" and its "..." placeholder lands at
+                // index 1 (InfoBaseState.setButtons; adversarial review F3).
                 if (stateName == "CharacterCreationFeatsState")
-                    return index == 0 ? "Continue, unavailable" : "unavailable";
+                    return index == 1 ? "Continue, unavailable" : "unavailable";
                 return "unavailable";
             }
             return cleaned;

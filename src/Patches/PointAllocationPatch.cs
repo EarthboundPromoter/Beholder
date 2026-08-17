@@ -188,6 +188,11 @@ namespace SkaldAccessibility.Patches
                 _inDirectRefund = false;
                 NoteIfRankChanged(__state);
             }
+
+            /// <summary>Runs even when the original throws — the flag can
+            /// never stick and silence the cascade hook (review F5).</summary>
+            [HarmonyFinalizer]
+            static void Finalizer() => _inDirectRefund = false;
         }
 
         /// <summary>True while the game's own right-click refund handler runs —

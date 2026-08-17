@@ -41,12 +41,67 @@ namespace SkaldAccessibility.Patches
         private static object _gui;      // the owning GUIControl while a zone is active
         private static object _sheet;    // the sheet the zone was entered from
         private static object _zoneGrid; // the active grid; null = rows zone
+        private static int _zoneSlot = -1; // which sheet field the grid came from
+                                           // (0 = spellbook; 1..3 = ability grids)
 
         internal static void OnStateTransition()
         {
             _gui = null;
             _sheet = null;
             _zoneGrid = null;
+            _zoneSlot = -1;
+        }
+
+        /// <summary>The sheets rebuild their grid OBJECTS in place on a
+        /// party-member portrait swap (addEntries allocates new grids; no
+        /// state change fires) — a captured grid reference goes stale and
+        /// detached (adversarial review F1). Re-validate against the live
+        /// field every use: re-seat onto the new grid audibly, or drop the
+        /// zone when the slot emptied. Returns true when the zone is live.</summary>
+        private static bool ReconcileZone()
+        {
+            if (_zoneGrid == null || _sheet == null) return false;
+            try
+            {
+                FieldInfo slot = SlotField(_zoneSlot);
+                if (slot == null) { OnStateTransition(); return false; }
+                object live = slot.GetValue(_sheet);
+                if (ReferenceEquals(live, _zoneGrid)) return true;
+                if (live == null || CountOf(live) == 0) { OnStateTransition(); return false; }
+                _zoneGrid = live;
+                string label = GridLabel(_sheet, live);
+                if (label != null) Pump.NoteZoneLabel(label);
+                Seams.UICanvas_setCurrentSelectedButton.Invoke(live, new object[] { 0 });
+                Snap(_gui, live);
+                return true;
+            }
+            catch { OnStateTransition(); return false; }
+        }
+
+        private static FieldInfo SlotField(int slot)
+        {
+            switch (slot)
+            {
+                case 0: return Seams.SpellBookSheet_grid;
+                case 1: return Seams.AbilitySheet_gridManeuvers;
+                case 2: return Seams.AbilitySheet_gridTriggered;
+                case 3: return Seams.AbilitySheet_gridPassive;
+                default: return null;
+            }
+        }
+
+        private static int SlotOf(object sheet, object grid)
+        {
+            try
+            {
+                if (Seams.UISpellBookSheetType != null && Seams.UISpellBookSheetType.IsInstanceOfType(sheet))
+                    return 0;
+                if (IsField(Seams.AbilitySheet_gridManeuvers, sheet, grid)) return 1;
+                if (IsField(Seams.AbilitySheet_gridTriggered, sheet, grid)) return 2;
+                if (IsField(Seams.AbilitySheet_gridPassive, sheet, grid)) return 3;
+            }
+            catch { }
+            return -1;
         }
 
         private static bool Ready =>
@@ -80,6 +135,8 @@ namespace SkaldAccessibility.Patches
             [HarmonyPrefix]
             static bool Prefix(ref UICanvas __result)
             {
+                if (_zoneGrid == null) return true;
+                if (!ReconcileZone()) return true; // zone dropped — native list
                 if (_zoneGrid is UICanvas grid)
                 {
                     __result = grid;
@@ -188,6 +245,7 @@ namespace SkaldAccessibility.Patches
             _gui = gui;
             _sheet = sheet;
             _zoneGrid = grid;
+            _zoneSlot = SlotOf(sheet, grid);
             string label = GridLabel(sheet, grid);
             if (label != null) Pump.NoteZoneLabel(label);
             Seams.UICanvas_setCurrentSelectedButton.Invoke(grid, new object[] { atEnd ? count - 1 : 0 });
@@ -198,6 +256,7 @@ namespace SkaldAccessibility.Patches
         {
             object sheet = _sheet;
             _zoneGrid = null;
+            _zoneSlot = -1;
             int rows = RowCountOf(sheet);
             if (rows <= 0) return;
             int index = (int)Seams.UICanvas_getCurrentSelectedButtonIndex.Invoke(sheet, null);
