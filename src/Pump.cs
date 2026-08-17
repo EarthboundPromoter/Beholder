@@ -790,6 +790,7 @@ namespace SkaldAccessibility
                 // hovered name into the tertiary line — seed that instead of
                 // SecondaryDesc.
                 bool fromSpellPopup = false;
+                string qualifier = null;
                 if (raw == null && Seams.PopUpSpellSelectorType != null
                     && Seams.PopUpSpellSelector_getLegalSpells != null
                     && Seams.PopUpControl_getCurrentPopUp != null
@@ -802,8 +803,35 @@ namespace SkaldAccessibility
                             as System.Collections.IList;
                         if (spells != null && index >= 0 && index < spells.Count)
                         {
-                            raw = Seams.SkaldBaseObject_getName.Invoke(spells[index], null) as string;
+                            object spell = spells[index];
+                            raw = Seams.SkaldBaseObject_getName.Invoke(spell, null) as string;
                             fromSpellPopup = true;
+                            // Padlock / selected overlays, transcoded from the
+                            // renderer's own conditions (createButtonDataList:
+                            // locked = tier above the pick-tier; selected =
+                            // id in the picked list). The tier IS the lock
+                            // reason — the game's own rejection wording.
+                            try
+                            {
+                                if (Seams.AbilitySpell_getTier != null
+                                    && Seams.SpellSelector_tierOfSpellsToSelect != null)
+                                {
+                                    int tier = (int)Seams.AbilitySpell_getTier.Invoke(spell, null);
+                                    int pickTier = (int)Seams.SpellSelector_tierOfSpellsToSelect.GetValue(popup);
+                                    if (tier > pickTier)
+                                        qualifier = $"tier {tier}, locked";
+                                    else if (Seams.SpellSelector_spellsSelected != null
+                                        && Seams.SkaldBaseObject_getId != null)
+                                    {
+                                        var picked = Seams.SpellSelector_spellsSelected.GetValue(popup)
+                                            as System.Collections.IList;
+                                        string id = Seams.SkaldBaseObject_getId.Invoke(spell, null) as string;
+                                        if (picked != null && id != null && picked.Contains(id))
+                                            qualifier = "selected";
+                                    }
+                                }
+                            }
+                            catch { }
                         }
                     }
                 }
@@ -812,6 +840,7 @@ namespace SkaldAccessibility
                 if (string.IsNullOrWhiteSpace(name)) return null;
 
                 SeedContent(fromSpellPopup ? "PopupTertiary" : "SecondaryDesc", name);
+                if (qualifier != null) name = $"{name}, {qualifier}";
                 return count > 1 ? $"{name}, {index + 1} of {count}" : name;
             }
             catch { return null; }

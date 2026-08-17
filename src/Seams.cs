@@ -349,6 +349,10 @@ namespace SkaldAccessibility
         internal static MethodInfo Item_getNameAndAmount;
         internal static MethodInfo PopUpSpellSelector_getLegalSpells;
         internal static MethodInfo Feat_subtractPossibleRank;
+        internal static Type AbilitySpellType;
+        internal static MethodInfo AbilitySpell_getTier;
+        internal static FieldInfo SpellSelector_tierOfSpellsToSelect;
+        internal static FieldInfo SpellSelector_spellsSelected;
 
         // ---- Sheet-grid zones: Grimoire spell grid + Abilities grids
         //      (owner ruling 2026-08-17: A/D crosses rows ↔ grids) ----
@@ -689,6 +693,10 @@ namespace SkaldAccessibility
             Item_getNameAndAmount = M(ItemType, "Item", "getNameAndAmount");
             PopUpSpellSelector_getLegalSpells = M(PopUpSpellSelectorType, "PopUpSpellSelector", "getLegalSpells");
             Feat_subtractPossibleRank = M(FeatType, "Feat", "subtractPossibleRank");
+            AbilitySpellType = T("AbilitySpell");
+            AbilitySpell_getTier = M(AbilitySpellType, "AbilitySpell", "getTier");
+            SpellSelector_tierOfSpellsToSelect = F(PopUpSpellSelectorType, "PopUpSpellSelector", "tierOfSpellsToSelect");
+            SpellSelector_spellsSelected = F(PopUpSpellSelectorType, "PopUpSpellSelector", "spellsSelected");
 
             // Sheet-grid zones (Grimoire / Abilities)
             SheetClassType = T("SheetClass");

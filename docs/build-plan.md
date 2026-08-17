@@ -69,6 +69,8 @@ All four opening rulings **APPROVED by the owner, 2026-08-16**: WP0 diff disposi
 
 **Config docket (future, owner-flagged 2026-08-17):** numeric quick-button labels speak number-first with controller glyphs dropped (keyboard truth); a player-facing config should restore glyph-first speech for players on a physical controller, where the glyphs are the truth.
 
+**Parked (owner, 2026-08-17): grid-native coordinate voicing** (A1-style cell addresses) for inventory-class grids, in place of or alongside linear "4 of 9" counts. Ground fact for the revisit: the inventory grid is NOT static — the segment renders a scrolling page window (scrollbar, row increments, page offset) over the auto-sorted item list, so a coordinate scheme must choose window-relative vs list-absolute addressing. Revisit after rides.
+
 **Decomp corrections to the collision docket** (found during the session): Q never actually double-fires — `getPressedNextCharacterKey` is one function ORing the native binding with LB (SkaldIO.cs:758), and LB has no other consumer; likewise WASD movement merges binding-or-stick inside single accessors, so no double-step and **no movement unbinding is required** (docket assumption corrected; confirm by ear on the WP7 ride). The E collision is real — Inventory and carousel-right are different consumers — hence rebind (1). The triggers are natively merged to mouse clicks in SkaldIO.update (lines 520-543), so Z/X inherit real click semantics with no synthesis.
 
 ## 6. Coverage annex (2026-08-16 full-decomp survey; definitive, supersedes the March tier list)
