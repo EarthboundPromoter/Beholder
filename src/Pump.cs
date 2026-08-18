@@ -452,6 +452,13 @@ namespace SkaldAccessibility
             try { DrainTravel(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:travel] {ex.Message}"); }
 
+            // CP3 combat cursor: the deferred landing line speaks from settled
+            // truth (the game's update re-hovered and recomputed the course
+            // since the nudge). Before the spine so a landing interrupt lands
+            // ahead of the same frame's queued combat cues.
+            try { CombatCursor.DrainSpeak(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:ccursor] {ex.Message}"); }
+
             // CP1 turn spine: before DrainCombatLog so a turn boundary always
             // precedes that turn's own log narration (and can steal a pending
             // bark/log line it composed into one utterance — the disengage
@@ -1809,6 +1816,7 @@ namespace SkaldAccessibility
 
             ReviewLayer.OnStateTransition();    // review never survives a state change
             OverlandCursor.OnStateTransition(); // neither does the cursor or its list
+            CombatCursor.OnStateTransition();   // survives intra-combat churn, dies on leaving the family
             Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone
             Patches.MouseGuardPatch.OnStateTransition();    // nor a snap latch
                                                             // (entry snaps re-latch)

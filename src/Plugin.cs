@@ -41,6 +41,9 @@ namespace SkaldAccessibility
                 // CP1: the combat spine's composed-surface toggles (each cue
                 // utterance is its own config entry — owner ruling 2026-08-18).
                 CombatSpine.BindConfig(Config);
+                // CP3: the combat cursor's toggles (light tail, placement
+                // qualifier position, census).
+                CombatCursor.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own

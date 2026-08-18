@@ -49,6 +49,12 @@ namespace SkaldAccessibility
             OverlandCursor.Tick();
             if (cursorConsumed) return;
 
+            // Combat cursor (CP3): same contract, combat states only — the
+            // two gates are disjoint so exactly one cursor is ever live.
+            bool combatConsumed = CombatCursor.ProcessInput();
+            CombatCursor.Tick();
+            if (combatConsumed) return;
+
             // Repeat last speech: F1
             if (Input.GetKeyDown(KeyCode.F1))
             {

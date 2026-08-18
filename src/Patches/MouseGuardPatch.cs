@@ -72,6 +72,7 @@ namespace SkaldAccessibility.Patches
         {
             if (!_latched) return;
             if (OverlandCursor.HoldsMouse) return;
+            if (CombatCursor.HoldsMouse) return;   // CP3 peer (survey §6 ⑥)
 
             float dx = Input.mousePosition.x - _latchPhysical.x;
             float dy = Input.mousePosition.y - _latchPhysical.y;

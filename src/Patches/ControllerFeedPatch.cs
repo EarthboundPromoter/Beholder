@@ -157,7 +157,7 @@ namespace SkaldAccessibility.Patches
         {
             if (__result) return;
             // Backspace closes the WP11 catalog list; it must not also fire B.
-            if (OverlandCursor.SuppressButtonB()) return;
+            if (OverlandCursor.SuppressButtonB() || CombatCursor.SuppressButtonB()) return;
             if (EmulateActivation(KeyCode.Backspace) || Time.frameCount == SkaldIOPatches.InjectCancelFrame) __result = true;
         }
 

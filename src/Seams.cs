@@ -504,6 +504,31 @@ namespace SkaldAccessibility
         internal static FieldInfo BarkControl_barks;            // private List<Bark>
         internal static FieldInfo HoverElementControl_tacticalTextList; // private static List<HoverElement>
 
+        // ---- Combat cursor (CP3, 2026-08-18): the overland cursor retargeted.
+        //      Anchor = the acting character; path facts from the game's own
+        //      hover-recomputed course; placement validity from the game's own
+        //      zone compute; disengage/swap forecasts from the game's own
+        //      flags (survey §4b.17 — the pips mispaint these; the flags are
+        //      the truth). ----
+        internal static MethodInfo Character_GetNavigationCourse;   // the hover-preview course (capital G — engine style)
+        internal static MethodInfo Character_getMapTile;
+        internal static MethodInfo Character_isInMelee;
+        internal static MethodInfo Character_getExactRemainingCombatMovesIncludingAttacks;
+        internal static FieldInfo Character_dynamicData;
+        internal static FieldInfo DynamicData_combatAbilityFlags;   // resolved from the field's own type
+        internal static FieldInfo CombatAbilityFlags_evasion;
+        internal static FieldInfo CombatAbilityFlags_freeSwap;
+        internal static MethodInfo DataControl_getCurrentPC;
+        internal static MethodInfo Map_getPreCombatPlacementTiles;
+        internal static MethodInfo MapTile_getLightLevel;
+        internal static MethodInfo MapTile_getMapObject;            // BaseTemporaryMapObjects (fire)
+        internal static Type MapObjectFireType;
+        internal static Type BaseTemporaryMapObjectsType;
+        internal static MethodInfo TempMapObject_isDead;
+        internal static MethodInfo CombatPlanning_setMousePosition;   // tooltip-clear prefix targets
+        internal static MethodInfo CombatPlacement_setMousePosition;
+        internal static MethodInfo CombatTargeting_setMousePosition;
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -952,6 +977,33 @@ namespace SkaldAccessibility
             BarkControl_barks = F(BarkControlType, "BarkControl", "barks");
             HoverElementControl_tacticalTextList
                 = F(HoverElementControlType, "HoverElementControl", "tacticalTextList");
+
+            // Combat cursor (CP3)
+            Character_GetNavigationCourse = M(CharacterType, "Character", "GetNavigationCourse");
+            Character_getMapTile = M(CharacterType, "Character", "getMapTile");
+            Character_isInMelee = M(CharacterType, "Character", "isInMelee");
+            Character_getExactRemainingCombatMovesIncludingAttacks
+                = M(CharacterType, "Character", "getExactRemainingCombatMovesIncludingAttacks");
+            Character_dynamicData = F(CharacterType, "Character", "dynamicData");
+            DynamicData_combatAbilityFlags = Character_dynamicData == null ? null
+                : AccessTools.Field(Character_dynamicData.FieldType, "combatAbilityFlags");
+            Row("DynamicData.combatAbilityFlags", DynamicData_combatAbilityFlags != null);
+            CombatAbilityFlags_evasion = DynamicData_combatAbilityFlags == null ? null
+                : AccessTools.Field(DynamicData_combatAbilityFlags.FieldType, "evasion");
+            Row("CombatAbilityFlags.evasion", CombatAbilityFlags_evasion != null);
+            CombatAbilityFlags_freeSwap = DynamicData_combatAbilityFlags == null ? null
+                : AccessTools.Field(DynamicData_combatAbilityFlags.FieldType, "freeSwap");
+            Row("CombatAbilityFlags.freeSwap", CombatAbilityFlags_freeSwap != null);
+            DataControl_getCurrentPC = M(DataControlType, "DataControl", "getCurrentPC");
+            Map_getPreCombatPlacementTiles = M(MapType, "Map", "getPreCombatPlacementTiles");
+            MapTile_getLightLevel = M(MapTileType, "MapTile", "getLightLevel");
+            MapTile_getMapObject = M(MapTileType, "MapTile", "getMapObject");
+            MapObjectFireType = T("MapObjectFire");
+            BaseTemporaryMapObjectsType = T("BaseTemporaryMapObjects");
+            TempMapObject_isDead = M(BaseTemporaryMapObjectsType, "BaseTemporaryMapObjects", "isDead");
+            CombatPlanning_setMousePosition = M(CombatPlanningStateType, "CombatPlanningState", "setMousePosition");
+            CombatPlacement_setMousePosition = M(CombatPlacementStateType, "CombatPlacementState", "setMousePosition");
+            CombatTargeting_setMousePosition = M(CombatTargetingBaseType, "CombatTargetingBase", "setMousePosition");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

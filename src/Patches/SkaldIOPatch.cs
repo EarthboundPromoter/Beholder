@@ -158,6 +158,10 @@ namespace SkaldAccessibility.Patches
                 // so deferred; latches every keyboard snap against physical
                 // jitter and right-stick drift.
                 MouseGuardPatch.Apply(harmony);
+
+                // (9) Combat cursor prefixes (CP3) — game-type detours on the
+                // combat states' mouse branches, so deferred like the rest.
+                CombatCursorPatches.Apply(harmony);
             }
             catch (Exception ex)
             {
@@ -174,7 +178,7 @@ namespace SkaldAccessibility.Patches
         static void Postfix_SwallowKey(UnityEngine.KeyCode __0, ref bool __result)
         {
             if (__result && (ReviewLayer.ShouldSwallowKey(__0) || OverlandCursor.ShouldSwallowKey(__0)
-                || ArrowClaimed(__0)))
+                || CombatCursor.ShouldSwallowKey(__0) || ArrowClaimed(__0)))
                 __result = false;
         }
 
@@ -200,7 +204,11 @@ namespace SkaldAccessibility.Patches
                 object state = Pump.CurrentStateObject();
                 if (state == null) return false;
                 return (Seams.OverlandStateType != null && Seams.OverlandStateType.IsInstanceOfType(state))
-                    || (Seams.CombatBaseStateType != null && Seams.CombatBaseStateType.IsInstanceOfType(state));
+                    || (Seams.CombatBaseStateType != null && Seams.CombatBaseStateType.IsInstanceOfType(state))
+                    // CP3 (A7): CombatPlacementState extends StateBase, NOT
+                    // CombatBaseState — without this the arrows still move the
+                    // placing PC (survey §7b claim-scope correction).
+                    || (Seams.CombatPlacementStateType != null && Seams.CombatPlacementStateType.IsInstanceOfType(state));
             }
             catch { return false; }
         }
