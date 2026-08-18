@@ -108,6 +108,13 @@ namespace SkaldAccessibility
         private static object _invHoverSegment;   // drain-side diff record
         private static int _invHoverRow = -1, _invHoverCol = -1;
 
+        // ---- Inventory filter stream (noted by FilterAnnouncePatch on the
+        //      setFilterByIndex choke; the drain diffs the settled index) ----
+        private static object _pendingFilterControl;
+        private static object _lastFilterControl;
+        private static int _lastFilterIndex = -1;
+        private static bool _filterSpokeThisFrame;
+
         // ---- List-edge stream (noted by the B4 edge observer; latest wins) ----
         private static object _pendingEdgeList;
         private static string _pendingEdgePreLine;
@@ -333,6 +340,30 @@ namespace SkaldAccessibility
             _pendingInvHoverCol = col;
         }
 
+        /// <summary>Note-only: an inventory filter index write (Ctrl cycle or
+        /// filter-button click). The drain diffs the settled index.</summary>
+        public static void NoteFilterChange(object filterControl) => _pendingFilterControl = filterControl;
+
+        /// <summary>Worn-zone crossings (owner build 2026-08-17): the zone
+        /// label — the game's own "Items Worn" / "Party Inventory" header text
+        /// — rides the selection note; a pending hover note from earlier in
+        /// the frame dies here so it cannot outvoice the crossing.</summary>
+        internal static void NoteWornZoneEntry(object sheet)
+        {
+            _pendingInvHoverSegment = null;
+            _pendingInvHoverRow = _pendingInvHoverCol = -1;
+            NoteZoneLabel("Items Worn");
+            NoteSelection(sheet);
+        }
+
+        internal static void NoteWornZoneExit(object sheet)
+        {
+            _pendingInvHoverSegment = null;
+            _pendingInvHoverRow = _pendingInvHoverCol = -1;
+            NoteZoneLabel("Party Inventory");
+            NoteSelection(sheet);
+        }
+
         /// <summary>Called from Plugin.LateUpdate. Drain order encodes precedence
         /// (state → popup → content → selection → slider → combat batch → barks);
         /// SpeechService.Tick runs last so anything drained this frame can still
@@ -342,6 +373,7 @@ namespace SkaldAccessibility
             if (Time.frameCount == _lastFrame) return;
             _lastFrame = Time.frameCount;
             _popupSpokeThisFrame = false;
+            _filterSpokeThisFrame = false;
 
             try { DrainState(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:state] {ex.Message}"); }
@@ -357,6 +389,9 @@ namespace SkaldAccessibility
 
             try { DrainCanvasSwitch(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:canvas] {ex.Message}"); }
+
+            try { DrainFilterChange(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:filter] {ex.Message}"); }
 
             try { DrainSelection(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:sel] {ex.Message}"); }
@@ -620,6 +655,46 @@ namespace SkaldAccessibility
             else Scaffold.SpeechService.Say($"Selected: {name}.", "Nav");
         }
 
+        /// <summary>Speak filter changes once, at the settled index — "Filter:
+        /// Weapon, 2 of 8." The name transcodes from the game's own icon path
+        /// (the filters render no text); the trailing count follows the
+        /// positional-counts rule. A spoken change clears the hover record so
+        /// the different item now under the unmoved cursor re-speaks, queued
+        /// behind this line.</summary>
+        private static void DrainFilterChange()
+        {
+            object fc = _pendingFilterControl;
+            if (fc == null) return;
+            _pendingFilterControl = null;
+
+            if (Seams.FilterControl_getFilterIndex == null || Seams.FilterControl_getIconPaths == null) return;
+            int index = (int)Seams.FilterControl_getFilterIndex.Invoke(fc, null);
+            if (ReferenceEquals(fc, _lastFilterControl) && index == _lastFilterIndex) return;
+            _lastFilterControl = fc;
+            _lastFilterIndex = index;
+
+            var paths = Seams.FilterControl_getIconPaths.Invoke(fc, null) as System.Collections.IList;
+            if (paths == null || index < 0 || index >= paths.Count) return;
+            string name = FilterNameFromIconPath(paths[index] as string);
+            if (name == null) return;
+
+            _invHoverSegment = null;
+            _invHoverRow = _invHoverCol = -1;
+            _filterSpokeThisFrame = true;
+            Scaffold.SpeechService.Say($"Filter: {name}, {index + 1} of {paths.Count}.", "Nav");
+        }
+
+        /// <summary>The game's own name for a filter, from its icon path:
+        /// "Images/GUIIcons/InventoryUI/FilterWeapon" → "Weapon".</summary>
+        private static string FilterNameFromIconPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            int slash = path.LastIndexOf('/');
+            string stem = slash >= 0 ? path.Substring(slash + 1) : path;
+            if (stem.StartsWith("Filter")) stem = stem.Substring("Filter".Length);
+            return string.IsNullOrWhiteSpace(stem) ? null : stem;
+        }
+
         /// <summary>Speak the item under the hovered inventory cell on change
         /// — the hovered cell is the surface's focus truth (mouse and keyboard
         /// snaps both land here). Arrival observations queue per the entry
@@ -641,7 +716,7 @@ namespace SkaldAccessibility
             string text = ComposeInventoryCellAt(segment, row, col);
             if (text == null) return;
             bool arrival = _spokenCanvases.Add(segment);
-            if (arrival && _playerNavFrame != Time.frameCount)
+            if (_filterSpokeThisFrame || (arrival && _playerNavFrame != Time.frameCount))
                 Scaffold.SpeechService.SayQueued(text, "Nav");
             else Scaffold.SpeechService.Say(text, "Nav");
         }

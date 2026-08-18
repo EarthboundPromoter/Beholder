@@ -398,6 +398,25 @@ namespace SkaldAccessibility
         internal static MethodInfo InvSegment_update;
         internal static MethodInfo UIGridBase_getScrollableElementColumn;
         internal static MethodInfo UIElement_getHover;
+        // Filter announce (owner direction 2026-08-17): the Ctrl cycle and the
+        // filter-button clicks both land in FilterControl.setFilterByIndex —
+        // the one choke for every filter change. Names transcode from the
+        // game's own icon paths (the filters render no text).
+        internal static Type FilterControlType;      // UIInventorySheetBase+FilterButtons+FilterControl
+        internal static MethodInfo FilterControl_setFilterByIndex;
+        internal static MethodInfo FilterControl_getFilterIndex;
+        internal static MethodInfo FilterControl_getIconPaths;
+        // Worn zone (owner direction 2026-08-17): the equipped-items island
+        // joins the A/D chain. Cells compose from the same Character getters
+        // the renderer paints from (UIInventorySheetBase.cs:232-246).
+        internal static Type ItemsWornUIType;        // UIInventorySheetBase+ItemsWornUI
+        internal static FieldInfo InvSheet_itemInteractionGrid;
+        internal static MethodInfo ItemsWornUI_update;
+        internal static FieldInfo ItemsWornUI_grid;
+        internal static MethodInfo UIInvSheet_getScrollableElements;
+        internal static MethodInfo UIGridBase_getScrollableElementsAtColumn;
+        internal static FieldInfo UIGridBase_width;
+        internal static MethodInfo[] Character_wornGetters;
 
         // ---- Mouse guard + attribute-editor flip join (owner rulings
         //      2026-08-17: latch snaps against jitter; speak the flip side) ----
@@ -765,7 +784,33 @@ namespace SkaldAccessibility
             InvSheet_mainInventoryGrid = F(UIInventorySheetBaseType, "UIInventorySheetBase", "mainInventoryGrid");
             InvSegment_grid = F(InventorySegmentType, "UIGridCharacterInventorySegment", "grid");
             InvSegment_update = M(InventorySegmentType, "UIGridCharacterInventorySegment", "update");
-            UIGridBase_getScrollableElementColumn = M(T("UIGridBase"), "UIGridBase", "getScrollableElementColumn");
+            var uiGridBase = T("UIGridBase");
+            UIGridBase_getScrollableElementColumn = M(uiGridBase, "UIGridBase", "getScrollableElementColumn");
+            UIGridBase_getScrollableElementsAtColumn = M(uiGridBase, "UIGridBase", "getScrollableElements", new[] { typeof(int) });
+            UIGridBase_width = F(uiGridBase, "UIGridBase", "width");
+
+            // Filter announce + worn zone (2026-08-17)
+            FilterControlType = T("UIInventorySheetBase+FilterButtons+FilterControl");
+            FilterControl_setFilterByIndex = M(FilterControlType, "FilterControl", "setFilterByIndex", new[] { typeof(int) });
+            FilterControl_getFilterIndex = M(FilterControlType, "FilterControl", "getFilterIndex");
+            FilterControl_getIconPaths = M(FilterControlType, "FilterControl", "getIconPaths");
+            ItemsWornUIType = T("UIInventorySheetBase+ItemsWornUI");
+            InvSheet_itemInteractionGrid = F(UIInventorySheetBaseType, "UIInventorySheetBase", "itemInteractionGrid");
+            ItemsWornUI_update = M(ItemsWornUIType, "ItemsWornUI", "update");
+            ItemsWornUI_grid = F(ItemsWornUIType, "ItemsWornUI", "grid");
+            UIInvSheet_getScrollableElements = M(UIInventorySheetBaseType, "UIInventorySheetBase", "getScrollableElements", Type.EmptyTypes);
+            // Worn slots in the renderer's own setButtons order
+            // (UIInventorySheetBase.cs:232-246): row 0 then row 1, left to right.
+            string[] wornGetterNames =
+            {
+                "getCurrentMeleeWeapon", "getCurrentRangedWeapon", "getCurrentArmor",
+                "getCurrentShieldRegardlessIfWorn", "getCurrentAmmo", "getCurrentRing",
+                "getCurrentHeadwear", "getCurrentClothing", "getCurrentGloves",
+                "getCurrentFootwear", "getCurrentLight", "getCurrentNecklace"
+            };
+            Character_wornGetters = new MethodInfo[wornGetterNames.Length];
+            for (int i = 0; i < wornGetterNames.Length; i++)
+                Character_wornGetters[i] = M(CharacterType, "Character", wornGetterNames[i]);
             UIElement_getHover = M(T("UIElement"), "UIElement", "getHover");
 
             // C64Color tags
