@@ -166,6 +166,8 @@ namespace SkaldAccessibility
             _censusMembers.Clear();
             _censusActive = false;
             _weaponDiffChar = null;
+            _placePos.Clear();
+            _placeTracking = false;
         }
 
         /// <summary>"Goblin B" / "Bjorn" — the uniform identifier (owner
@@ -318,6 +320,13 @@ namespace SkaldAccessibility
                 }
             }
 
+            // CP5: deployment swap voicing — keyboard placement moves are
+            // hard-gated to valid tiles and stay unvoiced like all WASD
+            // movement (the cursor is the sensing tool); the SWAP side effect
+            // (stepping onto a party member exchanges places, silently) is
+            // the surprise that speaks.
+            try { DrainPlacementSwap(state); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:swap] {ex.Message}"); }
+
             // CP4 joins: Ctrl-row compose, AoE census, weapon-toggle diff.
             try { DrainRowShift(); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:row] {ex.Message}"); }
             try { DrainAoECensus(state); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:aoe] {ex.Message}"); }
@@ -465,7 +474,63 @@ namespace SkaldAccessibility
             return true;
         }
 
-        /// <summary>CP4: the Ctrl-row walk's terse anchor — "3: Maneuvers." —
+        // ---- CP5: placement swap detection (positions of every roster PC,
+        //      diffed per drain while the deploy screen is up) ----
+        private static readonly System.Collections.Generic.Dictionary<object, long> _placePos
+            = new System.Collections.Generic.Dictionary<object, long>(new RefCmp());
+        private static bool _placeTracking;
+
+        private static void DrainPlacementSwap(object state)
+        {
+            bool placing = state != null && Seams.CombatPlacementStateType != null
+                && Seams.CombatPlacementStateType.IsInstanceOfType(state);
+            if (!placing)
+            {
+                if (_placeTracking) { _placeTracking = false; _placePos.Clear(); }
+                return;
+            }
+            var moved = new System.Collections.Generic.List<object>();
+            foreach (object c in _roster)
+            {
+                if (!IsPC(c)) continue;
+                long pos = ReadPackedPos(c);
+                if (pos == long.MinValue) continue;
+                long prev;
+                if (_placeTracking && _placePos.TryGetValue(c, out prev) && prev != pos)
+                    moved.Add(c);
+                _placePos[c] = pos;
+            }
+            _placeTracking = true;
+            // Exactly two PCs moving in one frame during placement IS the
+            // swap (CombatEncounter.placeCharacterAtAdjacentTile:291-307 —
+            // the only multi-mover path).
+            if (moved.Count == 2)
+            {
+                object dc = null;
+                try { dc = Seams.MainControl_getDataControl?.Invoke(null, null); } catch { }
+                object placer = null;
+                try { placer = dc == null ? null : Seams.DataControl_getCurrentPC?.Invoke(dc, null); } catch { }
+                object other = ReferenceEquals(moved[0], placer) ? moved[1] : moved[0];
+                string name = DisplayNameOf(other);
+                if (name != null)
+                    Scaffold.SpeechService.Say($"Swapped with {name}.", "Nav");
+            }
+        }
+
+        private static long ReadPackedPos(object c)
+        {
+            try
+            {
+                object tile = Seams.Character_getMapTile?.Invoke(c, null);
+                if (tile == null) return long.MinValue;
+                int x = (int)Seams.MapTile_getTileX.Invoke(tile, null);
+                int y = (int)Seams.MapTile_getTileY.Invoke(tile, null);
+                return ((long)x << 32) | (uint)y;
+            }
+            catch { return long.MinValue; }
+        }
+
+        /// <summary>CP4: the Ctrl-row walk's terse anchor</summary> — "3: Maneuvers." —
         /// from the row's own settled index and the state's ButtonData
         /// hoverText (the unavailability variants carry their own words);
         /// the game's fuller description echo follows natively.</summary>
