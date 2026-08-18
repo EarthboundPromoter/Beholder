@@ -180,6 +180,11 @@ namespace SkaldAccessibility
         internal static Type ButtonDataType;               // UIButtonControlBase+ButtonData
         internal static FieldInfo GUIControl_abilitySelectorGrid;
         internal static MethodInfo GUIControl_setMouseToUIElement;
+        // TP2 — the dialogue text cursor's three seams: the scene pane field,
+        // its rendered topic-word list, and the funnel's snap-to-selected.
+        internal static FieldInfo GUIControl_sceneDescription;
+        internal static FieldInfo UITextBlock_toolTipWords;
+        internal static MethodInfo GUIControl_setMouseToSelectedOption;
         internal static MethodInfo UICanvas_controllerScrollSidewaysLeft;
         internal static MethodInfo UICanvas_controllerScrollSidewaysRight;
         internal static MethodInfo SkaldIO_getOptionSelectionButtonUp;
@@ -688,6 +693,9 @@ namespace SkaldAccessibility
             ButtonDataType = T("UIButtonControlBase+ButtonData");
             GUIControl_abilitySelectorGrid = F(typeof(GUIControl), "GUIControl", "abilitySelectorGrid");
             GUIControl_setMouseToUIElement = M(typeof(GUIControl), "GUIControl", "setMouseToUIElement");
+            GUIControl_sceneDescription = F(typeof(GUIControl), "GUIControl", "sceneDescription");
+            UITextBlock_toolTipWords = F(typeof(UITextBlock), "UITextBlock", "toolTipWords");
+            GUIControl_setMouseToSelectedOption = M(typeof(GUIControl), "GUIControl", "setMouseToSelectedOption");
             UICanvas_controllerScrollSidewaysLeft = M(UICanvasType, "UICanvas", "controllerScrollSidewaysLeft");
             UICanvas_controllerScrollSidewaysRight = M(UICanvasType, "UICanvas", "controllerScrollSidewaysRight");
             SkaldIO_getOptionSelectionButtonUp = M(SkaldIOType, "SkaldIO", "getOptionSelectionButtonUp");

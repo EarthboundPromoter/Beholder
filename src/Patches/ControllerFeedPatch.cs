@@ -208,24 +208,33 @@ namespace SkaldAccessibility.Patches
         // lesson, second occurrence — owner-caught regression, same day).
         // Confirms deliberately never stamp: they mount surfaces whose
         // same-frame init writes must stay queued behind the entry read.
+        // TP2: the dialogue cursor claims stick presses in scene states from
+        // HERE — the already-detoured layer (never the one-line SkaldIO
+        // wrappers, the Mono-inline lesson). A claimed press acted (walked the
+        // text / hopped a topic, with its own player-nav stamp) and returns
+        // the read to false so the option funnel never sees it.
         static void Postfix_StickUpPressed(ref bool __result)
         {
             if (!__result && (Emulate(KeyCode.W) || Time.frameCount == SkaldIOPatches.InjectUpFrame)) __result = true;
+            if (__result && DialogueCursor.ClaimStickUp()) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickDownPressed(ref bool __result)
         {
             if (!__result && (Emulate(KeyCode.S) || Time.frameCount == SkaldIOPatches.InjectDownFrame)) __result = true;
+            if (__result && DialogueCursor.ClaimStickDown()) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickLeftPressed(ref bool __result)
         {
             if (!__result && (Emulate(KeyCode.A) || Time.frameCount == SkaldIOPatches.InjectLeftFrame)) __result = true;
+            if (__result && DialogueCursor.ClaimStickSideways(-1)) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickRightPressed(ref bool __result)
         {
             if (!__result && (Emulate(KeyCode.D) || Time.frameCount == SkaldIOPatches.InjectRightFrame)) __result = true;
+            if (__result && DialogueCursor.ClaimStickSideways(+1)) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickUpHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.W)) __result = true; if (__result) Pump.NotePlayerNav(); }

@@ -1827,6 +1827,7 @@ namespace SkaldAccessibility
             _inSceneFamily = nowScene;
 
             ReviewLayer.OnStateTransition();    // review never survives a state change
+            DialogueCursor.OnStateTransition(); // text mode dies with its scene
             OverlandCursor.OnStateTransition(); // neither does the cursor or its list
             CombatCursor.OnStateTransition();   // survives intra-combat churn, dies on leaving the family
             Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone
