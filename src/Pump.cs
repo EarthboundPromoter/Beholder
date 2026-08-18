@@ -1341,9 +1341,13 @@ namespace SkaldAccessibility
                 { LogInvCellFailOnce("seam handles missing"); return null; }
 
                 object inventory = Seams.InvSegment_inventory.GetValue(segment);
+                // itemTypes null is NOT a failure: the default "All" filter is
+                // literally a null type list (UIInventorySheetBase.cs:348) and
+                // getListByType defines null as no-filter (Inventory.cs:841).
+                // Treating it as one silenced every cell under the default
+                // filter (the whole 2026-08-17 hunt).
                 object itemTypes = Seams.InvSegment_itemTypes?.GetValue(segment);
                 if (inventory == null) { LogInvCellFailOnce("segment.inventory null"); return null; }
-                if (itemTypes == null) { LogInvCellFailOnce("segment.itemTypes null"); return null; }
 
                 var items = Seams.Inventory_getListByType.Invoke(inventory, new[] { itemTypes, (object)false })
                     as System.Collections.IList;
