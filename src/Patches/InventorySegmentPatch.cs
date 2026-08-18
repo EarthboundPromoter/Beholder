@@ -48,7 +48,7 @@ namespace SkaldAccessibility.Patches
 
             [HarmonyPostfix]
             static void Postfix(object __instance, object[] __state)
-                => Diff(__instance, __state, "First column.");
+                => Diff(__instance, __state, "First column.", leftward: true);
         }
 
         [HarmonyPatch]
@@ -90,7 +90,7 @@ namespace SkaldAccessibility.Patches
             catch { return null; }
         }
 
-        private static void Diff(object gui, object[] state, string edgeLine)
+        private static void Diff(object gui, object[] state, string edgeLine, bool leftward = false)
         {
             if (state == null) return;
             try
@@ -117,6 +117,16 @@ namespace SkaldAccessibility.Patches
                 }
                 else
                 {
+                    // A at the MAIN grid's first column crosses into the worn
+                    // zone when the sheet has one (the 45acaca A/D-chain
+                    // precedent); every other unmoved press speaks its edge.
+                    if (leftward
+                        && Seams.UIInventorySheetBaseType != null
+                        && Seams.UIInventorySheetBaseType.IsInstanceOfType(list)
+                        && Seams.InvSheet_mainInventoryGrid != null
+                        && ReferenceEquals(nowSegment, Seams.InvSheet_mainInventoryGrid.GetValue(list))
+                        && WornZonePatch.TryEnter(gui, list))
+                        return;
                     Scaffold.SpeechService.Say(edgeLine, "Nav");
                 }
             }

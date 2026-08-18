@@ -4,7 +4,7 @@ Surfaces with no native controller/keyboard route, from the coverage annex (buil
 
 | Island | Where | Native alternative | Ruling |
 |---|---|---|---|
-| Worn-equipment grid | Inventory | none (view-only stats via char sheet) | OPEN |
+| Worn-equipment grid | Inventory | none (view-only stats via char sheet) | BUILT 2026-08-17 (WornZonePatch: joins the A/D chain left of the main grid; Z select / second-Z unequip / X tooltip all native) — ride-verify pending |
 | Merchant service buttons | Trade | none | OPEN |
 | Party-management portraits | Party management | none (LB cycles current PC elsewhere) | OPEN |
 | Overland spell-target portraits | Overland casting | none | OPEN |

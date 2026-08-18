@@ -902,13 +902,25 @@ namespace SkaldAccessibility
             // snap produces BOTH a funnel note and a hover note in the same
             // frame — the hover names the cell the cursor actually landed on,
             // the funnel only its own belief. Align records, yield the voice.
+            // EXCEPT on a zone crossing: the label must ride the line (a
+            // yielded label would leak onto an unrelated later utterance —
+            // the F2 class), and the crossing's snap makes the hover note
+            // describe the same landing cell — absorb it instead.
             if (_pendingInvHoverSegment != null && Seams.UIInventorySheetBaseType != null
                 && Seams.UIInventorySheetBaseType.IsInstanceOfType(control))
             {
-                _selControl = control;
-                _selIndex = index;
-                _selElement = element;
-                return;
+                if (_pendingZoneLabel == null)
+                {
+                    _selControl = control;
+                    _selIndex = index;
+                    _selElement = element;
+                    return;
+                }
+                _invHoverSegment = _pendingInvHoverSegment;
+                _invHoverRow = _pendingInvHoverRow;
+                _invHoverCol = _pendingInvHoverCol;
+                _pendingInvHoverSegment = null;
+                _pendingInvHoverRow = _pendingInvHoverCol = -1;
             }
 
             _selControl = control;
@@ -998,6 +1010,12 @@ namespace SkaldAccessibility
             // inventory's own filtered list.
             if (Seams.InventorySegmentType != null && Seams.InventorySegmentType.IsInstanceOfType(control))
                 return ComposeInventoryCell(control, index);
+
+            // Worn zone (2026-08-17): while active the sheet's rows are the
+            // worn grid's two — name the slot and its item from the same
+            // Character getters the renderer paints from.
+            if (Patches.WornZonePatch.IsActiveFor(control))
+                return ComposeWornCell(index);
 
             // Character-inventory SHEET (owner ride 2026-08-17 — cells were
             // silent): the native funnel writes its index on the SHEET, never
@@ -1403,6 +1421,52 @@ namespace SkaldAccessibility
                 Plugin.Logger?.LogWarning($"[InvCell] compose failed: {reason}");
         }
 
+        /// <summary>Worn-slot labels in the renderer's own setButtons order
+        /// (UIInventorySheetBase.cs:232-246), named from the game's own icon
+        /// files (WornIconMelee … WornIconNecklace — the slots render no
+        /// text): row 0 then row 1, left to right.</summary>
+        private static readonly string[] _wornSlotLabels =
+        {
+            "Melee", "Ranged", "Armor", "Shield", "Ammo", "Ring",
+            "Head", "Clothing", "Hands", "Feet", "Off hand", "Necklace"
+        };
+
+        /// <summary>Worn cell at (funnel row, zone column): slot label plus
+        /// the item from the same Character getter the renderer paints the
+        /// slot from — "Melee: Longsword" / "Head: empty". Row and column
+        /// clamp exactly as the game's bound-on-read does.</summary>
+        private static string ComposeWornCell(int row)
+        {
+            try
+            {
+                var getters = Seams.Character_wornGetters;
+                object character = Patches.WornZonePatch.WornCharacter;
+                if (getters == null || character == null)
+                { LogInvCellFailOnce("worn: character or getters unavailable"); return null; }
+
+                int width = _wornSlotLabels.Length / 2;
+                int col = Patches.WornZonePatch.Column;
+                if (row < 0) row = 0; else if (row > 1) row = 1;
+                if (col < 0) col = 0; else if (col >= width) col = width - 1;
+                int slot = row * width + col;
+                if (slot >= getters.Length || getters[slot] == null) return null;
+
+                string label = _wornSlotLabels[slot];
+                object item = getters[slot].Invoke(character, null);
+                if (item == null) return $"{label}: empty";
+                string raw = Seams.Item_getNameAndAmount != null
+                    ? Seams.Item_getNameAndAmount.Invoke(item, null) as string
+                    : Seams.SkaldBaseObject_getName?.Invoke(item, null) as string;
+                string name = string.IsNullOrWhiteSpace(raw) ? null : Patches.TextCleaner.CleanText(raw);
+                return name == null ? $"{label}: empty" : $"{label}: {name}";
+            }
+            catch (System.Exception ex)
+            {
+                LogInvCellFailOnce($"worn: {ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
+        }
+
         /// <summary>Same map with an explicit column — the hover join names
         /// the cell the cursor actually sits on, independent of the funnel's
         /// column field.</summary>
@@ -1687,6 +1751,7 @@ namespace SkaldAccessibility
             Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone
             Patches.MouseGuardPatch.OnStateTransition();    // nor a snap latch
                                                             // (entry snaps re-latch)
+            Patches.WornZonePatch.OnStateTransition();      // zone dies with its screen
             _pendingZoneLabel = null;
             // Point-pool records reset per state so re-entering an editor
             // screen re-announces its pools (the diff records otherwise
