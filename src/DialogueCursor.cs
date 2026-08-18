@@ -137,17 +137,17 @@ namespace SkaldAccessibility
             return true;
         }
 
-        /// <summary>A/D / stick sideways: topic hop, position-global, any time
-        /// in a scene state (natively dead keys there — sideways scroll routes
-        /// to the null sheetComplex).</summary>
+        /// <summary>A/D topic hop — PARKED (owner ride 2026-08-18). The
+        /// accessor-postfix claim never fired: no scene state READS the
+        /// sideways stick accessors, so the postfix carrying the claim never
+        /// ran there (W/S work precisely because SceneBaseState reads up/down
+        /// every frame). Revival path: drive the hop from InputHandler's
+        /// Update-side raw reads under the same SceneReady gate — the hop
+        /// machinery below (BuildStops/HopTopic, the native-Z click) is built,
+        /// reviewed, and waiting.</summary>
         internal static bool ClaimStickSideways(int direction)
         {
-            if (!SceneReady(out object state, out object gui)) return false;
-            SyncProse(gui);
-            if (ActedThisFrame()) return true;
-            Pump.NotePlayerNav();
-            HopTopic(gui, direction);
-            return true;
+            return false;
         }
 
         // ---- Text walk ----

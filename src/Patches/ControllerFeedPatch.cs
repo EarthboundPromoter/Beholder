@@ -225,16 +225,21 @@ namespace SkaldAccessibility.Patches
             if (__result && DialogueCursor.ClaimStickDown()) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
         }
+        // NOTE (ride 2026-08-18): the A/D topic-hop claim was wired here and
+        // NEVER FIRED — no scene state reads the sideways accessors, so these
+        // postfixes don't run in scenes at all (the same decomp fact that made
+        // the claim "safe" made it dead: a read-choke claim only fires when
+        // someone reads). PARKED at owner direction; the revival path is
+        // mod-side Update input handling (InputHandler) with the same gate,
+        // not an accessor postfix.
         static void Postfix_StickLeftPressed(ref bool __result)
         {
             if (!__result && (Emulate(KeyCode.A) || Time.frameCount == SkaldIOPatches.InjectLeftFrame)) __result = true;
-            if (__result && DialogueCursor.ClaimStickSideways(-1)) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickRightPressed(ref bool __result)
         {
             if (!__result && (Emulate(KeyCode.D) || Time.frameCount == SkaldIOPatches.InjectRightFrame)) __result = true;
-            if (__result && DialogueCursor.ClaimStickSideways(+1)) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickUpHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.W)) __result = true; if (__result) Pump.NotePlayerNav(); }
