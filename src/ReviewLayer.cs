@@ -6,7 +6,7 @@ namespace SkaldAccessibility
 {
     /// <summary>
     /// WP10: the review layer — a navigable buffer over the focused element's
-    /// panel text (owner-approved spec, build-plan §WP10).
+    /// panel text (owner-approved spec, build-plan Â§WP10).
     ///
     /// The buffer is virtual: two cursor ints over the game's latest rendered
     /// panel text (captured raw, with markup, from the panel-class content
@@ -34,14 +34,26 @@ namespace SkaldAccessibility
     public static class ReviewLayer
     {
         // ---- Panel capture (latest rendered panel-class text, raw markup) ----
+        // TP1: provenance rides the capture — the source tag selects the
+        // section map (Composer.SectionPanel) instead of being discarded at
+        // the buffer door. A genuinely-new panel re-anchors the cursor: the
+        // old indices pointed into a document that no longer exists.
         private static string _panelRaw;
+        private static string _panelSource;
 
-        public static void NotePanel(string raw)
+        public static void NotePanel(string source, string raw)
         {
-            if (!string.IsNullOrWhiteSpace(raw)) _panelRaw = raw;
+            if (string.IsNullOrWhiteSpace(raw)) return;
+            if (!string.Equals(raw, _panelRaw, StringComparison.Ordinal))
+            {
+                _section = 0;
+                _element = -1;
+            }
+            _panelRaw = raw;
+            _panelSource = source;
         }
 
-        public static void ClearPanel() => _panelRaw = null;
+        public static void ClearPanel() { _panelRaw = null; _panelSource = null; }
 
         // ---- Toggle state ----
         private static bool _active;
@@ -235,136 +247,45 @@ namespace SkaldAccessibility
             Scaffold.SpeechService.Say($"{elements[_element]}, {_element + 1} of {elements.Count}.", "Review");
         }
 
-        private static void SpeakSection(List<Section> sections)
+        private static void SpeakSection(List<Composer.PanelSection> sections)
         {
             if (_section >= sections.Count) _section = sections.Count - 1;
             var s = sections[_section];
             Scaffold.SpeechService.Say($"{s.FullText}, section {_section + 1} of {sections.Count}.", "Review");
         }
 
-        // ---- Sectioning engine (the game's markup grammar is the schema) ----
+        // ---- Sectioning (TP1): migrated into the Composer — provenance picks
+        // the map, markup structures within; this layer keeps only cursors and
+        // keys. The standing status section trails every document: the strip's
+        // facts, composed LIVE at keypress from the game's own composer (never
+        // cached, never stale), at a fixed last-section address. ----
 
-        private class Section
+        private static List<Composer.PanelSection> Parse()
         {
-            public string FullText;
-            public List<string> Elements = new List<string>();
-        }
-
-        private enum Kind { None, Stats, Prose }
-
-        private static string _headerTag, _attrNameTag, _attrValueTag, _greenTag, _redTag;
-        private static bool _tagsInitialized;
-
-        /// <summary>Tag VALUES read lazily (post-ready — review only runs on
-        /// rendered panels) through the WP8 Seams metadata handles.</summary>
-        private static void InitTags()
-        {
-            _tagsInitialized = true;
-            _headerTag = Seams.TagValue(Seams.C64_HeaderTag);
-            _attrNameTag = Seams.TagValue(Seams.C64_AttributeNameTag);
-            _attrValueTag = Seams.TagValue(Seams.C64_AttributeValueTag);
-            _greenTag = Seams.TagValue(Seams.C64_GreenLightTag);
-            _redTag = Seams.TagValue(Seams.C64_RedLightTag);
-            if (_headerTag == null || _attrNameTag == null)
-                Plugin.Logger?.LogWarning("[Review] Markup tags incomplete — sectioning degrades to paragraphs "
-                    + $"(header={_headerTag != null} attrName={_attrNameTag != null})");
-        }
-
-        private static List<Section> Parse()
-        {
-            var sections = new List<Section>();
-            string raw = _panelRaw;
-            if (string.IsNullOrWhiteSpace(raw)) return sections;
-            if (!_tagsInitialized) InitTags();
-
-            Kind kind = Kind.None;
-            var statElements = new List<string>();
-            var proseText = "";
-
-            void CloseCurrent()
-            {
-                if (kind == Kind.Stats && statElements.Count > 0)
-                {
-                    sections.Add(new Section
-                    {
-                        FullText = string.Join(", ", statElements.ToArray()),
-                        Elements = new List<string>(statElements),
-                    });
-                }
-                else if (kind == Kind.Prose && !string.IsNullOrWhiteSpace(proseText))
-                {
-                    var s = new Section { FullText = proseText.Trim() };
-                    s.Elements.AddRange(SplitSentences(s.FullText));
-                    sections.Add(s);
-                }
-                kind = Kind.None;
-                statElements.Clear();
-                proseText = "";
-            }
-
-            foreach (string line in raw.Split('\n'))
-            {
-                string cleaned = Patches.TextCleaner.CleanText(line);
-                bool blank = string.IsNullOrWhiteSpace(cleaned);
-                if (blank) { CloseCurrent(); continue; }
-
-                bool header = _headerTag != null && line.Contains(_headerTag);
-                bool pair = !header && _attrNameTag != null
-                    && (line.Contains(_attrNameTag) || (_attrValueTag != null && line.Contains(_attrValueTag)));
-
-                if (header)
-                {
-                    CloseCurrent();
-                    var s = new Section { FullText = cleaned.Trim() };
-                    s.Elements.Add(cleaned.Trim());
-                    sections.Add(s);
-                }
-                else if (pair)
-                {
-                    if (kind != Kind.Stats) CloseCurrent();
-                    kind = Kind.Stats;
-                    statElements.Add(TranscodeComparison(line, cleaned.Trim()));
-                }
-                else
-                {
-                    if (kind != Kind.Prose) CloseCurrent();
-                    kind = Kind.Prose;
-                    proseText = proseText.Length == 0 ? cleaned.Trim() : proseText + " " + cleaned.Trim();
-                }
-            }
-            CloseCurrent();
+            PanelPolicy.EnsureTags();
+            var sections = Composer.SectionPanel(_panelSource, _panelRaw);
+            AppendStatusSection(sections);
             return sections;
         }
 
-        /// <summary>Per-pair comparison transcode: the game's green/red value
-        /// coloring is its only carrier of better/worse-than-equipped — turn it
-        /// into words. Per stat only; aggregate verdicts stay forbidden.</summary>
-        private static string TranscodeComparison(string rawLine, string cleaned)
+        private static void AppendStatusSection(List<Composer.PanelSection> sections)
         {
-            if (_greenTag != null && rawLine.Contains(_greenTag)) return cleaned + ", better";
-            if (_redTag != null && rawLine.Contains(_redTag)) return cleaned + ", worse";
-            return cleaned;
-        }
-
-        private static IEnumerable<string> SplitSentences(string text)
-        {
-            int start = 0;
-            for (int i = 0; i < text.Length; i++)
+            try
             {
-                char c = text[i];
-                bool ender = c == '.' || c == '!' || c == '?';
-                if (ender && (i + 1 >= text.Length || text[i + 1] == ' '))
-                {
-                    string sentence = text.Substring(start, i - start + 1).Trim();
-                    if (sentence.Length > 0) yield return sentence;
-                    start = i + 1;
-                }
+                var f = PanelPolicy.LiveFacts();
+                if (f == null || !f.Valid) return;
+                var s = new Composer.PanelSection { Title = "Status" };
+                if (f.Time != null) s.Elements.Add(f.Time);
+                if (f.Day != null) s.Elements.Add(f.Day);
+                if (f.X != null) s.Elements.Add(f.X);
+                if (f.Y != null) s.Elements.Add(f.Y);
+                if (f.Weather != null) s.Elements.Add(f.Weather);
+                if (f.Phase != null) s.Elements.Add(f.Phase);
+                if (s.Elements.Count == 0) return;
+                s.FullText = "Status, " + string.Join(", ", s.Elements.ToArray());
+                sections.Add(s);
             }
-            if (start < text.Length)
-            {
-                string tail = text.Substring(start).Trim();
-                if (tail.Length > 0) yield return tail;
-            }
+            catch { }
         }
     }
 }

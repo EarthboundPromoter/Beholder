@@ -62,7 +62,7 @@ namespace SkaldAccessibility.Patches
                     ReadRaw(Seams.PopUpUIBase_secondaryDescription, uiElements),
                     ReadRaw(Seams.PopUpUIBase_tertiaryDescription, uiElements),
                 }.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray());
-                if (rawPanel.Length > 0) ReviewLayer.NotePanel(rawPanel);
+                if (rawPanel.Length > 0) ReviewLayer.NotePanel("Popup", rawPanel);
 
                 // Arrival owns these values now — seed the content diffs so the
                 // same frame's setter notes and the intro popups' screen-source

@@ -225,6 +225,7 @@ namespace SkaldAccessibility
         internal static Type InventoryType;
         internal static MethodInfo MainControl_getDataControl;
         internal static FieldInfo DataControl_currentMap;
+        internal static MethodInfo DataControl_getBuffer;
         internal static MethodInfo Map_getMouseTile;
         internal static MethodInfo Map_isScrollReady;
         internal static MethodInfo Map_getTile;
@@ -726,6 +727,9 @@ namespace SkaldAccessibility
             InventoryType = T("Inventory");
             MainControl_getDataControl = M(MainControlType, "MainControl", "getDataControl");
             DataControl_currentMap = F(DataControlType, "DataControl", "currentMap");
+            // TP1: the status strip's one author — recomposed at the drain for
+            // provenance identification (pure reads: Calendar/position/weather).
+            DataControl_getBuffer = M(DataControlType, "DataControl", "getBuffer");
             Map_getMouseTile = M(MapType, "Map", "getMouseTile");
             Map_isScrollReady = M(MapType, "Map", "isScrollReady");
             Map_getTile = M(MapType, "Map", "getTile", new[] { typeof(int), typeof(int) });

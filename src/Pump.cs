@@ -195,30 +195,9 @@ namespace SkaldAccessibility
         {
             if (string.IsNullOrWhiteSpace(raw)) return;
             _pendingContent[source] = new ContentNote { Raw = raw, Interrupt = interrupt };
-
-            // Panel-class sources feed the review layer's capture (raw, with
-            // markup — the tag grammar is the sectioning schema). Latest
-            // GENUINELY-NEW value wins: per-frame repaints of an unchanged
-            // value must not stomp a newer panel (the spell picker repaints
-            // its prompt every frame, which was stealing the review panel
-            // back from a just-raised tooltip — owner ride 2026-08-17).
-            switch (source)
-            {
-                case "SceneDesc":
-                case "SecondaryDesc":
-                case "SheetDesc":
-                case "Tooltip":
-                case "PopupMain":
-                case "PopupSecondary":
-                case "PopupTertiary":
-                    _lastPanelForwarded.TryGetValue(source, out string prevPanel);
-                    if (raw != prevPanel)
-                    {
-                        _lastPanelForwarded[source] = raw;
-                        ReviewLayer.NotePanel(raw);
-                    }
-                    break;
-            }
+            // TP1: the review-panel forward moved to the drain (settled reads
+            // — a value superseded within the frame never stomps the buffer,
+            // and strip provenance needs the drain-clock recompose anyway).
         }
 
         /// <summary>Note-only: an attribute/skill plus/minus press surfaced by the
@@ -254,7 +233,10 @@ namespace SkaldAccessibility
 
         // Overland status strip: first value after a state transition settles
         // silently (owner ruling 2026-08-17 — quiet on load).
-        private static bool _stripSeenSinceState;
+        /// <summary>The panel-class sources — captures the review buffer holds,
+        /// forwarded at the drain with provenance (TP1).</summary>
+        private static readonly string[] PanelSources =
+            { "SceneDesc", "SecondaryDesc", "SheetDesc", "Tooltip", "PopupMain", "PopupSecondary", "PopupTertiary" };
 
         // ---- Locality hold (owner ruling 2026-08-17): dialogue takes
         //      precedence over locality furniture — headers noted (or already
@@ -544,35 +526,50 @@ namespace SkaldAccessibility
                     if (cleaned.Length == 0) continue;
                 }
 
-                // Overland status strip (ledger B7 family; owner ruling
-                // 2026-08-17: forced quiet on initial load and whenever
-                // dialogue or other UI takes precedence). Recognized by its
-                // own rendered shape; the diff record still updates so a
-                // suppressed value can never speak late over other UI. The
-                // first value after any state transition settles silently
-                // (the B1 shape), so a fresh load says nothing; changes
-                // while overland itself is the settled, popup-free state
-                // speak as before (per-step noise remains B7, parked).
-                if (source == "SecondaryDesc" && cleaned.StartsWith("Time: "))
+                // TP1 strip provenance (closes ledger B7; replaces the "Time: "
+                // shape-sniff): ask the strip's one author. A pure strip routes
+                // to the per-fact differ (weather/phase transitions speak under
+                // their own configs; clock/position stay silent) and NEVER
+                // speaks whole or enters the review buffer; a bump-append
+                // composite is split — the residue IS the event text.
+                string forwardRaw = kv.Value.Raw;
+                if (source == "SecondaryDesc"
+                    && PanelPolicy.TryHandleStrip(kv.Value.Raw, out string stripResidue))
                 {
-                    bool overlandActive = false;
-                    try
+                    if (stripResidue == null)
                     {
-                        object st = CurrentStateObject();
-                        overlandActive = st != null && Seams.OverlandStateType != null
-                            && Seams.OverlandStateType.IsInstanceOfType(st)
-                            && (Seams.PopUpControl_getCurrentPopUp == null
-                                || Seams.PopUpControl_getCurrentPopUp.Invoke(null, null) == null);
-                    }
-                    catch { }
-                    bool firstSinceTransition = !_stripSeenSinceState;
-                    _stripSeenSinceState = true;
-                    if (!overlandActive || firstSinceTransition)
-                    {
+                        // Pure strip: facts handled; keep the diff record so a
+                        // suppressed value can never speak late over other UI.
                         _lastContent[source] = cleaned;
                         continue;
                     }
+                    forwardRaw = stripResidue;
+                    cleaned = Patches.TextCleaner.CleanText(stripResidue);
+                    if (string.IsNullOrWhiteSpace(cleaned))
+                    {
+                        _lastContent[source] = Patches.TextCleaner.CleanText(kv.Value.Raw);
+                        continue;
+                    }
                 }
+
+                // Panel-class sources feed the review buffer (raw, with markup,
+                // WITH provenance — the source tag picks the section map).
+                // Genuinely-new only: repaints of an unchanged value must not
+                // stomp a newer panel (owner ride 2026-08-17). The name-entry
+                // tertiary normalizes its cursor blink out of the forward too,
+                // or the blink would re-anchor the buffer every half second.
+                if (System.Array.IndexOf(PanelSources, source) >= 0)
+                {
+                    if (source == "PopupTertiary")
+                        forwardRaw = forwardRaw.TrimEnd('_').TrimEnd();
+                    _lastPanelForwarded.TryGetValue(source, out string prevPanel);
+                    if (forwardRaw.Length > 0 && forwardRaw != prevPanel)
+                    {
+                        _lastPanelForwarded[source] = forwardRaw;
+                        ReviewLayer.NotePanel(source, forwardRaw);
+                    }
+                }
+
                 _lastContent.TryGetValue(source, out string prev);
                 if (cleaned == prev) continue;
 
@@ -587,10 +584,25 @@ namespace SkaldAccessibility
                 }
 
                 _lastContent[source] = cleaned;
+
+                // The one config (owner ruling 2026-08-18): tooltips and
+                // UI-nav-initiated populations auto-read their full body only
+                // while Panel.AutoReadBody is on; off speaks the identity line
+                // and leaves the body at its known address in the buffer.
+                // Event surfaces (SecondaryDesc residue, SceneDesc, popups)
+                // always speak in full.
+                string toSpeak = cleaned;
+                if (!PanelPolicy.AutoReadBody && (source == "Tooltip" || source == "SheetDesc"))
+                {
+                    PanelPolicy.EnsureTags();
+                    string identity = Composer.IdentityLine(Composer.SectionPanel(source, forwardRaw));
+                    if (!string.IsNullOrWhiteSpace(identity)) toSpeak = Composer.EnsurePeriod(identity);
+                }
+
                 if (kv.Value.Interrupt)
-                    Scaffold.SpeechService.Say(cleaned, source);
+                    Scaffold.SpeechService.Say(toSpeak, source);
                 else
-                    Scaffold.SpeechService.SayQueued(cleaned, source);
+                    Scaffold.SpeechService.SayQueued(toSpeak, source);
 
                 // Dialogue node change (owner ruling 2026-08-17): picking a
                 // choice mounts a new node INSIDE the same scene state — no
@@ -1830,7 +1842,6 @@ namespace SkaldAccessibility
             _lastContent.Remove("FeatPoints");
             _pendingRefunds.Clear();   // a mid-settle exit must not carry a
             _refundTally.Clear();      // refund line into the next state
-            _stripSeenSinceState = false;
             _spokenCanvases.Clear();       // every canvas's next focus line is an
             _spokenListSelections.Clear(); // arrival observation in the new state
             _invHoverSegment = null;       // hover records die with the screen

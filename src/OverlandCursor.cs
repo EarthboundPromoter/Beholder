@@ -342,7 +342,7 @@ namespace SkaldAccessibility
             // The game's own inspect text is the review panel (raw — tag
             // grammar sections it). Only spotted tiles produce one.
             string inspect = S(Seams.MapTile_getInspectDescription, tile);
-            if (!string.IsNullOrWhiteSpace(inspect)) ReviewLayer.NotePanel(inspect);
+            if (!string.IsNullOrWhiteSpace(inspect)) ReviewLayer.NotePanel("Inspect", inspect);
         }
 
         /// <summary>Rendered-priority content label for a spotted tile.</summary>
@@ -791,7 +791,7 @@ namespace SkaldAccessibility
 
             object t = TileAt(map, e.X, e.Y);
             string inspect = t != null ? S(Seams.MapTile_getInspectDescription, t) : null;
-            if (!string.IsNullOrWhiteSpace(inspect)) ReviewLayer.NotePanel(inspect);
+            if (!string.IsNullOrWhiteSpace(inspect)) ReviewLayer.NotePanel("Inspect", inspect);
         }
 
         /// <summary>The beacon: party stepped while an entity is landed —

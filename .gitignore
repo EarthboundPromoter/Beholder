@@ -29,6 +29,7 @@ all_types.txt
 # dependencies, and licenses only)
 docs/combat-survey.md
 docs/combat-spec.md
+docs/text-surface-audit.md
 
 # Dev bridge — local-only, never ships (lineage rule)
 bridge/bin/

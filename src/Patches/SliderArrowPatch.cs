@@ -222,11 +222,21 @@ namespace SkaldAccessibility.Patches
                     desc = method.Invoke(button, null) as string;
                 }
                 // The row's description is the review panel while this row is
-                // focused (WP10) — raw, so the tag grammar can section it.
-                if (!string.IsNullOrWhiteSpace(desc)) ReviewLayer.NotePanel(desc);
+                // focused (WP10) — raw, so the sectioning can shape it. This is
+                // a UI-nav population: under Panel.AutoReadBody off, only the
+                // identity line speaks (TP1, the one config).
+                if (!string.IsNullOrWhiteSpace(desc)) ReviewLayer.NotePanel("SheetDesc", desc);
                 string cleaned = string.IsNullOrWhiteSpace(desc) ? null : TextCleaner.CleanText(desc);
                 if (!string.IsNullOrWhiteSpace(cleaned))
+                {
+                    if (!PanelPolicy.AutoReadBody)
+                    {
+                        PanelPolicy.EnsureTags();
+                        string identity = Composer.IdentityLine(Composer.SectionPanel("SheetDesc", desc));
+                        if (!string.IsNullOrWhiteSpace(identity)) cleaned = Composer.EnsurePeriod(identity);
+                    }
                     Scaffold.SpeechService.SayQueued(cleaned, "SliderDesc");
+                }
             }
             catch { }
         }

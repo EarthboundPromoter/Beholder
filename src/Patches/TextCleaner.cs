@@ -30,8 +30,11 @@ namespace SkaldAccessibility.Patches
             // Strip <Header>...</Header> and other game UI markup tags
             text = Regex.Replace(text, @"</?[A-Za-z][A-Za-z0-9]*>", "");
 
-            // Strip Unity rich-text color tags: <color=#RRGGBBAA>, <COLOR=name>, </color>, </COLOR>
-            text = Regex.Replace(text, @"</?color[^>]*>", "", RegexOptions.IgnoreCase);
+            // Strip Unity rich-text color tags: <color=#RRGGBBAA>, <COLOR=name>, </color>, </COLOR>.
+            // Tolerates the game's malformed variants (text-surface-audit flag 2):
+            // "<\color>" from Item.makeComparativeColorTag* and "</ color >" in
+            // PopUpSaveDelete — a matcher keyed on well-formed tags leaves residue.
+            text = Regex.Replace(text, @"<[/\\]?\s*color[^>]*>", "", RegexOptions.IgnoreCase);
 
             // Strip {functionCall(params)} scripting calls
             text = FunctionRegex.Replace(text, "");

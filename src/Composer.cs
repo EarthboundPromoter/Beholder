@@ -504,6 +504,265 @@ namespace SkaldAccessibility
 
         private static bool StartsWithDigit(string s) => s.Length > 0 && char.IsDigit(s[0]);
 
+        // =====================================================================
+        // Panel sectioning — the review buffer's document model (TP1, the
+        // factory's second consumer). PURE: raw markup strings in, sections
+        // out. Tag VALUES are injected once via PanelTags (PanelPolicy reads
+        // them through the Seams handles — the composer itself never reflects).
+        //
+        // Two-tier rubric (owner-ruled 2026-08-18): provenance picks the map,
+        // markup structures within a capture. The generic map below encodes
+        // the audited composer shapes (text-surface-audit §7):
+        //  - a <Header> line OPENS a section and OWNS following contiguous
+        //    content (the SNEAKING block, item identity+type, inspect
+        //    identity) — headers are titles, not orphan sections;
+        //  - a known list label (CONDITIONS/IMMUNITIES/RESISTANCES/
+        //    VULNERABILITIES/ABILITIES/SPELLS — Character.getInspectDescription's
+        //    literals) opens a section whose elements are the list entries;
+        //  - contiguous pair lines form a stats section (one pair per element,
+        //    green/red comparison transcoded per pair); consecutive stats
+        //    sections separated only by blank lines MERGE (the inspect ladder
+        //    reads as one combat-stats section);
+        //  - anything else is prose: blank-line stanzas are sections,
+        //    sentences are elements.
+        // Pair matching accepts the ATTRIBUTE_VALUE span alone — the game's
+        // colored-name variants (Yellow/Soft pairs) are first-class pairs by
+        // design here, not by parser accident (audit flag 4).
+        // =====================================================================
+
+        internal sealed class PanelSection
+        {
+            public string Title;                 // header/label text, null for anonymous sections
+            public string FullText;              // what a section-level landing speaks
+            public readonly List<string> Elements = new List<string>();
+        }
+
+        /// <summary>Markup tag values, injected once (PanelPolicy.EnsureTags).
+        /// Null members simply disable their rule — sectioning degrades to
+        /// paragraphs, never throws.</summary>
+        internal static class PanelTags
+        {
+            public static string Header, AttrName, AttrValue, Green, Red;
+        }
+
+        private static readonly string[] ListLabels =
+            { "CONDITIONS", "IMMUNITIES", "RESISTANCES", "VULNERABILITIES", "ABILITIES", "SPELLS" };
+
+        /// <summary>Section a captured panel. <paramref name="source"/> is the
+        /// provenance tag (recorded for future per-source maps; the current map
+        /// is shape-complete for every audited writer).</summary>
+        internal static List<PanelSection> SectionPanel(string source, string raw)
+        {
+            var sections = new List<PanelSection>();
+            if (string.IsNullOrWhiteSpace(raw)) return sections;
+
+            PanelSection current = null;
+            string kind = null;            // "header" | "label" | "stats" | "prose"
+            bool blankGap = false;         // a blank line closed the previous run
+            var prose = new System.Text.StringBuilder();
+
+            void CloseProse()
+            {
+                if (kind == "prose" && current != null)
+                {
+                    current.FullText = prose.ToString().Trim();
+                    foreach (var s in SplitSentences(current.FullText)) current.Elements.Add(s);
+                    if (current.Elements.Count > 0) sections.Add(current);
+                }
+                prose.Length = 0;
+            }
+
+            void Close()
+            {
+                if (current == null) { kind = null; return; }
+                if (kind == "prose") { CloseProse(); }
+                else if (current.Elements.Count > 0 || !string.IsNullOrEmpty(current.Title))
+                {
+                    if (current.FullText == null)
+                        current.FullText = current.Title == null
+                            ? string.Join(", ", current.Elements.ToArray())
+                            : (current.Elements.Count == 0
+                                ? current.Title
+                                : current.Title + ", " + string.Join(", ", current.Elements.ToArray()));
+                    sections.Add(current);
+                }
+                current = null; kind = null;
+            }
+
+            foreach (string rawLine in raw.Split('\n'))
+            {
+                string cleaned = Patches.TextCleaner.CleanText(rawLine);
+                if (string.IsNullOrWhiteSpace(cleaned))
+                {
+                    // Blank: header/label blocks and prose close outright; a
+                    // stats run closes SOFTLY (an immediately following pair
+                    // reopens it — the merge rule).
+                    if (kind == "stats") { blankGap = true; continue; }
+                    Close();
+                    blankGap = false;
+                    continue;
+                }
+
+                bool header = PanelTags.Header != null && rawLine.Contains(PanelTags.Header);
+                bool pair = !header
+                    && ((PanelTags.AttrName != null && rawLine.Contains(PanelTags.AttrName))
+                        || (PanelTags.AttrValue != null && rawLine.Contains(PanelTags.AttrValue)));
+                bool label = !header && !pair && IsListLabel(cleaned);
+
+                if (header)
+                {
+                    Close(); blankGap = false;
+                    current = new PanelSection { Title = cleaned.Trim() };
+                    kind = "header";
+                }
+                else if (label)
+                {
+                    Close(); blankGap = false;
+                    current = new PanelSection { Title = TitleCaseLabel(cleaned.Trim()) };
+                    kind = "label";
+                }
+                else if (kind == "header")
+                {
+                    // The header owns everything until the blank line.
+                    current.Elements.Add(Transcode(rawLine, cleaned.Trim()));
+                }
+                else if (kind == "label")
+                {
+                    foreach (var item in cleaned.Split(','))
+                    {
+                        string t = item.Trim();
+                        if (t.Length > 0) current.Elements.Add(t);
+                    }
+                }
+                else if (pair)
+                {
+                    if (kind != "stats")
+                    {
+                        Close();
+                        current = new PanelSection();
+                        kind = "stats";
+                    }
+                    // blankGap with kind=="stats" falls through here: merge.
+                    blankGap = false;
+                    current.Elements.Add(Transcode(rawLine, cleaned.Trim()));
+                }
+                else
+                {
+                    if (kind == "stats" && blankGap) { Close(); blankGap = false; }
+                    else if (kind == "stats") { Close(); }
+                    if (kind != "prose")
+                    {
+                        Close();
+                        current = new PanelSection();
+                        kind = "prose";
+                    }
+                    if (prose.Length > 0) prose.Append(' ');
+                    prose.Append(cleaned.Trim());
+                }
+            }
+            Close();
+            return sections;
+        }
+
+        private static bool IsListLabel(string cleaned)
+        {
+            string t = cleaned.Trim().TrimEnd(':');
+            for (int i = 0; i < ListLabels.Length; i++)
+                if (string.Equals(t, ListLabels[i], StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private static string TitleCaseLabel(string label)
+        {
+            string t = label.TrimEnd(':').Trim();
+            if (t.Length == 0) return t;
+            return char.ToUpperInvariant(t[0]) + t.Substring(1).ToLowerInvariant();
+        }
+
+        /// <summary>Per-pair comparison transcode: the game's green/red value
+        /// coloring is its only carrier of better/worse-than-equipped — turn
+        /// it into words, per stat only (aggregate verdicts stay forbidden).</summary>
+        private static string Transcode(string rawLine, string cleaned)
+        {
+            if (PanelTags.Green != null && rawLine.Contains(PanelTags.Green)) return cleaned + ", better";
+            if (PanelTags.Red != null && rawLine.Contains(PanelTags.Red)) return cleaned + ", worse";
+            return cleaned;
+        }
+
+        /// <summary>The identity line — what speaks at populate when the
+        /// AutoReadBody config is off: the first section, title-first.</summary>
+        internal static string IdentityLine(List<PanelSection> sections)
+        {
+            if (sections == null || sections.Count == 0) return null;
+            var first = sections[0];
+            if (!string.IsNullOrEmpty(first.Title))
+                return first.Elements.Count > 0
+                    ? first.Title + ", " + first.Elements[0]
+                    : first.Title;
+            return first.FullText;
+        }
+
+        internal static IEnumerable<string> SplitSentences(string text)
+        {
+            int start = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                bool ender = c == '.' || c == '!' || c == '?';
+                if (ender && (i + 1 >= text.Length || text[i + 1] == ' '))
+                {
+                    string sentence = text.Substring(start, i - start + 1).Trim();
+                    if (sentence.Length > 0) yield return sentence;
+                    start = i + 1;
+                }
+            }
+            if (start < text.Length)
+            {
+                string tail = text.Substring(start).Trim();
+                if (tail.Length > 0) yield return tail;
+            }
+        }
+
+        // ---- The status strip (DataControl.getBuffer's product) ----
+
+        internal sealed class StripFacts
+        {
+            public string Time, Day, X, Y, Weather, Phase;
+            public bool Valid;
+        }
+
+        /// <summary>Decompose the game's own strip composition into its four
+        /// logical facts. The caller obtained <paramref name="stripRaw"/> from
+        /// DataControl.getBuffer itself, so the line shape is authoritative:
+        /// Time/Day/X Pos./Y Pos. pairs, then weather prose, then the bare
+        /// phase word (audit §3). Label-keyed, order-tolerant; unmatched
+        /// non-empty lines fold into Weather with the final line as Phase.</summary>
+        internal static StripFacts ParseStrip(string stripRaw)
+        {
+            var f = new StripFacts();
+            if (string.IsNullOrWhiteSpace(stripRaw)) return f;
+            var loose = new List<string>();
+            foreach (string rawLine in stripRaw.Split('\n'))
+            {
+                string c = Patches.TextCleaner.CleanText(rawLine);
+                if (string.IsNullOrWhiteSpace(c)) continue;
+                c = c.Trim();
+                if (c.StartsWith("Time:")) f.Time = c;
+                else if (c.StartsWith("Day:")) f.Day = c;
+                else if (c.StartsWith("X Pos.:")) f.X = c;
+                else if (c.StartsWith("Y Pos.:")) f.Y = c;
+                else loose.Add(c);
+            }
+            if (loose.Count > 0)
+            {
+                f.Phase = loose[loose.Count - 1];
+                loose.RemoveAt(loose.Count - 1);
+                if (loose.Count > 0) f.Weather = string.Join(" ", loose.ToArray());
+            }
+            f.Valid = f.Time != null || f.X != null || f.Phase != null;
+            return f;
+        }
+
         private static int ParseLeadingInt(string s)
         {
             int end = 0;

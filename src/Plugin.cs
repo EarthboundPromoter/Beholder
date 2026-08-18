@@ -44,6 +44,9 @@ namespace SkaldAccessibility
                 // CP3: the combat cursor's toggles (light tail, placement
                 // qualifier position, census).
                 CombatCursor.BindConfig(Config);
+                // TP1: the panel policy — AutoReadBody plus the strip's
+                // per-fact toggles (weather/phase on, clock/position off).
+                PanelPolicy.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own

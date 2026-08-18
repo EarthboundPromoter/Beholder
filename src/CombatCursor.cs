@@ -945,7 +945,7 @@ namespace SkaldAccessibility
         private static void NoteInspect(object tile)
         {
             string inspect = S(Seams.MapTile_getInspectDescription, tile);
-            if (!string.IsNullOrWhiteSpace(inspect)) ReviewLayer.NotePanel(inspect);
+            if (!string.IsNullOrWhiteSpace(inspect)) ReviewLayer.NotePanel("Inspect", inspect);
         }
 
         private static void ClearTooltip()
