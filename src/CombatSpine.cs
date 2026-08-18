@@ -47,8 +47,12 @@ namespace SkaldAccessibility
         private static ConfigEntry<bool> _cfgEconomyDeltas;
         private static ConfigEntry<bool> _cfgForecast;
 
+        private static ConfigEntry<bool> _cfgAoETerse;
+
         internal static void BindConfig(ConfigFile config)
         {
+            _cfgAoETerse = config.Bind("Combat", "AoECensusTerse", false,
+                "Terse AoE census: keep the enemy/ally counts, drop the names (owner ruling 2026-08-18).");
             _cfgTurnNames = config.Bind("Combat", "TurnNames", true,
                 "Speak whose turn it is (\"Bjorn's turn.\") for every combatant.");
             _cfgTurnEconomy = config.Bind("Combat", "TurnEconomy", true,
@@ -60,6 +64,22 @@ namespace SkaldAccessibility
             _cfgForecast = config.Bind("Combat", "CostForecast", true,
                 "Speak an ability's action cost when aiming begins (\"Ends turn.\" / \"Costs all moves.\").");
         }
+
+        // ---- Row-shift note (CP4, from RowShiftPatch — the game's own
+        //      Ctrl-pair ability-shift; latest wins) ----
+        private static object _pendingRowShiftGui;
+        internal static void NoteRowShift(object guiControl) => _pendingRowShiftGui = guiControl;
+
+        // ---- AoE census state (CP4): the settled selection's member set,
+        //      reference-keyed, diffed at the drain ----
+        private static readonly System.Collections.Generic.HashSet<object> _censusMembers
+            = new System.Collections.Generic.HashSet<object>(new RefCmp());
+        private static bool _censusActive;
+
+        // ---- Weapon-preference diff (CP4): the game's own isWeaponRanged
+        //      flag on the current PC ----
+        private static object _weaponDiffChar;
+        private static bool _weaponWasRanged;
 
         // ---- Forecast note (from ActionCounterPatch — the game's own
         //      per-frame counter update, (character, ability); latest wins) ----
@@ -142,6 +162,10 @@ namespace SkaldAccessibility
             _snaps.Clear();
             _seenTactical.Clear();
             _frame = null;
+            _pendingRowShiftGui = null;
+            _censusMembers.Clear();
+            _censusActive = false;
+            _weaponDiffChar = null;
         }
 
         /// <summary>"Goblin B" / "Bjorn" — the uniform identifier (owner
@@ -294,6 +318,11 @@ namespace SkaldAccessibility
                 }
             }
 
+            // CP4 joins: Ctrl-row compose, AoE census, weapon-toggle diff.
+            try { DrainRowShift(); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:row] {ex.Message}"); }
+            try { DrainAoECensus(state); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:aoe] {ex.Message}"); }
+            try { DrainWeaponToggle(cur); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:weapon] {ex.Message}"); }
+
             // Cost forecast — the pending ability from the game's own action
             // counter update (targeting states pass their aimed component;
             // planning passes null). Speaks once per distinct pending ability,
@@ -434,6 +463,160 @@ namespace SkaldAccessibility
 
             EmitEventLines(lines);
             return true;
+        }
+
+        /// <summary>CP4: the Ctrl-row walk's terse anchor — "3: Maneuvers." —
+        /// from the row's own settled index and the state's ButtonData
+        /// hoverText (the unavailability variants carry their own words);
+        /// the game's fuller description echo follows natively.</summary>
+        private static void DrainRowShift()
+        {
+            object gui = _pendingRowShiftGui;
+            if (gui == null) return;
+            _pendingRowShiftGui = null;
+            if (Seams.GUIControl_combatButtonRow == null || Seams.UICanvas_currentSelectedButton == null)
+                return;
+            object row = Seams.GUIControl_combatButtonRow.GetValue(gui);
+            if (row == null) return;
+            int idx = (int)Seams.UICanvas_currentSelectedButton.GetValue(row);
+            if (idx < 0) return;
+            string label = null;
+            try
+            {
+                object state = Pump.CurrentStateObject();
+                if (state != null && Seams.CombatPlanning_buttonOptions != null
+                    && Seams.CombatPlanningStateType != null
+                    && Seams.CombatPlanningStateType.IsInstanceOfType(state))
+                {
+                    var options = Seams.CombatPlanning_buttonOptions.GetValue(state) as System.Collections.IList;
+                    if (options != null && idx < options.Count && options[idx] != null
+                        && Seams.ButtonData_hoverText != null)
+                    {
+                        string raw = Seams.ButtonData_hoverText.GetValue(options[idx]) as string;
+                        if (!string.IsNullOrWhiteSpace(raw))
+                            label = Patches.TextCleaner.CleanText(raw);
+                    }
+                }
+            }
+            catch { }
+            Scaffold.SpeechService.Say(
+                string.IsNullOrWhiteSpace(label) ? $"{idx + 1}." : $"{idx + 1}: {label}.", "Nav");
+        }
+
+        /// <summary>CP4: the AoE census (owner wording) — the settled
+        /// selection's members, diffed as a set, corpse-filtered, faction-
+        /// split: "In AoE, 2 enemies: Goblin A, Goblin B. 1 ally: Leo."
+        /// Terse config keeps the counts and drops the names. The game
+        /// recomputes the selection every frame from the mouse tile; the
+        /// drain reads it settled.</summary>
+        private static void DrainAoECensus(object state)
+        {
+            bool targeting = state != null && Seams.CombatTargetingBaseType != null
+                && Seams.CombatTargetingBaseType.IsInstanceOfType(state);
+            if (!targeting)
+            {
+                if (_censusActive) { _censusActive = false; _censusMembers.Clear(); }
+                return;
+            }
+            object actor = GetCurrentCharacter(_encounter);
+            if (actor == null || Seams.CharacterComponentContainer_areaEffectSelection == null
+                || Seams.EffectSelection_getAllCharactersInSelection == null) return;
+            object sel = Seams.CharacterComponentContainer_areaEffectSelection.GetValue(actor);
+            if (sel == null) return;
+            var members = Seams.EffectSelection_getAllCharactersInSelection.Invoke(sel, null)
+                as System.Collections.IEnumerable;
+            var live = new System.Collections.Generic.List<object>();
+            if (members != null)
+            {
+                foreach (object m in members)
+                {
+                    if (m == null) continue;
+                    try
+                    {
+                        // Corpse filter (A1 caveat: the selection never filters isDead).
+                        if (Seams.Character_isDead != null && (bool)Seams.Character_isDead.Invoke(m, null))
+                            continue;
+                    }
+                    catch { }
+                    live.Add(m);
+                }
+            }
+            bool changed = !_censusActive || live.Count != _censusMembers.Count;
+            if (!changed)
+                foreach (object m in live)
+                    if (!_censusMembers.Contains(m)) { changed = true; break; }
+            if (!changed) return;
+            _censusActive = true;
+            _censusMembers.Clear();
+            foreach (object m in live) _censusMembers.Add(m);
+
+            var enemies = new System.Collections.Generic.List<string>();
+            var allies = new System.Collections.Generic.List<string>();
+            foreach (object m in live)
+            {
+                string dn = DisplayNameOf(m) ?? "Someone";
+                bool hostile = false;
+                try { hostile = Seams.Character_isHostile != null && (bool)Seams.Character_isHostile.Invoke(m, null); }
+                catch { }
+                (hostile ? enemies : allies).Add(dn);
+            }
+            if (enemies.Count == 0 && allies.Count == 0)
+            {
+                Scaffold.SpeechService.Say("In AoE, no one.", "Nav");
+                return;
+            }
+            bool terse = _cfgAoETerse != null && _cfgAoETerse.Value;
+            string e = enemies.Count == 0 ? null
+                : (enemies.Count == 1 ? "1 enemy" : $"{enemies.Count} enemies")
+                  + (terse ? "" : ": " + string.Join(", ", enemies.ToArray()));
+            string a = allies.Count == 0 ? null
+                : (allies.Count == 1 ? "1 ally" : $"{allies.Count} allies")
+                  + (terse ? "" : ": " + string.Join(", ", allies.ToArray()));
+            string line = "In AoE, " + (e != null && a != null ? e + ". " + a : e ?? a) + ".";
+            Scaffold.SpeechService.Say(line, "Nav");
+        }
+
+        /// <summary>CP4: the weapon-toggle join (T / right-stick click) — the
+        /// game's own isWeaponRanged flag diffed on the current PC; speaks the
+        /// worn-zone vocabulary ("Ranged: Longbow." / "Melee: Shortsword.").
+        /// Baseline resets silently at turn changes.</summary>
+        private static void DrainWeaponToggle(object cur)
+        {
+            if (cur == null || !IsPC(cur))
+            {
+                _weaponDiffChar = null;
+                return;
+            }
+            bool ranged;
+            try
+            {
+                if (Seams.Character_isWeaponRanged == null) return;
+                ranged = (bool)Seams.Character_isWeaponRanged.Invoke(cur, null);
+            }
+            catch { return; }
+            if (!ReferenceEquals(cur, _weaponDiffChar))
+            {
+                _weaponDiffChar = cur;
+                _weaponWasRanged = ranged;
+                return;
+            }
+            if (ranged == _weaponWasRanged) return;
+            _weaponWasRanged = ranged;
+            string name = null;
+            try
+            {
+                var getter = Seams.Character_wornGetters != null && Seams.Character_wornGetters.Length > 1
+                    ? (ranged ? Seams.Character_wornGetters[1] : Seams.Character_wornGetters[0]) : null;
+                object weapon = getter?.Invoke(cur, null);
+                if (weapon != null)
+                {
+                    string raw = Seams.SkaldBaseObject_getName?.Invoke(weapon, null) as string;
+                    if (!string.IsNullOrWhiteSpace(raw)) name = Patches.TextCleaner.CleanText(raw);
+                }
+            }
+            catch { }
+            string mode = ranged ? "Ranged" : "Melee";
+            Scaffold.SpeechService.Say(name == null ? $"{mode}." : $"{mode}: {name}.", "Nav");
         }
 
         /// <summary>Tactical flashes with no log event still speak (Cascade

@@ -98,12 +98,47 @@ namespace SkaldAccessibility
         private static bool _lastValid;
         private static bool _censusSpoken;
 
+        // ---- Initiative panel mode (CP4, owner design 2026-08-18): I snaps
+        //      onto the acting character's row; the panel's NATIVE hover
+        //      machinery does the rest (slide-out, current-initiative static,
+        //      map highlight). W/S re-snap rows; A/D/I/Escape exit with the
+        //      cursor rerouted onto the hovered combatant's tile. Rows are
+        //      rebuilt per frame — the mode holds an INDEX and re-snaps to
+        //      the fresh element each frame. Clicks pass through untouched
+        //      (ride test). ----
+        private static bool _panelOpen;
+        private static int _panelIdx = -1;
+        private static object _panelSpokenChar;   // hover-line dedup (reference identity)
+
+        /// <summary>Consulted by the movement suppression (WP9 modal
+        /// precedent): W/S walk rows, A/D exit — none may move the character.</summary>
+        public static bool PanelActive => _panelOpen && InCombat();
+
+        // Our own virtual-mouse writes (latch assert, panel snap) must not
+        // count as external takeovers.
+        private static bool _selfAsserting;
+
+        /// <summary>The yield discipline (owner ruling 2026-08-18): a
+        /// deliberate GAME-side mouse placement (Ctrl row snap, popup snap,
+        /// funnel snap) releases the cursor's hold exactly like a physical
+        /// takeover — the latch never fights the game. Called from the mouse
+        /// guard's setVirtualMousePosition postfix.</summary>
+        internal static void NoteExternalMouseSet()
+        {
+            if (_selfAsserting) return;
+            if (_held && InCombat()) _held = false;
+        }
+
         public static bool ListOpen => _listOpen;
 
         /// <summary>Choke-point swallow (same contract as the overland
         /// cursor's): keys the game must not see while the K list is open.</summary>
         public static bool ShouldSwallowKey(KeyCode key)
         {
+            // Panel mode: Escape is an exit, never the menu. (W/S/A/D are
+            // covered by the movement suppression; I never reaches the game —
+            // its controller-Y feed is combat-gated.)
+            if (_panelOpen && key == KeyCode.Escape && InCombat()) return true;
             if (!_listOpen && Time.frameCount > _swallowTailFrame) return false;
             switch (key)
             {
@@ -122,6 +157,14 @@ namespace SkaldAccessibility
 
         public static bool SuppressButtonB()
             => _listOpen || Time.frameCount <= _swallowTailFrame;
+
+        /// <summary>Combat-scoped Y unbind (owner ruling): I is the initiative
+        /// door in combat; the controller-Y feed suppresses there so the
+        /// CHARACTER SHEET quick-button (Y's combat consumer — native C covers
+        /// it) never fires from I. Popups keep Y — they read it as an option
+        /// scheme slot (survey §4c).</summary>
+        internal static bool SuppressButtonY()
+            => InCombat() && !PopupUp();
 
         // ---- Gates and reads ----
 
@@ -257,14 +300,197 @@ namespace SkaldAccessibility
                     }
                 }
 
-                if (!_held) return;
                 if (PopupUp() || Patches.GridNavigationPatch.GridActive()) return;
+
+                // Panel mode: the per-frame re-snap onto the focused row
+                // (rows are rebuilt each frame; the game's own snap helper
+                // reads live coordinates, so the slide-out stays hovered).
+                if (_panelOpen)
+                {
+                    PanelResnap();
+                    return;
+                }
+
+                if (!_held) return;
                 AssertMouse(map);
             }
             catch (Exception ex)
             {
                 Plugin.Logger?.LogDebug($"[CombatCursor] {ex.Message}");
             }
+        }
+
+        // ---- Initiative panel mode ----
+
+        private static object PanelRowElement(int idx, out object character, out int count)
+        {
+            character = null; count = 0;
+            try
+            {
+                object state = Pump.CurrentStateObject();
+                if (state == null || Seams.StateBase_guiControl == null
+                    || Seams.GUIControl_initiativeList == null || Seams.UICanvas_getElements == null)
+                    return null;
+                object gui = Seams.StateBase_guiControl.GetValue(state);
+                object list = gui == null ? null : Seams.GUIControl_initiativeList.GetValue(gui);
+                if (list == null) return null;
+                var elements = Seams.UICanvas_getElements.Invoke(list, null) as System.Collections.IList;
+                if (elements == null || elements.Count == 0) return null;
+                count = elements.Count;
+                if (idx < 0 || idx >= elements.Count) return null;
+                object row = elements[idx];
+                if (row != null && Seams.InitiativeButton_getCharacter != null
+                    && Seams.InitiativeButtonType != null
+                    && Seams.InitiativeButtonType.IsInstanceOfType(row))
+                    character = Seams.InitiativeButton_getCharacter.Invoke(row, null);
+                return row;
+            }
+            catch { return null; }
+        }
+
+        private static void PanelResnap()
+        {
+            object row = PanelRowElement(_panelIdx, out object ch, out int count);
+            if (row == null)
+            {
+                // Roster shrank under us (death re-sort): clamp or close.
+                if (count == 0) { ClosePanel(rerouteTo: null); return; }
+                _panelIdx = Math.Min(_panelIdx, count - 1);
+                row = PanelRowElement(_panelIdx, out ch, out count);
+                if (row == null) { ClosePanel(rerouteTo: null); return; }
+            }
+            SnapToRow(row);
+            // The hover line speaks when the focused COMBATANT changes
+            // (reference identity — rows are rebuilt per frame, characters
+            // are stable).
+            if (!ReferenceEquals(ch, _panelSpokenChar) && ch != null)
+            {
+                _panelSpokenChar = ch;
+                SpeakPanelRow(ch, _panelIdx, count);
+            }
+        }
+
+        private static void SnapToRow(object rowElement)
+        {
+            try
+            {
+                object state = Pump.CurrentStateObject();
+                object gui = state == null ? null : Seams.StateBase_guiControl?.GetValue(state);
+                if (gui == null || Seams.GUIControl_setMouseToUIElement == null) return;
+                _selfAsserting = true;
+                try
+                {
+                    // The popup-grid family's own hover offset (+8, -8).
+                    Seams.GUIControl_setMouseToUIElement.Invoke(gui, new object[] { rowElement, 8, -8 });
+                }
+                finally { _selfAsserting = false; }
+            }
+            catch { }
+        }
+
+        private static void SpeakPanelRow(object ch, int idx, int count)
+        {
+            string name = CombatSpine.DisplayNameOf(ch) ?? "Someone";
+            string status = null;
+            try
+            {
+                string raw = Seams.Character_printInitiativeStatus?.Invoke(ch, null) as string;
+                if (!string.IsNullOrWhiteSpace(raw))
+                    status = Patches.TextCleaner.CleanText(raw).Trim().TrimStart('(').TrimEnd(')').ToLowerInvariant();
+            }
+            catch { }
+            int vit = -1, wounds = -1;
+            try
+            {
+                if (Seams.Character_getVitality != null && Seams.Character_getWounds != null)
+                {
+                    vit = (int)Seams.Character_getVitality.Invoke(ch, null);
+                    wounds = (int)Seams.Character_getWounds.Invoke(ch, null);
+                }
+            }
+            catch { }
+            string vitals = vit >= 0 ? $", {vit} vitality, {wounds} wounds" : "";
+            string statusPart = string.IsNullOrWhiteSpace(status) ? "" : $", {status}";
+            Scaffold.SpeechService.Say($"{name}{statusPart}{vitals}, {idx + 1} of {count}.", "Nav");
+        }
+
+        private static void OpenPanel()
+        {
+            // Land on the acting character's row; top of order as fallback.
+            object actor = ActingCharacter();
+            int startIdx = 0;
+            PanelRowElement(0, out _, out int count);
+            if (count == 0)
+            {
+                Scaffold.SpeechService.Say("No initiative panel.", "Nav");
+                return;
+            }
+            if (actor != null)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    PanelRowElement(i, out object ch, out _);
+                    if (ReferenceEquals(ch, actor)) { startIdx = i; break; }
+                }
+            }
+            _held = false;              // the panel owns the mouse; the tile hold yields
+            _pendingSpeak = false;
+            CloseListSilent();
+            _panelOpen = true;
+            _panelIdx = startIdx;
+            _panelSpokenChar = null;
+            PanelResnap();
+        }
+
+        /// <summary>Exit reroutes the battlefield cursor onto the hovered
+        /// combatant's tile (the row points at them by construction) — the
+        /// standard landing line speaks there (owner design).</summary>
+        private static void ClosePanel(object rerouteTo)
+        {
+            _panelOpen = false;
+            _panelSpokenChar = null;
+            if (rerouteTo != null)
+            {
+                try
+                {
+                    object tile = Seams.Character_getMapTile?.Invoke(rerouteTo, null);
+                    if (tile != null)
+                    {
+                        _tileX = (int)Seams.MapTile_getTileX.Invoke(tile, null);
+                        _tileY = (int)Seams.MapTile_getTileY.Invoke(tile, null);
+                        _held = true;
+                        object map = CurrentMap();
+                        if (map != null) { AssertMouse(map); QueueLanding(null); }
+                        return;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private static bool ProcessPanelInput()
+        {
+            if (Input.GetKeyDown(KeyCode.W))
+            {
+                if (_panelIdx > 0) { _panelIdx--; _panelSpokenChar = null; }
+                else Scaffold.SpeechService.Say("Top.", "Nav");
+                return true;
+            }
+            if (Input.GetKeyDown(KeyCode.S))
+            {
+                PanelRowElement(_panelIdx, out _, out int count);
+                if (_panelIdx < count - 1) { _panelIdx++; _panelSpokenChar = null; }
+                else Scaffold.SpeechService.Say("Bottom.", "Nav");
+                return true;
+            }
+            if (Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.Escape)
+                || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.D))
+            {
+                PanelRowElement(_panelIdx, out object ch, out _);
+                ClosePanel(ch);
+                return true;
+            }
+            return false;
         }
 
         /// <summary>Same viewport→virtual-screen geometry as the overland
@@ -301,13 +527,20 @@ namespace SkaldAccessibility
 
             int mx = (12 - scrollX) + 16 * c + 8;
             int my = -scrollY + 16 * r + 8;
-            Seams.SkaldIO_setVirtualMousePosition.Invoke(null, new object[] { mx, my });
+            try
+            {
+                _selfAsserting = true;
+                Seams.SkaldIO_setVirtualMousePosition.Invoke(null, new object[] { mx, my });
+            }
+            finally { _selfAsserting = false; }
         }
 
         private static void Drop()
         {
             _held = false;
             _pendingSpeak = false;
+            _panelOpen = false;
+            _panelSpokenChar = null;
             CloseListSilent();
         }
 
@@ -326,6 +559,12 @@ namespace SkaldAccessibility
             if (!InCombat()) return false;
             object map = CurrentMap();
             if (map == null || PopupUp() || Patches.GridNavigationPatch.GridActive()) return false;
+
+            // Panel mode owns W/S (rows) and A/D/I/Escape (exits) while open.
+            if (_panelOpen && ProcessPanelInput()) return true;
+            if (_panelOpen) return false;   // clicks and other keys pass through untouched
+
+            if (Input.GetKeyDown(KeyCode.I)) { OpenPanel(); return true; }
 
             if (_listOpen && ProcessListInput(map)) return true;
 

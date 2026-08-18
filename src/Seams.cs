@@ -525,6 +525,15 @@ namespace SkaldAccessibility
         internal static Type MapObjectFireType;
         internal static Type BaseTemporaryMapObjectsType;
         internal static MethodInfo TempMapObject_isDead;
+        // ---- CP4 (2026-08-18): initiative panel door, Ctrl-row compose,
+        //      AoE census, weapon-toggle join ----
+        internal static FieldInfo GUIControl_initiativeList;          // the rendered panel (rows rebuilt per frame)
+        internal static FieldInfo GUIControl_combatButtonRow;
+        internal static MethodInfo GUIControl_setMouseToClosestAbilityButtonAbove;
+        internal static MethodInfo GUIControl_setMouseToClosestAbilityButtonBelow;
+        internal static FieldInfo CombatPlanning_buttonOptions;       // the row's ButtonData list (hoverText = the label truth)
+        internal static MethodInfo Character_printInitiativeStatus;   // Ready/Acted/KO — the game's own words
+
         internal static MethodInfo NavigationCourse_getDestination;   // stale-course guard (CP3 review find 1)
         internal static MethodInfo Character_isNPCHostile;            // the game's own swap-eligibility test (find 4)
         internal static MethodInfo CombatPlanning_setMousePosition;   // tooltip-clear prefix targets
@@ -1003,6 +1012,14 @@ namespace SkaldAccessibility
             MapObjectFireType = T("MapObjectFire");
             BaseTemporaryMapObjectsType = T("BaseTemporaryMapObjects");
             TempMapObject_isDead = M(BaseTemporaryMapObjectsType, "BaseTemporaryMapObjects", "isDead");
+            GUIControl_initiativeList = F(typeof(GUIControl), "GUIControl", "initiativeList");
+            GUIControl_combatButtonRow = F(typeof(GUIControl), "GUIControl", "combatButtonRow");
+            GUIControl_setMouseToClosestAbilityButtonAbove
+                = M(typeof(GUIControl), "GUIControl", "setMouseToClosestAbilityButtonAbove");
+            GUIControl_setMouseToClosestAbilityButtonBelow
+                = M(typeof(GUIControl), "GUIControl", "setMouseToClosestAbilityButtonBelow");
+            CombatPlanning_buttonOptions = F(CombatPlanningStateType, "CombatPlanningState", "buttonOptions");
+            Character_printInitiativeStatus = M(CharacterType, "Character", "printInitiativeStatus");
             NavigationCourse_getDestination = M(NavigationCourseType, "NavigationCourse", "getDestination");
             Character_isNPCHostile = M(CharacterType, "Character", "isNPCHostile", new[] { CharacterType });
             CombatPlanning_setMousePosition = M(CombatPlanningStateType, "CombatPlanningState", "setMousePosition");

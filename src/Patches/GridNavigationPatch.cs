@@ -142,7 +142,9 @@ namespace SkaldAccessibility.Patches
 
         static void Postfix_SuppressMovement(ref bool __result)
         {
-            if (__result && GridActive()) __result = false;
+            // Grid-modal (WP9) and initiative-panel-modal (CP4): W/S walk the
+            // surface, A/D exit it — none may move the character.
+            if (__result && (GridActive() || CombatCursor.PanelActive)) __result = false;
         }
 
         // ---- (2) The driver ----
@@ -186,13 +188,11 @@ namespace SkaldAccessibility.Patches
                 }
                 else if (Pressed(Seams.SkaldIO_getOptionSelectionButtonLeft))
                 {
-                    Seams.UICanvas_controllerScrollSidewaysLeft?.Invoke(_grid, null);
-                    Snap();
+                    SidewaysWithEdge(Seams.UICanvas_controllerScrollSidewaysLeft);
                 }
                 else if (Pressed(Seams.SkaldIO_getOptionSelectionButtonRight))
                 {
-                    Seams.UICanvas_controllerScrollSidewaysRight?.Invoke(_grid, null);
-                    Snap();
+                    SidewaysWithEdge(Seams.UICanvas_controllerScrollSidewaysRight);
                 }
             }
             catch (Exception ex)
@@ -203,6 +203,30 @@ namespace SkaldAccessibility.Patches
 
         private static bool Pressed(MethodInfo accessor)
             => accessor != null && (bool)accessor.Invoke(null, null);
+
+        /// <summary>CP4 (spec §6): the grid's sideways edge was silent at
+        /// clamp — the native scroll runs, the index is diffed, and an
+        /// unchanged index speaks the edge line (the vertical edges already
+        /// had their observer).</summary>
+        private static void SidewaysWithEdge(MethodInfo sideways)
+        {
+            int before = -1;
+            try
+            {
+                if (Seams.UICanvas_currentSelectedButton != null)
+                    before = (int)Seams.UICanvas_currentSelectedButton.GetValue(_grid);
+            }
+            catch { }
+            sideways?.Invoke(_grid, null);
+            Snap();
+            try
+            {
+                if (before >= 0 && Seams.UICanvas_currentSelectedButton != null
+                    && (int)Seams.UICanvas_currentSelectedButton.GetValue(_grid) == before)
+                    Scaffold.SpeechService.Say("Edge.", "Nav");
+            }
+            catch { }
+        }
 
         /// <summary>Explicit virtual-mouse snap to the focused cell — the
         /// native setMouseToSelectedOption is gated on snapToOptions, which

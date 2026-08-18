@@ -162,7 +162,15 @@ namespace SkaldAccessibility.Patches
         }
 
         static void Postfix_ButtonX(ref bool __result) { if (!__result && EmulateActivation(KeyCode.U)) __result = true; }
-        static void Postfix_ButtonY(ref bool __result) { if (!__result && EmulateActivation(KeyCode.I)) __result = true; }
+        static void Postfix_ButtonY(ref bool __result)
+        {
+            if (__result) return;
+            // CP4: I is the initiative-panel door in combat — the Y feed
+            // suppresses there (Y's combat consumer is the character-sheet
+            // quick-button, natively covered by C); popups keep Y.
+            if (CombatCursor.SuppressButtonY()) return;
+            if (EmulateActivation(KeyCode.I)) __result = true;
+        }
         static void Postfix_LeftBumper(ref bool __result) { if (!__result && Emulate(KeyCode.Q)) __result = true; }
         static void Postfix_RightBumper(ref bool __result) { if (!__result && Emulate(KeyCode.E)) __result = true; }
 

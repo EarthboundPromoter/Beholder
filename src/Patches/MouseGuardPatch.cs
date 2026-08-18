@@ -66,6 +66,11 @@ namespace SkaldAccessibility.Patches
             _latchX = x;
             _latchY = y;
             _latchPhysical = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
+            // CP4 yield discipline: a deliberate game-side placement (Ctrl
+            // row snap, popup snap, funnel snap) releases the combat cursor's
+            // hold exactly like a physical takeover — the latch never fights
+            // the game. The cursor's own asserts are flagged and skip this.
+            CombatCursor.NoteExternalMouseSet();
         }
 
         static void Postfix_UpdateMouse()
