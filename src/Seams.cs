@@ -525,6 +525,8 @@ namespace SkaldAccessibility
         internal static Type MapObjectFireType;
         internal static Type BaseTemporaryMapObjectsType;
         internal static MethodInfo TempMapObject_isDead;
+        internal static MethodInfo NavigationCourse_getDestination;   // stale-course guard (CP3 review find 1)
+        internal static MethodInfo Character_isNPCHostile;            // the game's own swap-eligibility test (find 4)
         internal static MethodInfo CombatPlanning_setMousePosition;   // tooltip-clear prefix targets
         internal static MethodInfo CombatPlacement_setMousePosition;
         internal static MethodInfo CombatTargeting_setMousePosition;
@@ -1001,6 +1003,8 @@ namespace SkaldAccessibility
             MapObjectFireType = T("MapObjectFire");
             BaseTemporaryMapObjectsType = T("BaseTemporaryMapObjects");
             TempMapObject_isDead = M(BaseTemporaryMapObjectsType, "BaseTemporaryMapObjects", "isDead");
+            NavigationCourse_getDestination = M(NavigationCourseType, "NavigationCourse", "getDestination");
+            Character_isNPCHostile = M(CharacterType, "Character", "isNPCHostile", new[] { CharacterType });
             CombatPlanning_setMousePosition = M(CombatPlanningStateType, "CombatPlanningState", "setMousePosition");
             CombatPlacement_setMousePosition = M(CombatPlacementStateType, "CombatPlacementState", "setMousePosition");
             CombatTargeting_setMousePosition = M(CombatTargetingBaseType, "CombatTargetingBase", "setMousePosition");

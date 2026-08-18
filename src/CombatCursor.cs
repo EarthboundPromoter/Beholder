@@ -76,9 +76,13 @@ namespace SkaldAccessibility
         /// general mouse guard defers to it (HoldsMouse peer, survey §6 ⑥).</summary>
         internal static bool HoldsMouse => _held && InCombat();
 
-        // ---- Deferred landing (speak from settled truth, one frame later) ----
+        // ---- Deferred landing (speak from settled truth, one frame later).
+        //      The pending slot stores its own coordinates so a fast second
+        //      nudge flushes the first landing instead of dropping it
+        //      (review find 6). ----
         private static bool _pendingSpeak;
         private static int _pendingFrame = -1;
+        private static int _pendingX, _pendingY;
         private static string _pendingTail;      // ring counter (", 2 of 4.") or null
 
         // ---- Scan/list state ----
@@ -373,24 +377,42 @@ namespace SkaldAccessibility
 
         /// <summary>Arm the deferred landing: the game's next update re-hovers
         /// the new tile and recomputes the course; the drain then speaks from
-        /// settled truth.</summary>
+        /// settled truth. An unspoken pending landing from an EARLIER frame
+        /// flushes first (its course settled and is still current — the new
+        /// mouse move hasn't been seen by a game update yet), so fast key
+        /// repeats never drop a landing (review find 6). Same-frame re-arms
+        /// are genuine last-wins.</summary>
         private static void QueueLanding(string tail)
         {
+            if (_pendingSpeak && Time.frameCount > _pendingFrame)
+            {
+                _pendingSpeak = false;
+                object map = CurrentMap();
+                if (map != null && InCombat())
+                    SpeakTile(map, _pendingX, _pendingY, _pendingTail);
+            }
             _pendingSpeak = true;
             _pendingFrame = Time.frameCount;
+            _pendingX = _tileX;
+            _pendingY = _tileY;
             _pendingTail = tail;
         }
 
         /// <summary>Called from Pump.Drain each frame. Speaks the armed
-        /// landing once a full game update has run since the nudge.</summary>
+        /// landing once a full game update has run since the nudge. Popups
+        /// and open selector grids DEFER the speak (never drop) — the game's
+        /// own mouse branch skips the hover/course recompute while a selector
+        /// is open, so the read would be unsettled, and speaking would break
+        /// hold-and-flush against the popup's own announcement (review find 3).</summary>
         public static void DrainSpeak()
         {
             if (!_pendingSpeak || Time.frameCount <= _pendingFrame) return;
+            if (!InCombat() || !_held) { _pendingSpeak = false; return; }
+            if (PopupUp() || Patches.GridNavigationPatch.GridActive()) return;   // defer, not drop
             _pendingSpeak = false;
-            if (!InCombat() || !_held) return;
             object map = CurrentMap();
             if (map == null) return;
-            SpeakTile(map, _tileX, _tileY, _pendingTail);
+            SpeakTile(map, _pendingX, _pendingY, _pendingTail);
         }
 
         // ---- The unified landing readout ----
@@ -518,21 +540,41 @@ namespace SkaldAccessibility
                 bool actorIsPC = B(Seams.Character_isPC, actor);
                 if (!actorIsPC) return "";   // path facts only for the player's own planning
 
-                // Swap: a live PC's tile (not the actor's own).
                 object occ = null;
                 try { occ = Seams.MapTile_getLiveCharacter?.Invoke(tile, null); } catch { }
-                if (occ != null && B(Seams.Character_isPC, occ))
-                    return FlagOn(actor, Seams.CombatAbilityFlags_freeSwap)
-                        ? ", swap costs 1 move" : ", swap ends turn";
 
-                // Disengage: any move out of melee without evasion wipes the turn.
-                if (B(Seams.Character_isInMelee, actor) && !FlagOn(actor, Seams.CombatAbilityFlags_evasion))
+                bool inMelee = B(Seams.Character_isInMelee, actor)
+                    && !FlagOn(actor, Seams.CombatAbilityFlags_evasion);
+
+                if (occ != null)
+                {
+                    // The game's own swap-eligibility test: any non-hostile
+                    // occupant swaps — allied NPCs included (review find 4).
+                    bool hostileToActor = IsNPCHostile(actor, occ);
+                    if (!hostileToActor)
+                        return FlagOn(actor, Seams.CombatAbilityFlags_freeSwap)
+                            ? ", swap costs 1 move" : ", swap ends turn";
+                    // A hostile in melee range: clicking attacks in place, no
+                    // movement, no disengage. Beyond melee range the approach
+                    // IS a move — the disengage truth applies.
+                    int cheb = Math.Max(Math.Abs(tx - ax), Math.Abs(ty - ay));
+                    bool orthAdjacent = Math.Abs(tx - ax) + Math.Abs(ty - ay) == 1;
+                    if (orthAdjacent) return "";
+                    if (inMelee) return ", moving disengages, ends turn";
+                }
+                else if (inMelee)
+                {
+                    // Disengage: any move out of melee without evasion wipes the turn.
                     return ", moving disengages, ends turn";
+                }
 
-                int len = CourseLength(actor);
+                int len = CourseLength(actor, tx, ty);
                 if (len <= 0)
                 {
-                    // No course to a passable empty tile = unreachable.
+                    // No course terminating at THIS tile = unreachable (a
+                    // failed hover recompute leaves the previous course in
+                    // place — the destination check is the guard, review
+                    // find 1).
                     if (occ == null && B(Seams.MapTile_isPassable, tile) && !B(Seams.MapTile_isWater, tile))
                         return ", no path";
                     return "";
@@ -546,7 +588,13 @@ namespace SkaldAccessibility
             catch { return ""; }
         }
 
-        private static int CourseLength(object actor)
+        /// <summary>Course length ONLY when the course actually terminates at
+        /// (tx, ty): a failed hover recompute writes nothing and leaves the
+        /// previous tile's course behind (NavigationTools.setPath sets only on
+        /// success; clears only at round/combat boundaries) — trusting the
+        /// bare length would speak a confident path fact for an unreachable
+        /// tile (review find 1).</summary>
+        private static int CourseLength(object actor, int tx, int ty)
         {
             try
             {
@@ -554,9 +602,42 @@ namespace SkaldAccessibility
                     return -1;
                 object course = Seams.Character_GetNavigationCourse.Invoke(actor, null);
                 if (course == null) return -1;
+                if (Seams.NavigationCourse_getDestination != null)
+                {
+                    object dest = Seams.NavigationCourse_getDestination.Invoke(course, null);
+                    if (dest == null || !PointMatches(dest, tx, ty)) return -1;
+                }
                 return (int)Seams.NavigationCourse_getLength.Invoke(course, null);
             }
             catch { return -1; }
+        }
+
+        private static bool PointMatches(object point, int x, int y)
+        {
+            try
+            {
+                var t = point.GetType();
+                var fx = HarmonyLib.AccessTools.Field(t, "X") ?? HarmonyLib.AccessTools.Field(t, "x");
+                var fy = HarmonyLib.AccessTools.Field(t, "Y") ?? HarmonyLib.AccessTools.Field(t, "y");
+                if (fx != null && fy != null)
+                    return Convert.ToInt32(fx.GetValue(point)) == x && Convert.ToInt32(fy.GetValue(point)) == y;
+                var px = HarmonyLib.AccessTools.Property(t, "X") ?? HarmonyLib.AccessTools.Property(t, "x");
+                var py = HarmonyLib.AccessTools.Property(t, "Y") ?? HarmonyLib.AccessTools.Property(t, "y");
+                if (px != null && py != null)
+                    return Convert.ToInt32(px.GetValue(point, null)) == x && Convert.ToInt32(py.GetValue(point, null)) == y;
+                return false;
+            }
+            catch { return false; }
+        }
+
+        private static bool IsNPCHostile(object actor, object other)
+        {
+            try
+            {
+                return Seams.Character_isNPCHostile != null
+                    && (bool)Seams.Character_isNPCHostile.Invoke(actor, new[] { other });
+            }
+            catch { return true; }   // fail toward NOT promising a swap
         }
 
         private static int ReachBudget(object actor)
@@ -736,7 +817,15 @@ namespace SkaldAccessibility
         {
             ClearTooltip();
             if (!AnchorPos(out int ax, out int ay)) return;
-            _rings = new[] { BuildRing(map, Ring.Hostiles, ax, ay), BuildRing(map, Ring.Friendlies, ax, ay) };
+            var rings = new[] { BuildRing(map, Ring.Hostiles, ax, ay), BuildRing(map, Ring.Friendlies, ax, ay) };
+            if (rings[0].Count == 0 && rings[1].Count == 0)
+            {
+                // Nothing to browse: never enter list mode (review find 5 —
+                // an empty modal just eats an extra escape press).
+                Scaffold.SpeechService.Say("No combatants in view.", "Nav");
+                return;
+            }
+            _rings = rings;
             _listOpen = true;
             _listCat = _rings[0].Count > 0 ? 0 : 1;
             _listIdx = -1;
@@ -750,6 +839,16 @@ namespace SkaldAccessibility
 
         private static bool ProcessListInput(object map)
         {
+            // Z = the native click on the landed tile: the list closes
+            // SILENTLY and the press falls through (review find 2 — the
+            // ride-verified overland discipline; a frozen census must never
+            // survive the action it just launched).
+            if (Input.GetKeyDown(KeyCode.Z))
+            {
+                ClearTooltip();
+                CloseListSilent();
+                return false;
+            }
             if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Backspace)
                 || Input.GetKeyDown(KeyCode.K))
             {
