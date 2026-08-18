@@ -24,6 +24,12 @@ all_types.txt
 # Claude session tooling (local process commands)
 .claude/
 
+# Design docs — local working artifacts, not for the public repo
+# (owner ruling 2026-08-18: the published repo carries mod code,
+# dependencies, and licenses only)
+docs/combat-survey.md
+docs/combat-spec.md
+
 # Dev bridge — local-only, never ships (lineage rule)
 bridge/bin/
 bridge/obj/
