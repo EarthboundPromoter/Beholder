@@ -38,6 +38,31 @@ namespace SkaldAccessibility.Patches
             && Seams.PopUpUIBase_mainDescription != null
             && Seams.UITextBlock_content != null;
 
+        /// <summary>The popup's whole document — main + secondary + tertiary
+        /// joined — for the review buffer. The tertiary's console-echo blink
+        /// is normalized out so a name-entry cursor can't churn the capture
+        /// (TP1 review find 2: the buffer holds the COMPOSITE; forwarding a
+        /// single updated block would truncate the document to that block).</summary>
+        internal static string ComposePanel(object popup)
+        {
+            try
+            {
+                if (!ReadReady || popup == null) return null;
+                object uiElements = Seams.PopUpBase_uiElements.GetValue(popup);
+                if (uiElements == null) return null;
+                string tertiary = ReadRaw(Seams.PopUpUIBase_tertiaryDescription, uiElements);
+                if (tertiary != null) tertiary = tertiary.TrimEnd('_').TrimEnd();
+                string rawPanel = string.Join("\n\n", new[]
+                {
+                    ReadRaw(Seams.PopUpUIBase_mainDescription, uiElements),
+                    ReadRaw(Seams.PopUpUIBase_secondaryDescription, uiElements),
+                    tertiary,
+                }.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray());
+                return rawPanel.Length > 0 ? rawPanel : null;
+            }
+            catch { return null; }
+        }
+
         /// <summary>Announce a popup's settled text. Returns false only when
         /// the popup's UI is not yet built (retry next drain); true once
         /// handled — including degraded (seams missing) and empty popups.</summary>
@@ -56,13 +81,8 @@ namespace SkaldAccessibility.Patches
 
                 // The popup's combined raw text is the review layer's panel
                 // while the popup is up (WP10).
-                string rawPanel = string.Join("\n\n", new[]
-                {
-                    ReadRaw(Seams.PopUpUIBase_mainDescription, uiElements),
-                    ReadRaw(Seams.PopUpUIBase_secondaryDescription, uiElements),
-                    ReadRaw(Seams.PopUpUIBase_tertiaryDescription, uiElements),
-                }.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray());
-                if (rawPanel.Length > 0) ReviewLayer.NotePanel("Popup", rawPanel);
+                string rawPanel = ComposePanel(popup);
+                if (rawPanel != null) ReviewLayer.NotePanel("Popup", rawPanel);
 
                 // Arrival owns these values now — seed the content diffs so the
                 // same frame's setter notes and the intro popups' screen-source

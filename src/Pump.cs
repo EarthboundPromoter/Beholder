@@ -533,6 +533,17 @@ namespace SkaldAccessibility
                 // speaks whole or enters the review buffer; a bump-append
                 // composite is split — the residue IS the event text.
                 string forwardRaw = kv.Value.Raw;
+                // Insurance (TP1 review find 7): if a game update ever removes
+                // the getBuffer seam, the recompose can't identify anything and
+                // the raw strip would speak in full every step — worse than
+                // pre-TP1. The old shape-sniff survives as the missing-seam
+                // backstop only: suppress, never fact-diff.
+                if (source == "SecondaryDesc" && Seams.DataControl_getBuffer == null
+                    && cleaned.StartsWith("Time:"))
+                {
+                    _lastContent[source] = cleaned;
+                    continue;
+                }
                 if (source == "SecondaryDesc"
                     && PanelPolicy.TryHandleStrip(kv.Value.Raw, out string stripResidue))
                 {
@@ -555,18 +566,35 @@ namespace SkaldAccessibility
                 // Panel-class sources feed the review buffer (raw, with markup,
                 // WITH provenance — the source tag picks the section map).
                 // Genuinely-new only: repaints of an unchanged value must not
-                // stomp a newer panel (owner ride 2026-08-17). The name-entry
-                // tertiary normalizes its cursor blink out of the forward too,
-                // or the blink would re-anchor the buffer every half second.
+                // stomp a newer panel (owner ride 2026-08-17). Popup blocks
+                // never forward INDIVIDUALLY (TP1 review find 2 — a single
+                // block would truncate the buffer's composite document): a
+                // changed block re-composes the WHOLE popup panel instead,
+                // blink-normalized inside ComposePanel.
                 if (System.Array.IndexOf(PanelSources, source) >= 0)
                 {
+                    bool popupBlock = source == "PopupMain" || source == "PopupSecondary"
+                        || source == "PopupTertiary";
                     if (source == "PopupTertiary")
                         forwardRaw = forwardRaw.TrimEnd('_').TrimEnd();
                     _lastPanelForwarded.TryGetValue(source, out string prevPanel);
                     if (forwardRaw.Length > 0 && forwardRaw != prevPanel)
                     {
                         _lastPanelForwarded[source] = forwardRaw;
-                        ReviewLayer.NotePanel(source, forwardRaw);
+                        if (popupBlock)
+                        {
+                            try
+                            {
+                                object popup = Seams.PopUpControl_getCurrentPopUp?.Invoke(null, null);
+                                string composite = Patches.PopupAnnouncePatch.ComposePanel(popup);
+                                if (composite != null) ReviewLayer.NotePanel("Popup", composite);
+                            }
+                            catch { }
+                        }
+                        else
+                        {
+                            ReviewLayer.NotePanel(source, forwardRaw);
+                        }
                     }
                 }
 
@@ -1828,6 +1856,8 @@ namespace SkaldAccessibility
 
             ReviewLayer.OnStateTransition();    // review never survives a state change
             DialogueCursor.OnStateTransition(); // text mode dies with its scene
+            PanelPolicy.OnStateTransition();    // fact differ re-seeds: first strip
+                                                // in a new state settles silently (B7)
             OverlandCursor.OnStateTransition(); // neither does the cursor or its list
             CombatCursor.OnStateTransition();   // survives intra-combat churn, dies on leaving the family
             Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone

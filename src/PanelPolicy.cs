@@ -146,6 +146,19 @@ namespace SkaldAccessibility
         private static string _lastPosition; // x+y combined
         private static string _lastWeather;
         private static string _lastPhase;
+        private static bool _factsSeeded;
+
+        /// <summary>State transitions re-seed the differ (Sonnet find 1): the
+        /// first strip observation in any new state settles silently — the
+        /// ruled B7 semantic (quiet on load and whenever other UI took
+        /// precedence). A save load or menu excursion can change the world
+        /// wholesale; the records from before it are not transitions to
+        /// announce. On-demand truth stays on the standing status section.</summary>
+        internal static void OnStateTransition()
+        {
+            _factsSeeded = false;
+            _lastIdentifiedStrip = null;
+        }
 
         private static void DiffFacts(string stripRaw)
         {
@@ -156,27 +169,28 @@ namespace SkaldAccessibility
             string clock = (f.Time ?? "") + " " + (f.Day ?? "");
             string position = (f.X ?? "") + " " + (f.Y ?? "");
 
-            bool first = _lastClock == null && _lastPosition == null
-                         && _lastWeather == null && _lastPhase == null;
-
-            if (!first)
+            if (_factsSeeded)
             {
                 if (_cfgClock?.Value == true && clock != _lastClock && f.Time != null)
                     Scaffold.SpeechService.SayQueued(Composer.EnsurePeriod(f.Time + ", " + f.Day), "Strip");
                 if (_cfgPosition?.Value == true && position != _lastPosition && f.X != null)
                     Scaffold.SpeechService.SayQueued(Composer.EnsurePeriod(f.X + ", " + f.Y), "Strip");
-                if (_cfgWeather?.Value == true && f.Weather != null && f.Weather != _lastWeather
-                    && _lastWeather != null)
+                // Weather/phase records update UNCONDITIONALLY below (Sonnet
+                // find 5): "Raining" → clear → "Raining" is two real
+                // transitions — a sticky record would swallow the second
+                // onset. Weather STARTING from clear sky speaks; clearing
+                // records silently (the game renders no "clear" sentence).
+                if (_cfgWeather?.Value == true && f.Weather != null && f.Weather != _lastWeather)
                     Scaffold.SpeechService.SayQueued(Composer.EnsurePeriod(f.Weather), "Strip");
-                if (_cfgPhase?.Value == true && f.Phase != null && f.Phase != _lastPhase
-                    && _lastPhase != null)
+                if (_cfgPhase?.Value == true && f.Phase != null && f.Phase != _lastPhase)
                     Scaffold.SpeechService.SayQueued(Composer.EnsurePeriod(f.Phase), "Strip");
             }
 
+            _factsSeeded = true;
             _lastClock = clock;
             _lastPosition = position;
-            if (f.Weather != null) _lastWeather = f.Weather;
-            if (f.Phase != null) _lastPhase = f.Phase;
+            _lastWeather = f.Weather;
+            _lastPhase = f.Phase;
         }
     }
 }

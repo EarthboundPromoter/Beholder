@@ -36,15 +36,17 @@ namespace SkaldAccessibility
         // ---- Panel capture (latest rendered panel-class text, raw markup) ----
         // TP1: provenance rides the capture — the source tag selects the
         // section map (Composer.SectionPanel) instead of being discarded at
-        // the buffer door. A genuinely-new panel re-anchors the cursor: the
-        // old indices pointed into a document that no longer exists.
+        // the buffer door. Cursor policy (Sonnet find 2): a SOURCE change is a
+        // genuinely different document — re-anchor; a same-source update is
+        // the same logical document evolving (a ticking popup, a sheet body
+        // under hover) — hold position, let the step clamps absorb shrink.
         private static string _panelRaw;
         private static string _panelSource;
 
         public static void NotePanel(string source, string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return;
-            if (!string.Equals(raw, _panelRaw, StringComparison.Ordinal))
+            if (!string.Equals(source, _panelSource, StringComparison.Ordinal))
             {
                 _section = 0;
                 _element = -1;
@@ -275,12 +277,16 @@ namespace SkaldAccessibility
                 var f = PanelPolicy.LiveFacts();
                 if (f == null || !f.Valid) return;
                 var s = new Composer.PanelSection { Title = "Status" };
+                // Element order is SHAPE-STABLE under weather toggling (Sonnet
+                // find 3): weather is the only fact that comes and goes, so it
+                // sits LAST — mid-browse indices for the fixed facts never
+                // shift when a shower starts between two keypresses.
                 if (f.Time != null) s.Elements.Add(f.Time);
                 if (f.Day != null) s.Elements.Add(f.Day);
                 if (f.X != null) s.Elements.Add(f.X);
                 if (f.Y != null) s.Elements.Add(f.Y);
-                if (f.Weather != null) s.Elements.Add(f.Weather);
                 if (f.Phase != null) s.Elements.Add(f.Phase);
+                if (f.Weather != null) s.Elements.Add(f.Weather);
                 if (s.Elements.Count == 0) return;
                 s.FullText = "Status, " + string.Join(", ", s.Elements.ToArray());
                 sections.Add(s);

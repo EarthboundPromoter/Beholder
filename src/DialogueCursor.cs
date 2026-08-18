@@ -45,6 +45,21 @@ namespace SkaldAccessibility
         private static int _topic = -1;
         private static string _lastProse; // raw content the indices refer to
 
+        /// <summary>Once-per-rendered-frame act guard (TP2 review find 3): the
+        /// game reads input from FixedUpdate, which Unity can batch during a
+        /// frame hitch while Input.GetKeyDown stays true — a second call in
+        /// the same rendered frame is still CLAIMED (the funnel must not see
+        /// it either) but acts zero times.</summary>
+        private static int _lastActFrame = -1;
+
+        private static bool ActedThisFrame()
+        {
+            int frame = UnityEngine.Time.frameCount;
+            if (frame == _lastActFrame) return true;
+            _lastActFrame = frame;
+            return false;
+        }
+
         // The Word type is a private nested class — its highlightWord field is
         // resolved from the first live element and cached per type.
         private static Type _wordType;
@@ -91,6 +106,7 @@ namespace SkaldAccessibility
             SyncProse(gui);
             if (_textMode)
             {
+                if (ActedThisFrame()) return true;
                 Pump.NotePlayerNav();
                 WalkText(gui, -1);
                 return true;
@@ -98,6 +114,7 @@ namespace SkaldAccessibility
             if (!FocusAtTopOption(gui)) return false;
             var sentences = Sentences(gui);
             if (sentences.Count == 0) return false; // nothing to enter — funnel clamps natively
+            if (ActedThisFrame()) return true;
             Pump.NotePlayerNav();
             EnterTextMode(gui, sentences);
             return true;
@@ -114,6 +131,7 @@ namespace SkaldAccessibility
             if (!_textMode) return false;
             SyncProse(gui);
             if (!_textMode) return false; // node changed under us — exited
+            if (ActedThisFrame()) return true;
             Pump.NotePlayerNav();
             WalkText(gui, +1);
             return true;
@@ -126,6 +144,7 @@ namespace SkaldAccessibility
         {
             if (!SceneReady(out object state, out object gui)) return false;
             SyncProse(gui);
+            if (ActedThisFrame()) return true;
             Pump.NotePlayerNav();
             HopTopic(gui, direction);
             return true;
@@ -334,13 +353,36 @@ namespace SkaldAccessibility
             catch { return false; }
         }
 
+        private static MethodInfo _elemGetX, _elemGetY, _elemGetWidth, _elemGetHeight;
+
+        /// <summary>Park the mouse INSIDE the pane, measured from the pane's
+        /// own rect — never via setMouseToUIElement, which drills to a child
+        /// element with a copied offset (TP2 review find 1: the option list
+        /// sits flush against the pane's bottom edge, so an offset park could
+        /// cross into a live option row's hitbox — the blind-click hazard this
+        /// park exists to prevent). Point: horizontal center, 4px inside the
+        /// TOP edge — the boundary farthest from the options.</summary>
         private static void ParkMouseOnPane(object gui)
         {
             try
             {
                 object pane = Seams.GUIControl_sceneDescription?.GetValue(gui);
-                if (pane != null)
-                    Seams.GUIControl_setMouseToUIElement?.Invoke(gui, new object[] { pane, 8, -8 });
+                if (pane == null || Seams.SkaldIO_setVirtualMousePosition == null) return;
+                if (_elemGetX == null)
+                {
+                    var t = pane.GetType();
+                    _elemGetX = AccessTools.Method(t, "getX");
+                    _elemGetY = AccessTools.Method(t, "getY");
+                    _elemGetWidth = AccessTools.Method(t, "getWidth");
+                    _elemGetHeight = AccessTools.Method(t, "getHeight");
+                }
+                if (_elemGetX == null || _elemGetY == null || _elemGetWidth == null) return;
+                int x = (int)_elemGetX.Invoke(pane, null);
+                int y = (int)_elemGetY.Invoke(pane, null);
+                int w = (int)_elemGetWidth.Invoke(pane, null);
+                int h = _elemGetHeight != null ? (int)_elemGetHeight.Invoke(pane, null) : 8;
+                int inset = h >= 8 ? 4 : (h > 1 ? h / 2 : 0);
+                Seams.SkaldIO_setVirtualMousePosition.Invoke(null, new object[] { x + w / 2, y - inset });
             }
             catch { }
         }

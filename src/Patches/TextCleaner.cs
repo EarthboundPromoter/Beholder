@@ -24,6 +24,14 @@ namespace SkaldAccessibility.Patches
 
             string text = raw;
 
+            // Normalize typographic characters the game's own preProcessString
+            // handles at render time (TP2 review find 2: the stored content
+            // field is PRE-normalization, so a raw ellipsis codepoint would
+            // defeat sentence splitting and speech).
+            text = text.Replace('‘', '\'').Replace('’', '\'')
+                       .Replace('“', '"').Replace('”', '"')
+                       .Replace("…", "...");
+
             // Strip <tag>keyword</tag> markup (tooltip highlights)
             text = TagRegex.Replace(text, "");
 
