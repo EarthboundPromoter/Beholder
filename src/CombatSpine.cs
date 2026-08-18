@@ -86,6 +86,46 @@ namespace SkaldAccessibility
         private static object _forecastAbility;
         private static bool _forecastSeen;   // distinguishes "no note yet" from "ability is null"
 
+        // ---- Lettered identifier registry (CP2, owner ruling 2026-08-18).
+        //      Reference-keyed; letters assign in order of ENTRY into the
+        //      initiative order — never position within it — and are durable
+        //      against every reshuffle (Hold, re-sorts, deaths): once
+        //      assigned, never changed, never reused. A name-group of one
+        //      speaks bare; when a summon creates the duplicate, the original
+        //      takes its letter at that moment (one rename, once). Any
+        //      attribution failure degrades to the game's own bare text —
+        //      the structural insurance policy. ----
+        private sealed class RefCmp : System.Collections.Generic.IEqualityComparer<object>
+        {
+            public new bool Equals(object a, object b) => ReferenceEquals(a, b);
+            public int GetHashCode(object o) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o);
+        }
+        private static readonly RefCmp Cmp = new RefCmp();
+        private static readonly System.Collections.Generic.List<object> _roster
+            = new System.Collections.Generic.List<object>();                       // every combatant ever seen, entry order
+        private static readonly System.Collections.Generic.Dictionary<object, int> _letterOf
+            = new System.Collections.Generic.Dictionary<object, int>(new RefCmp()); // index within the name-group
+        private static readonly System.Collections.Generic.Dictionary<object, string> _bareOf
+            = new System.Collections.Generic.Dictionary<object, string>(new RefCmp());
+        private static readonly System.Collections.Generic.Dictionary<string, int> _groupSize
+            = new System.Collections.Generic.Dictionary<string, int>();
+
+        // Per-member frame snapshots (HP/death/bark-count) — the object-first
+        // attribution truth for the composer.
+        private sealed class Snap { public int Hp; public bool Dead; public int Barks; }
+        private static readonly System.Collections.Generic.Dictionary<object, Snap> _snaps
+            = new System.Collections.Generic.Dictionary<object, Snap>(new RefCmp());
+
+        // This frame's attributed facts, rebuilt every drain, consumed by the
+        // narration pass (Pump.DrainCombatLog runs after Drain in the same
+        // frame, so the deltas are always current).
+        private static Composer.Frame _frame;
+
+        // Tactical flash elements already seen (reference identity — the
+        // list retains elements across frames while they flash).
+        private static readonly System.Collections.Generic.HashSet<object> _seenTactical
+            = new System.Collections.Generic.HashSet<object>(new RefCmp());
+
         private static void Reset()
         {
             _encounter = null;
@@ -95,6 +135,34 @@ namespace SkaldAccessibility
             _orderAnnounced = false;
             _forecastAbility = null;
             _forecastSeen = false;
+            _roster.Clear();
+            _letterOf.Clear();
+            _bareOf.Clear();
+            _groupSize.Clear();
+            _snaps.Clear();
+            _seenTactical.Clear();
+            _frame = null;
+        }
+
+        /// <summary>"Goblin B" / "Bjorn" — the uniform identifier (owner
+        /// mandate: applied everywhere the mod speaks; the game's own strings
+        /// carry no identifier and are never spoken raw when a name maps).</summary>
+        internal static string DisplayNameOf(object character)
+        {
+            string bare = NameOf(character);
+            if (bare == null) return null;
+            int idx;
+            int size;
+            if (_letterOf.TryGetValue(character, out idx)
+                && _groupSize.TryGetValue(bare, out size) && size > 1)
+                return bare + " " + LetterFor(idx);
+            return bare;
+        }
+
+        private static string LetterFor(int idx)
+        {
+            if (idx < 26) return ((char)('A' + idx)).ToString();
+            return "Z" + (idx - 24); // 27th duplicate onward: Z2, Z3, ... (never expected)
         }
 
         /// <summary>Called from Pump.Drain between DrainTravel and
@@ -120,6 +188,13 @@ namespace SkaldAccessibility
             }
 
             object state = Pump.CurrentStateObject();
+
+            // Roster maintenance + per-member snapshots (CP2): register new
+            // combatants in entry order (summons roll into initiative on
+            // entry, so the initiative-list walk catches them), then diff
+            // HP/death/bark-count per member into this frame's attributed
+            // facts for the composer.
+            BuildFrameFacts(enc);
 
             // Deployment order (owner ruling: names only, automatic at deploy
             // phase start — render parity with the initiative list the
@@ -168,7 +243,7 @@ namespace SkaldAccessibility
                 _lastMoves = _lastAttacks = int.MinValue;
                 if (cur != null)
                 {
-                    string name = NameOf(cur);
+                    string name = DisplayNameOf(cur);
                     if (name != null && _cfgTurnNames != null && _cfgTurnNames.Value)
                         Scaffold.SpeechService.SayQueued($"{name}'s turn.", "Turn");
                     Plugin.Logger?.LogInfo($"[CombatSpine] turn: {name ?? "?"}");
@@ -242,6 +317,221 @@ namespace SkaldAccessibility
                     }
                 }
             }
+        }
+
+        // ---- CP2: frame facts + narration ----
+
+        /// <summary>Register new combatants (entry order) and diff every
+        /// known member's HP/death/bark-count into this frame's Composer
+        /// facts. Runs every drain while an encounter is active.</summary>
+        private static void BuildFrameFacts(object enc)
+        {
+            var frame = new Composer.Frame();
+            try
+            {
+                // Registration walk: the current initiative list, in order.
+                if (Seams.CombatEncounter_initiativeList != null
+                    && Seams.InitiativeList_getInitiativeList != null)
+                {
+                    object il = Seams.CombatEncounter_initiativeList.GetValue(enc);
+                    var list = il == null ? null
+                        : Seams.InitiativeList_getInitiativeList.Invoke(il, null)
+                            as System.Collections.IEnumerable;
+                    if (list != null)
+                    {
+                        foreach (object c in list)
+                        {
+                            if (c == null || _letterOf.ContainsKey(c)) continue;
+                            string bare = NameOf(c);
+                            if (bare == null) continue;
+                            int size;
+                            _groupSize.TryGetValue(bare, out size);
+                            _letterOf[c] = size;          // entry order within the name-group
+                            _groupSize[bare] = size + 1;
+                            _bareOf[c] = bare;
+                            _roster.Add(c);
+                        }
+                    }
+                }
+
+                // Snapshot diffs for every member ever seen (the initiative
+                // list drops the dead — our roster never does, so death
+                // flips and posthumous events stay attributable).
+                foreach (object c in _roster)
+                {
+                    int hp = ReadHpTotal(c);
+                    bool dead = ReadIsDead(c);
+                    int barkCount = ReadBarkCount(c);
+                    Snap prev;
+                    bool hadPrev = _snaps.TryGetValue(c, out prev);
+                    frame.Roster.Add(new Composer.Member
+                    {
+                        Display = DisplayNameOf(c),
+                        Bare = _bareOf[c],
+                        HpDelta = hadPrev && hp != int.MinValue && prev.Hp != int.MinValue
+                            ? hp - prev.Hp : 0,
+                        BecameDead = hadPrev && !prev.Dead && dead,
+                        BarkGrowth = hadPrev && barkCount >= 0 && prev.Barks >= 0
+                            ? Math.Max(0, barkCount - prev.Barks) : 0,
+                        IsPC = IsPC(c),
+                    });
+                    _snaps[c] = new Snap { Hp = hp, Dead = dead, Barks = barkCount };
+                }
+
+                // Attack context: the current character and its target.
+                object cur = GetCurrentCharacter(enc);
+                if (cur != null)
+                {
+                    frame.AttackerDisplay = DisplayNameOf(cur);
+                    frame.AttackerBare = NameOf(cur);
+                    frame.AttackerIsRanged = ReadBool(Seams.Character_isWeaponRanged, cur);
+                    object tgt = Seams.Character_getTargetOpponent?.Invoke(cur, null);
+                    if (tgt != null)
+                    {
+                        frame.TargetDisplay = DisplayNameOf(tgt);
+                        frame.TargetBare = NameOf(tgt);
+                    }
+                }
+
+                // Tactical flashes: a pure READ of the retained element list —
+                // never consumed (the buffer gates turn pacing, §4c.11).
+                ReadTacticalFlashes(frame);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger?.LogDebug($"[CombatSpine:facts] {ex.Message}");
+            }
+            _frame = frame;
+        }
+
+        /// <summary>Called from Pump.DrainCombatLog with the frame's log
+        /// shorts and the LIVE pending-bark list. Composes the narration,
+        /// consumes matched barks in place (the caller speaks the remainder),
+        /// and emits via the event path. Returns false when narration could
+        /// not run (caller falls back to plain speech).</summary>
+        internal static bool NarrateCombatFrame(
+            System.Collections.Generic.List<string> shorts,
+            System.Collections.Generic.List<string> barks)
+        {
+            var frame = _frame;
+            if (frame == null || _encounter == null) return false;
+            frame.EventShorts.Clear();
+            frame.EventShorts.AddRange(shorts);
+            frame.Barks.Clear();
+            frame.Barks.AddRange(barks);
+
+            var lines = Composer.ComposeCombatFrame(frame);
+            frame.Tactical.Clear();   // spoken by the composer — never doubled by the orphan path
+
+            // Reflect bark consumption back into the pump's pending list.
+            barks.Clear();
+            barks.AddRange(frame.Barks);
+
+            EmitEventLines(lines);
+            return true;
+        }
+
+        /// <summary>Tactical flashes with no log event still speak (Cascade
+        /// has no other channel) — called from Drain when no narration ran
+        /// this frame; NarrateCombatFrame covers them otherwise.</summary>
+        internal static void SpeakOrphanTactical()
+        {
+            var frame = _frame;
+            if (frame == null || frame.Tactical.Count == 0) return;
+            foreach (string t in frame.Tactical)
+                Scaffold.SpeechService.SayQueuedEvent(Composer.EnsurePeriod(t), "CombatEvent");
+            frame.Tactical.Clear();
+        }
+
+        private static void EmitEventLines(System.Collections.Generic.List<string> lines)
+        {
+            foreach (string line in lines)
+                Scaffold.SpeechService.SayQueuedEvent(line, "CombatEvent");
+        }
+
+        private static void ReadTacticalFlashes(Composer.Frame frame)
+        {
+            try
+            {
+                if (Seams.HoverElementControl_tacticalTextList == null
+                    || Seams.UICanvas_getElements == null
+                    || Seams.UITextBlock_content == null) return;
+                var list = Seams.HoverElementControl_tacticalTextList.GetValue(null)
+                    as System.Collections.IEnumerable;
+                if (list == null) return;
+                var live = new System.Collections.Generic.List<object>();
+                foreach (object el in list)
+                {
+                    if (el == null) continue;
+                    live.Add(el);
+                    if (_seenTactical.Contains(el)) continue;
+                    _seenTactical.Add(el);
+                    var kids = Seams.UICanvas_getElements.Invoke(el, null)
+                        as System.Collections.IEnumerable;
+                    if (kids == null) continue;
+                    foreach (object kid in kids)
+                    {
+                        if (!(kid is UITextBlock)) continue;
+                        string raw = Seams.UITextBlock_content.GetValue(kid) as string;
+                        string cleaned = string.IsNullOrWhiteSpace(raw) ? null
+                            : Patches.TextCleaner.CleanText(raw);
+                        if (!string.IsNullOrWhiteSpace(cleaned))
+                        {
+                            frame.Tactical.Add(cleaned);
+                            Plugin.Logger?.LogInfo($"[CombatSpine] tactical: {cleaned}");
+                        }
+                        break; // the header element is the first text block
+                    }
+                }
+                // Prune records for elements the game has retired.
+                _seenTactical.RemoveWhere(o => !live.Contains(o));
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger?.LogDebug($"[CombatSpine:tactical] {ex.Message}");
+            }
+        }
+
+        private static int ReadHpTotal(object c)
+        {
+            try
+            {
+                if (Seams.Character_getVitality == null || Seams.Character_getWounds == null)
+                    return int.MinValue;
+                return (int)Seams.Character_getVitality.Invoke(c, null)
+                     + (int)Seams.Character_getWounds.Invoke(c, null);
+            }
+            catch { return int.MinValue; }
+        }
+
+        private static bool ReadIsDead(object c)
+        {
+            try
+            {
+                return Seams.Character_isDead != null
+                    && (bool)Seams.Character_isDead.Invoke(c, null);
+            }
+            catch { return false; }
+        }
+
+        private static int ReadBarkCount(object c)
+        {
+            try
+            {
+                if (Seams.Character_getBarkControl == null || Seams.BarkControl_barks == null)
+                    return -1;
+                object control = Seams.Character_getBarkControl.Invoke(c, null);
+                if (control == null) return -1;
+                var barks = Seams.BarkControl_barks.GetValue(control) as System.Collections.ICollection;
+                return barks?.Count ?? -1;
+            }
+            catch { return -1; }
+        }
+
+        private static bool ReadBool(System.Reflection.MethodInfo m, object target)
+        {
+            try { return m != null && (bool)m.Invoke(target, null); }
+            catch { return false; }
         }
 
         // ---- Reads (all reflection through the Seams registry, null-gated) ----
@@ -334,7 +624,7 @@ namespace SkaldAccessibility
                 foreach (object c in list)
                 {
                     if (c == null) continue;
-                    string n = NameOf(c);
+                    string n = DisplayNameOf(c);
                     if (n != null) names.Add(n);
                 }
                 if (names.Count == 0) return null;

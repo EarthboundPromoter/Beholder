@@ -463,6 +463,11 @@ namespace SkaldAccessibility
             try { DrainCombatLog(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:combat] {ex.Message}"); }
 
+            // Tactical flashes with no log event this frame (Cascade's only
+            // channel) — a no-op when the composer already spoke them.
+            try { CombatSpine.SpeakOrphanTactical(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:tactical] {ex.Message}"); }
+
             try { DrainBarks(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:bark] {ex.Message}"); }
 
@@ -618,9 +623,15 @@ namespace SkaldAccessibility
             if (!string.IsNullOrWhiteSpace(cleaned)) _lastContent[source] = cleaned;
         }
 
-        /// <summary>Combat log lines batch within the frame; identical consecutive
-        /// lines collapse to "text, N times" (compress, don't curate). Gated on the
-        /// game's own current state — a live read, not a mod-side mode flag.</summary>
+        /// <summary>Combat log SHORTS batch within the frame (the choke's two
+        /// strings are (short, verbose) — survey §4c.12; the verbose ledgers
+        /// stay in the game's own log, there is no mod verbose tier). Gated on
+        /// the game's own current state — a live read, not a mod-side mode
+        /// flag. In an active encounter the frame's shorts and pending barks
+        /// hand to the CP2 composer (object-first attribution, lettered
+        /// identifiers, merge grammar); the composer consumes matched barks in
+        /// place and DrainBarks speaks the remainder. Fallback: plain
+        /// coalesced speech, exactly the old shape.</summary>
         private static void DrainCombatLog()
         {
             if (_pendingCombatLog.Count == 0) return;
@@ -630,6 +641,8 @@ namespace SkaldAccessibility
             object state = CurrentStateObject();
             string stateName = state?.GetType().Name ?? "";
             if (!stateName.Contains("Combat")) return;
+
+            if (CombatSpine.NarrateCombatFrame(lines, _pendingBarks)) return;
 
             int i = 0;
             while (i < lines.Count)

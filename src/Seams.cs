@@ -482,6 +482,23 @@ namespace SkaldAccessibility
         internal static MethodInfo EffectSelection_getBaseTile;
         internal static MethodInfo EffectSelection_getAllCharactersInSelection;
 
+        // ---- Combat narration (CP2, 2026-08-18): object-first attribution.
+        //      Roster diffs (HP/wounds/death/bark-growth) attribute every log
+        //      event to a Character object so the lettered identifiers apply
+        //      uniformly (owner mandate — the game's strings carry no such
+        //      identifier and are demoted to fact sources, never spoken raw
+        //      when a combatant name is present). Tactical flashes are a pure
+        //      drain-side READ of the retained element list — no detour, and
+        //      the buffer is never consumed (it gates turn pacing, §4c.11). ----
+        internal static MethodInfo Character_getVitality;
+        internal static MethodInfo Character_getWounds;
+        internal static MethodInfo Character_getTargetOpponent;
+        internal static MethodInfo Character_isWeaponRanged;
+        internal static MethodInfo Character_getBarkControl;    // private accessor
+        internal static Type BarkControlType;
+        internal static FieldInfo BarkControl_barks;            // private List<Bark>
+        internal static FieldInfo HoverElementControl_tacticalTextList; // private static List<HoverElement>
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -919,6 +936,17 @@ namespace SkaldAccessibility
             EffectSelection_getBaseTile = M(EffectSelectionType, "EffectSelection", "getBaseTile");
             EffectSelection_getAllCharactersInSelection
                 = M(EffectSelectionType, "EffectSelection", "getAllCharactersInSelection");
+
+            // Combat narration (CP2)
+            Character_getVitality = M(CharacterType, "Character", "getVitality");
+            Character_getWounds = M(CharacterType, "Character", "getWounds");
+            Character_getTargetOpponent = M(CharacterType, "Character", "getTargetOpponent");
+            Character_isWeaponRanged = M(CharacterType, "Character", "isWeaponRanged");
+            Character_getBarkControl = M(CharacterType, "Character", "getBarkControl");
+            BarkControlType = T("BarkControl");
+            BarkControl_barks = F(BarkControlType, "BarkControl", "barks");
+            HoverElementControl_tacticalTextList
+                = F(HoverElementControlType, "HoverElementControl", "tacticalTextList");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

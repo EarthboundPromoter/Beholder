@@ -5,15 +5,22 @@ using System.Reflection;
 namespace SkaldAccessibility.Patches
 {
     /// <summary>
-    /// Speaks combat log entries as they are written.
+    /// Notes combat log entries as they are written.
     ///
     /// CombatLog maintains a static text buffer and never routes through
     /// UITextBlock.setContent(), so no rendered-text hook can catch it.
-    /// This patch hooks addEntry(string name, string content) — the single
-    /// write point for all combat events. Seam-gated (WP8).
+    /// This patch hooks addEntry(string, string) — the single write point for
+    /// all combat events — whose two arguments are (SHORT verdict, VERBOSE
+    /// ledger), NOT (name, content): every SkaldActionResult funnel passes
+    /// getResultString()/getVerboseResultString() (CombatLog.cs:46-66) and
+    /// the damage path calls it directly the same way (Character.cs:6134) —
+    /// survey §4c.12, corrected 2026-08-18 (the old "{name}: {content}"
+    /// format was unknowingly speaking the full modifier ledger per attack).
     ///
-    /// Format: "{name}: {content}" when a source name is present (e.g. "ALDRIC: misses"),
-    /// or just "{content}" when name is empty (e.g. system messages).
+    /// Only the SHORT notes: it is the anchor fact the CP2 composer rebuilds
+    /// with lettered display names; the verbose body stays in the game's own
+    /// combat log — there is no mod verbose tier (owner ruling 2026-08-18).
+    /// Seam-gated (WP8).
     /// </summary>
     [HarmonyPatch]
     public static class CombatLogPatch
@@ -29,20 +36,13 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                // Note-only (WP5): lines batch at the Pump and coalesce at the
-                // drain, where the in-combat gate is a LIVE read of the game's own
-                // current state — never a mod-side mode flag.
-                string name    = string.IsNullOrWhiteSpace(__0) ? null : TextCleaner.CleanText(__0);
-                string message = string.IsNullOrWhiteSpace(__1) ? null : TextCleaner.CleanText(__1);
+                // Note-only (WP5): shorts batch at the Pump; the in-combat
+                // gate and all composition live at the drain.
+                string shortText = string.IsNullOrWhiteSpace(__0) ? null : TextCleaner.CleanText(__0);
+                if (string.IsNullOrWhiteSpace(shortText)) return;
 
-                string combined = (name != null && message != null)
-                    ? $"{name}: {message}"
-                    : name ?? message;
-
-                if (string.IsNullOrWhiteSpace(combined)) return;
-
-                Pump.NoteCombatLog(combined);
-                Plugin.Logger?.LogInfo($"[CombatLog] \"{combined}\"");
+                Pump.NoteCombatLog(shortText);
+                Plugin.Logger?.LogInfo($"[CombatLog] \"{shortText}\" (verbose {(__1?.Length ?? 0)} ch stays in the log)");
             }
             catch (Exception ex)
             {

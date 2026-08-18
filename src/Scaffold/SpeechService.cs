@@ -96,9 +96,46 @@ namespace SkaldAccessibility.Scaffold
             }
         }
 
+        // ---- Event path (CP2, owner ruling 2026-08-18: provenance-based
+        //      delivery). Composed combat-event lines bypass the identical-
+        //      text dedup — that dedup is a render-diff tool, and the composer
+        //      only emits when the channel streams carried a REAL event (two
+        //      goblins taking the same roll, same-turn multi-attacks, DoT
+        //      ticks across rounds are all legitimate duplicates). On cap
+        //      pressure the remainder COALESCES into one batch utterance and
+        //      flushes when room opens — never drops. ----
+        private static string _eventOverflow;
+
+        public static void SayQueuedEvent(string text, string source)
+        {
+            text = Clean(text);
+            if (string.IsNullOrEmpty(text)) return;
+            if (_modalSource != null && source != _modalSource)
+            {
+                if (!VolatileSources.Contains(source))
+                    PenKeepLatest(new Pending { Text = text, Source = source });
+                return;
+            }
+            if (Queue.Count >= 20)
+            {
+                _eventOverflow = _eventOverflow == null ? text : _eventOverflow + " " + text;
+                Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] (event, coalesced to overflow) {text}");
+                return;
+            }
+            Queue.Enqueue(new Pending { Text = text, Source = source });
+            Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] (event) {text}");
+        }
+
         /// <summary>Pump the queue: speak the next queued announcement once the reader is free.</summary>
         public static void Tick()
         {
+            // Flush coalesced event overflow as one batch utterance the moment
+            // the queue has room (compress, don't curate — applied to delivery).
+            if (_eventOverflow != null && Queue.Count < 20)
+            {
+                Queue.Enqueue(new Pending { Text = _eventOverflow, Source = "CombatEvent" });
+                _eventOverflow = null;
+            }
             if (Queue.Count == 0) return;
             if (Time.unscaledTime - _lastSpokeAt < Timing.SpeechQueueGap) return;
             try
@@ -171,6 +208,7 @@ namespace SkaldAccessibility.Scaffold
         {
             Queue.Clear();
             _lastQueued = null;
+            _eventOverflow = null;
         }
 
         // ---------- Modal primacy gate (owner design 2026-07-26, CS2) ----------
