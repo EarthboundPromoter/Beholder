@@ -280,6 +280,41 @@ namespace SkaldAccessibility
             if (!string.IsNullOrWhiteSpace(text)) _pendingBarks.Add(text);
         }
 
+        /// <summary>Remove one pending bark by exact text — used by a composed
+        /// line that ABSORBS the game's raw bark (the CP1 disengage ruling:
+        /// one utterance, never two). Runs in the spine drain, before
+        /// DrainBarks. False when no such bark is pending this frame — the
+        /// caller degrades to letting the native bark speak.</summary>
+        internal static bool StealBark(string exact)
+        {
+            for (int i = 0; i < _pendingBarks.Count; i++)
+            {
+                if (_pendingBarks[i] == exact)
+                {
+                    _pendingBarks.RemoveAt(i);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Remove pending combat-log lines containing a fragment
+        /// (case-insensitive) — the log half of a composed absorption. Returns
+        /// the number removed.</summary>
+        internal static int StealCombatLogContaining(string fragment)
+        {
+            int removed = 0;
+            for (int i = _pendingCombatLog.Count - 1; i >= 0; i--)
+            {
+                if (_pendingCombatLog[i].IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    _pendingCombatLog.RemoveAt(i);
+                    removed++;
+                }
+            }
+            return removed;
+        }
+
         public static void NoteSliderValue(object sliderButton) => _pendingSliderValue = sliderButton;
 
         /// <summary>Note-only: an edge press whose native window-slide is about
@@ -416,6 +451,14 @@ namespace SkaldAccessibility
 
             try { DrainTravel(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:travel] {ex.Message}"); }
+
+            // CP1 turn spine: before DrainCombatLog so a turn boundary always
+            // precedes that turn's own log narration (and can steal a pending
+            // bark/log line it composed into one utterance — the disengage
+            // ruling). The native "Round N" primaryHeader spoke in
+            // DrainContent above — round-line-then-turn-line by construction.
+            try { CombatSpine.Drain(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:spine] {ex.Message}"); }
 
             try { DrainCombatLog(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:combat] {ex.Message}"); }

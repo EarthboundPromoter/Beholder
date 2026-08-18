@@ -38,6 +38,10 @@ namespace SkaldAccessibility
                 // frame-0 safe), so patch classes Prepare() against it.
                 Seams.ResolveAll();
 
+                // CP1: the combat spine's composed-surface toggles (each cue
+                // utterance is its own config entry — owner ruling 2026-08-18).
+                CombatSpine.BindConfig(Config);
+
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own
                 // PatchAll aborts every remaining class when one throws

@@ -331,6 +331,13 @@ namespace SkaldAccessibility
             {
                 case GameMode.Combat:
                 case GameMode.CombatPlacement:
+                    // Intra-combat churn is not an entry: CombatContinue (the
+                    // between-turns state) and CombatLogState both classify as
+                    // Combat, so without this gate "Combat" would re-announce
+                    // at every turn boundary (CP1 fix, 2026-08-18).
+                    if (from == GameMode.Combat || from == GameMode.CombatPlacement ||
+                        from == GameMode.CombatPlanning || from == GameMode.CombatResolve)
+                        return null;
                     return "Combat";
                 case GameMode.CombatPlanning:
                     return null; // Sub-state, don't announce separately

@@ -427,6 +427,61 @@ namespace SkaldAccessibility
         internal static Type EditorSheetEntryType;   // UIBaseCharacterSheet+EditorSheetEntry
         internal static FieldInfo EditorEntry_scrollToPlusButton;
 
+        // ---- Combat spine (CP1, 2026-08-18): turn/round cues, economy diffs,
+        //      cost forecast, deployment order. Every name verified against
+        //      the decomp this session (combat-survey §4b/§4c cites). Rows
+        //      registered here also cover later combat packages (CP2 tactical
+        //      choke, CP3 moveCharacter, CP4 AoE census / initiative browser);
+        //      Character HP/condition getters land with their consumers, since
+        //      an unverified name here would count as a false boot failure. ----
+        internal static Type CombatStartStateType;
+        internal static Type CombatPlacementStateType;
+        internal static Type CombatResolveStateType;
+        internal static Type CombatOverStateType;
+        internal static Type CombatLogStateType;
+        internal static Type CombatContinueType;
+        internal static Type CombatTargetingBaseType;
+        internal static Type CombatAbilityTargetingType;
+        internal static Type CombatSpellTargetingType;
+        internal static Type CombatEncounterType;
+        internal static Type InitiativeListType;
+        internal static Type UIInitiativeListType;
+        internal static Type InitiativeButtonType;         // UIInitiativeList+InitiativeButton (non-public nested)
+        internal static Type UIActionCounterType;
+        internal static Type AbilityUseableType;
+        internal static Type HoverElementControlType;
+        internal static Type CharacterComponentContainerType;
+        internal static Type EffectSelectionType;          // CharacterComponentContainer+EffectSelection
+        internal static Type AreaEffectSelectionType;      // CharacterComponentContainer+AreaEffectSelection
+        internal static MethodInfo DataControl_getCombatEncounter;
+        internal static MethodInfo DataControl_isCombatActive;
+        internal static FieldInfo CombatEncounter_turns;           // private short — the round truth
+        internal static FieldInfo CombatEncounter_initiativeList;  // private, no accessor
+        internal static MethodInfo CombatEncounter_getCurrentCharacter;
+        internal static MethodInfo CombatEncounter_getTitle;
+        internal static MethodInfo CombatEncounter_getUIInitiativeList;
+        internal static MethodInfo CombatEncounter_moveCharacter;  // CP3 consumer
+        internal static MethodInfo InitiativeList_getCurrentCharacter;
+        internal static MethodInfo InitiativeList_getInitiativeList;
+        internal static MethodInfo InitiativeList_printInitiativeOrder;
+        internal static MethodInfo InitiativeList_printInitiativeOrderWithRoll;
+        internal static MethodInfo InitiativeButton_getCharacter;  // CP4 consumer
+        internal static MethodInfo Character_getRemainingCombatMoves;
+        internal static MethodInfo Character_getRemainingAttacks;
+        internal static MethodInfo Character_getMaxMoves;
+        internal static MethodInfo Character_getMaxAttacks;
+        internal static MethodInfo Character_isDead;
+        internal static FieldInfo Character_moveAlongCombatPath;   // the game's own commit flag
+        internal static MethodInfo UIActionCounter_update;         // (Character, AbilityUseable) — forecast note choke
+        internal static MethodInfo AbilityUseable_getTimeCost;
+        internal static MethodInfo HoverElementControl_addTacticalHoverTextFlashing; // CP2 consumer choke
+                                                                   // (NEVER Character.setTacticalHoverText — three-line
+                                                                   // wrapper, Mono inline class; survey §4c.3)
+        internal static FieldInfo CharacterComponentContainer_areaEffectSelection;   // CP4 consumer (protected)
+        internal static MethodInfo EffectSelection_getMapTiles;
+        internal static MethodInfo EffectSelection_getBaseTile;
+        internal static MethodInfo EffectSelection_getAllCharactersInSelection;
+
         // ---- C64Color markup tags (metadata only — value reads are lazy,
         //      post-ready, via TagValue) ----
         internal static MemberInfo C64_YellowTag;
@@ -812,6 +867,58 @@ namespace SkaldAccessibility
             for (int i = 0; i < wornGetterNames.Length; i++)
                 Character_wornGetters[i] = M(CharacterType, "Character", wornGetterNames[i]);
             UIElement_getHover = M(T("UIElement"), "UIElement", "getHover");
+
+            // Combat spine (CP1)
+            CombatStartStateType = T("CombatStartState");
+            CombatPlacementStateType = T("CombatPlacementState");
+            CombatResolveStateType = T("CombatResolveState");
+            CombatOverStateType = T("CombatOverState");
+            CombatLogStateType = T("CombatLogState");
+            CombatContinueType = T("CombatContinue");
+            CombatTargetingBaseType = T("CombatTargetingBase");
+            CombatAbilityTargetingType = T("CombatAbilityTargeting");
+            CombatSpellTargetingType = T("CombatSpellTargeting");
+            CombatEncounterType = T("CombatEncounter");
+            InitiativeListType = T("InitiativeList");
+            UIInitiativeListType = T("UIInitiativeList");
+            InitiativeButtonType = UIInitiativeListType?.GetNestedType("InitiativeButton",
+                BindingFlags.NonPublic | BindingFlags.Public);
+            Row("UIInitiativeList+InitiativeButton", InitiativeButtonType != null);
+            UIActionCounterType = T("UIActionCounter");
+            AbilityUseableType = T("AbilityUseable");
+            HoverElementControlType = T("HoverElementControl");
+            CharacterComponentContainerType = T("CharacterComponentContainer");
+            EffectSelectionType = T("CharacterComponentContainer+EffectSelection");
+            AreaEffectSelectionType = T("CharacterComponentContainer+AreaEffectSelection");
+            DataControl_getCombatEncounter = M(DataControlType, "DataControl", "getCombatEncounter");
+            DataControl_isCombatActive = M(DataControlType, "DataControl", "isCombatActive");
+            CombatEncounter_turns = F(CombatEncounterType, "CombatEncounter", "turns");
+            CombatEncounter_initiativeList = F(CombatEncounterType, "CombatEncounter", "initiativeList");
+            CombatEncounter_getCurrentCharacter = M(CombatEncounterType, "CombatEncounter", "getCurrentCharacter");
+            CombatEncounter_getTitle = M(CombatEncounterType, "CombatEncounter", "getTitle");
+            CombatEncounter_getUIInitiativeList = M(CombatEncounterType, "CombatEncounter", "getUIInitiativeList");
+            CombatEncounter_moveCharacter = M(CombatEncounterType, "CombatEncounter", "moveCharacter");
+            InitiativeList_getCurrentCharacter = M(InitiativeListType, "InitiativeList", "getCurrentCharacter");
+            InitiativeList_getInitiativeList = M(InitiativeListType, "InitiativeList", "getInitiativeList");
+            InitiativeList_printInitiativeOrder = M(InitiativeListType, "InitiativeList", "printInitiativeOrder");
+            InitiativeList_printInitiativeOrderWithRoll = M(InitiativeListType, "InitiativeList", "printInitiativeOrderWithRoll");
+            InitiativeButton_getCharacter = M(InitiativeButtonType, "InitiativeButton", "getCharacter");
+            Character_getRemainingCombatMoves = M(CharacterType, "Character", "getRemainingCombatMoves");
+            Character_getRemainingAttacks = M(CharacterType, "Character", "getRemainingAttacks");
+            Character_getMaxMoves = M(CharacterType, "Character", "getMaxMoves");
+            Character_getMaxAttacks = M(CharacterType, "Character", "getMaxAttacks");
+            Character_isDead = M(CharacterType, "Character", "isDead");
+            Character_moveAlongCombatPath = F(CharacterType, "Character", "moveAlongCombatPath");
+            UIActionCounter_update = M(UIActionCounterType, "UIActionCounter", "update");
+            AbilityUseable_getTimeCost = M(AbilityUseableType, "AbilityUseable", "getTimeCost");
+            HoverElementControl_addTacticalHoverTextFlashing
+                = M(HoverElementControlType, "HoverElementControl", "addTacticalHoverTextFlashing");
+            CharacterComponentContainer_areaEffectSelection
+                = F(CharacterComponentContainerType, "CharacterComponentContainer", "areaEffectSelection");
+            EffectSelection_getMapTiles = M(EffectSelectionType, "EffectSelection", "getMapTiles");
+            EffectSelection_getBaseTile = M(EffectSelectionType, "EffectSelection", "getBaseTile");
+            EffectSelection_getAllCharactersInSelection
+                = M(EffectSelectionType, "EffectSelection", "getAllCharactersInSelection");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");
