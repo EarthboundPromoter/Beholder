@@ -74,6 +74,7 @@ namespace SkaldAccessibility
             if (string.IsNullOrEmpty(stateName) || stateName == _currentStateName)
                 return;
 
+            string previousStateName = _currentStateName;
             _previousMode = _currentMode;
             _currentStateName = stateName;
             _currentMode = ClassifyState(stateName);
@@ -83,7 +84,7 @@ namespace SkaldAccessibility
                 Plugin.Logger?.LogInfo($"[GameState] {_previousMode} -> {_currentMode} ({stateName})");
 
                 // Announce mode transitions (Framework P9: explicit termination/entry)
-                string announcement = GetModeTransitionAnnouncement(_previousMode, _currentMode);
+                string announcement = GetModeTransitionAnnouncement(_previousMode, _currentMode, previousStateName);
                 if (!string.IsNullOrEmpty(announcement))
                 {
                     Scaffold.SpeechService.Say(announcement, "State");
@@ -325,7 +326,8 @@ namespace SkaldAccessibility
         /// Generate a spoken announcement for mode transitions.
         /// Framework P9: explicit state termination prevents ambiguity.
         /// </summary>
-        private static string GetModeTransitionAnnouncement(GameMode from, GameMode to)
+        private static string GetModeTransitionAnnouncement(GameMode from, GameMode to,
+            string previousStateName = null)
         {
             switch (to)
             {
@@ -334,9 +336,15 @@ namespace SkaldAccessibility
                     // Intra-combat churn is not an entry: CombatContinue (the
                     // between-turns state) and CombatLogState both classify as
                     // Combat, so without this gate "Combat" would re-announce
-                    // at every turn boundary (CP1 fix, 2026-08-18).
-                    if (from == GameMode.Combat || from == GameMode.CombatPlacement ||
-                        from == GameMode.CombatPlanning || from == GameMode.CombatResolve)
+                    // at every turn boundary (CP1 fix, 2026-08-18). But a
+                    // chained fight launching straight out of CombatOverState
+                    // IS a new encounter and must announce (review find 7) —
+                    // the suppression keys on the previous STATE, exempting
+                    // the victory state.
+                    bool fromCombat = from == GameMode.Combat || from == GameMode.CombatPlacement ||
+                        from == GameMode.CombatPlanning || from == GameMode.CombatResolve;
+                    bool fromVictory = previousStateName != null && previousStateName.Contains("CombatOver");
+                    if (fromCombat && !fromVictory)
                         return null;
                     return "Combat";
                 case GameMode.CombatPlanning:

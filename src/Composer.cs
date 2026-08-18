@@ -27,6 +27,16 @@ namespace SkaldAccessibility
     ///    magnitudes speak individually — genuinely different outcomes need
     ///    singular readout.
     ///  - There is no verbose tier: the ledgers stay in the game's combat log.
+    ///
+    /// 2026-08-18 adversarial-review hardening (Sonnet pass): condition-bark
+    /// absorption hoisted BEFORE packet segmentation (find 3); packets pair
+    /// to damage events by AMOUNT, not a running cursor (find 6 — the
+    /// retribution-immune ledger-only packet); name matching is whole-word
+    /// (find 4); miss barks steal per anchor, counted (find 5); deaths get an
+    /// order-correlation fallback and the overrun trailer gates on the
+    /// TARGET's identity (find 8); orphan-bark attribution is conservative —
+    /// single-grower with exact count match, else bare (find 10); the
+    /// "Targets:" cut covers whole-line matches (find 11).
     /// </summary>
     internal static class Composer
     {
@@ -42,6 +52,7 @@ namespace SkaldAccessibility
             public string AttackerBare;
             public string TargetDisplay;        // current character's target opponent
             public string TargetBare;
+            public int TargetRosterIndex = -1;  // the target's row in Roster (identity link)
             public bool AttackerIsRanged;
         }
 
@@ -61,19 +72,30 @@ namespace SkaldAccessibility
         internal static List<string> ComposeCombatFrame(Frame frame)
         {
             var outLines = new List<string>();
-            bool sawMissAnchor = false;
-            var damageLines = new List<DamageFact>();
+            var condLines = new List<string>();
             var tailLines = new List<string>();   // deaths, overruns — always last
+            var damageLines = new List<DamageFact>();
+            int missAnchors = 0;
 
-            // Pre-scan: segment the bark stream into damage packets
-            // ([Soak: -N] [Resistant:/Immune:/Vulnerable: X]* [N ... Damage] [Bloodied!]),
-            // in order — the k-th packet belongs to the k-th damage event
-            // (barks and log entries fire in the same synchronous sequence).
-            var packets = SegmentDamagePackets(frame.Barks);
-            int packetCursor = 0;
-
-            foreach (string ev in frame.EventShorts)
+            // PRE-PASS (find 3): condition resist/immune lines absorb their
+            // barks BEFORE packet segmentation, so a condition "Immune: X"
+            // bark can never be swept into a damage packet.
+            var consumedEvents = new HashSet<int>();
+            for (int i = 0; i < frame.EventShorts.Count; i++)
             {
+                string line = TryComposeConditionLine(frame.EventShorts[i], frame);
+                if (line != null) { condLines.Add(line); consumedEvents.Add(i); }
+            }
+
+            var packets = SegmentDamagePackets(frame.Barks);
+            var deathCursor = new Dictionary<string, int>();  // per-name order-correlation (find 8)
+            bool overrunSpoken = false;
+
+            for (int i = 0; i < frame.EventShorts.Count; i++)
+            {
+                if (consumedEvents.Contains(i)) continue;
+                string ev = frame.EventShorts[i];
+
                 if (ev.StartsWith("ROUND ", StringComparison.OrdinalIgnoreCase))
                     continue;   // round headers are log-home; the primaryHeader anchors rounds
 
@@ -82,7 +104,7 @@ namespace SkaldAccessibility
                 {
                     string bare = ev.Substring(0, tookIdx).Trim();
                     int amount = ParseTrailingInt(ev, tookIdx + " took damage: ".Length);
-                    var packet = packetCursor < packets.Count ? packets[packetCursor++] : null;
+                    var packet = ClaimPacket(packets, amount);   // amount-paired (find 6)
                     string display = AttributeDamage(frame.Roster, bare, amount) ?? bare;
                     damageLines.Add(new DamageFact
                     {
@@ -101,25 +123,24 @@ namespace SkaldAccessibility
                 {
                     bool ko = ev.EndsWith(" is Knocked Out", StringComparison.Ordinal);
                     string bare = ev.Substring(0, ev.Length - (ko ? " is Knocked Out" : " is Dead").Length).Trim();
-                    string display = AttributeDeath(frame.Roster, bare) ?? bare;
+                    int memberIdx = AttributeDeath(frame.Roster, bare, deathCursor);
+                    string display = memberIdx >= 0 ? frame.Roster[memberIdx].Display : bare;
                     tailLines.Add(display + (ko ? " is Knocked Out." : " is Dead."));
-                    // Kill-overrun (owner wording): every melee kill moves the
-                    // attacker onto the victim's tile — the game's own gate is
-                    // !isWeaponRanged on the current attacker's kill.
-                    if (!frame.AttackerIsRanged && frame.AttackerDisplay != null
-                        && frame.TargetBare != null && bare == frame.TargetBare)
+                    // Kill-overrun trailer: identity-gated (find 8) — only for
+                    // THE target's own death, once, on a melee kill.
+                    if (!overrunSpoken && !frame.AttackerIsRanged && frame.AttackerDisplay != null
+                        && frame.TargetRosterIndex >= 0 && memberIdx == frame.TargetRosterIndex
+                        && frame.Roster[memberIdx].BecameDead)
+                    {
+                        overrunSpoken = true;
                         tailLines.Add(frame.AttackerDisplay + " moved to " + display + "'s tile.");
+                    }
                     continue;
                 }
 
                 // Attack anchors: rebuild from the attributed attacker/target.
-                string anchor = TryRebuildAnchor(ev, frame, ref sawMissAnchor);
+                string anchor = TryRebuildAnchor(ev, frame, ref missAnchors);
                 if (anchor != null) { outLines.Add(anchor); continue; }
-
-                // Condition resist/immune log entries ("X resisted: Poison") —
-                // attribute by name, absorb the matching bark.
-                string condLine = TryComposeConditionLine(ev, frame);
-                if (condLine != null) { outLines.Add(condLine); continue; }
 
                 // Generic short: normalize casing via known names, letter where
                 // unambiguous, speak as-is otherwise (the insurance path).
@@ -129,12 +150,15 @@ namespace SkaldAccessibility
                 // per-target damage/save lines carry the affected truth).
                 string generic = ev;
                 int targetsIdx = generic.IndexOf("Targets:", StringComparison.OrdinalIgnoreCase);
-                if (targetsIdx > 0) generic = generic.Substring(0, targetsIdx).TrimEnd(' ', '/', '-', ',');
+                if (targetsIdx >= 0) generic = generic.Substring(0, targetsIdx).TrimEnd(' ', '/', '-', ',');
+                if (generic.Length == 0) continue;
                 outLines.Add(EnsurePeriod(NormalizeNames(generic, frame.Roster)));
             }
 
-            // The attacker's "Miss" bark is the same fact as a miss anchor.
-            if (sawMissAnchor) frame.Barks.Remove("Miss");
+            // The attacker's "Miss" bark is the same fact as a miss anchor —
+            // one steal per anchor (find 5: two misses in a frame absorb two).
+            for (int k = 0; k < missAnchors; k++)
+                if (!frame.Barks.Remove("Miss")) break;
 
             // Tactical flashes are their own facts (Cascade has NO other channel).
             foreach (string t in frame.Tactical)
@@ -144,10 +168,14 @@ namespace SkaldAccessibility
             // magnitudes stay singular (owner ruling).
             EmitDamageLines(damageLines, outLines);
 
-            // Save barks ("Saved: <effect>" — the effect's name, not the
-            // saver's): attribute by bark growth when exactly one member's own
-            // bark control grew and wasn't already consumed by a damage packet.
-            AttributeSaveBarks(frame, outLines);
+            outLines.AddRange(condLines);
+
+            // Orphan barks: conservative attribution (find 10) — prefix with
+            // the single grower's name only when exactly one member's own bark
+            // control grew AND its growth covers the orphan count; "Saved:"
+            // barks always move to the event path (bare when ambiguous), the
+            // rest stay residual for the normal bark stream.
+            AttributeOrphanBarks(frame, outLines);
 
             outLines.AddRange(tailLines);
             return CollapseRepeats(outLines);
@@ -159,6 +187,8 @@ namespace SkaldAccessibility
         {
             public readonly List<string> Parts = new List<string>();
             public bool Bloodied;
+            public int TerminalAmount = -1;   // leading digits of the "N ... Damage" bark; -1 = ledger-only
+            public bool Claimed;
         }
 
         private sealed class DamageFact
@@ -175,12 +205,13 @@ namespace SkaldAccessibility
             Packet lastClosed = null;
             foreach (string b in barks)
             {
-                bool isLedger = b.StartsWith("Soak: ", StringComparison.Ordinal)
+                bool isLedger = (b.StartsWith("Soak: ", StringComparison.Ordinal)
                     || b.StartsWith("Resistant: ", StringComparison.Ordinal)
                     || b.StartsWith("Immune: ", StringComparison.Ordinal)
-                    || b.StartsWith("Vulnerable: ", StringComparison.Ordinal);
+                    || b.StartsWith("Vulnerable: ", StringComparison.Ordinal))
+                    && !IsCritFamily(b);
                 bool isTerminal = b.EndsWith(" Damage", StringComparison.Ordinal) && StartsWithDigit(b);
-                if (isLedger && !IsSaveFamily(b))
+                if (isLedger)
                 {
                     if (current == null) current = new Packet();
                     current.Parts.Add(b);
@@ -190,6 +221,7 @@ namespace SkaldAccessibility
                 {
                     if (current == null) current = new Packet();
                     current.Parts.Add(b);
+                    current.TerminalAmount = ParseLeadingInt(b);
                     consumed.Add(b);
                     packets.Add(current);
                     lastClosed = current;
@@ -201,21 +233,37 @@ namespace SkaldAccessibility
                     consumed.Add(b);
                 }
             }
-            // An unterminated ledger run (damage fully negated to nothing —
-            // e.g. "Immune: Fire" with no damage bark) still forms a packet.
+            // An unterminated ledger run (damage fully negated — e.g.
+            // "Immune: Piercing" retribution with no damage bark) is a
+            // ledger-only packet; ClaimPacket pairs it with its zero-damage
+            // log entry by amount (find 6).
             if (current != null && current.Parts.Count > 0) packets.Add(current);
             foreach (string c in consumed) barks.Remove(c);
             return packets;
         }
 
-        // "Immune: Criticals"/"Immune: Backstab" are crit-resist facts and
-        // condition-immunity barks are "Immune: <Condition>" — only the
-        // damage-type forms belong to packets. The heuristic: damage-type
-        // immune/resist barks are always followed by (or stand in for) a
-        // damage event in the same packet walk; the crit/backstab and
-        // condition forms are attributed elsewhere. Keep Criticals/Backstab
-        // out of packets explicitly.
-        private static bool IsSaveFamily(string b)
+        /// <summary>Pair a damage log entry to its bark packet by AMOUNT
+        /// (find 6): first unclaimed packet whose terminal number matches;
+        /// zero/negated damage claims a ledger-only packet; order-based
+        /// first-unclaimed as the last resort.</summary>
+        private static Packet ClaimPacket(List<Packet> packets, int amount)
+        {
+            foreach (var p in packets)
+                if (!p.Claimed && p.TerminalAmount == amount && amount >= 0)
+                { p.Claimed = true; return p; }
+            if (amount <= 0)
+                foreach (var p in packets)
+                    if (!p.Claimed && p.TerminalAmount < 0)
+                    { p.Claimed = true; return p; }
+            foreach (var p in packets)
+                if (!p.Claimed) { p.Claimed = true; return p; }
+            return null;
+        }
+
+        // "Immune: Criticals"/"Immune: Backstab" are crit-resist facts, never
+        // damage-type ledger parts. (Condition "Immune: X" barks are absorbed
+        // by the condition-line pre-pass before segmentation ever runs.)
+        private static bool IsCritFamily(string b)
             => b == "Immune: Criticals" || b == "Immune: Backstab";
 
         private static void EmitDamageLines(List<DamageFact> facts, List<string> outLines)
@@ -265,29 +313,47 @@ namespace SkaldAccessibility
             return null;
         }
 
-        private static string AttributeDeath(List<Member> roster, string bare)
+        /// <summary>Death attribution: unique BecameDead candidate first, then
+        /// order-correlation (find 8: the k-th death line of a name maps to
+        /// the k-th newly-dead member of that name in roster/entry order).
+        /// Returns the roster index, or -1 (bare fallback).</summary>
+        private static int AttributeDeath(List<Member> roster, string bare, Dictionary<string, int> deathCursor)
         {
-            Member only = null; int candidates = 0;
-            foreach (var m in roster)
+            int only = -1; int candidates = 0;
+            for (int i = 0; i < roster.Count; i++)
             {
-                if (m.Bare == bare && m.BecameDead) { candidates++; only = m; }
+                if (roster[i].Bare == bare && roster[i].BecameDead) { candidates++; only = i; }
             }
-            return candidates == 1 ? only.Display : null;
+            if (candidates == 1) return only;
+            if (candidates > 1)
+            {
+                int cursor;
+                deathCursor.TryGetValue(bare, out cursor);
+                int seen = 0;
+                for (int i = 0; i < roster.Count; i++)
+                {
+                    if (roster[i].Bare != bare || !roster[i].BecameDead) continue;
+                    if (seen == cursor) { deathCursor[bare] = cursor + 1; return i; }
+                    seen++;
+                }
+            }
+            return -1;
         }
 
-        private static string TryRebuildAnchor(string ev, Frame frame, ref bool sawMissAnchor)
+        private static string TryRebuildAnchor(string ev, Frame frame, ref int missAnchors)
         {
             bool hit = ev.IndexOf(" hits ", StringComparison.OrdinalIgnoreCase) > 0
                 || ev.IndexOf(" automatically hit ", StringComparison.OrdinalIgnoreCase) > 0;
             bool miss = ev.IndexOf(" misses ", StringComparison.OrdinalIgnoreCase) > 0;
             if (!hit && !miss) return null;
-            if (miss) sawMissAnchor = true;
+            if (miss) missAnchors++;
             // The anchor's names are render-uppercased; the objects are known
             // (attacker = current character, target = its target opponent).
-            // Rebuild only when the raw names actually match the objects.
+            // Rebuild only when both names WHOLE-WORD match the objects
+            // (find 4: substring containment cross-matches "Wolf"/"Dire Wolf").
             if (frame.AttackerBare != null && frame.TargetBare != null
-                && ev.IndexOf(frame.AttackerBare, StringComparison.OrdinalIgnoreCase) >= 0
-                && ev.IndexOf(frame.TargetBare, StringComparison.OrdinalIgnoreCase) >= 0)
+                && ContainsWord(ev, frame.AttackerBare)
+                && ContainsWord(ev, frame.TargetBare))
             {
                 return $"{frame.AttackerDisplay} {(miss ? "misses" : "hits")} {frame.TargetDisplay}.";
             }
@@ -309,18 +375,41 @@ namespace SkaldAccessibility
             return $"{display}{verb}{what}.".Replace(" resisted: ", " resisted ").Replace(" immune to: ", " immune to ");
         }
 
-        private static void AttributeSaveBarks(Frame frame, List<string> outLines)
+        private static void AttributeOrphanBarks(Frame frame, List<string> outLines)
         {
             Member grower = null; int growers = 0;
             foreach (var m in frame.Roster)
                 if (m.BarkGrowth > 0) { growers++; grower = m; }
+            bool confident = growers == 1 && grower.BarkGrowth >= CountOrphans(frame.Barks);
             for (int i = frame.Barks.Count - 1; i >= 0; i--)
             {
                 string b = frame.Barks[i];
-                if (!b.StartsWith("Saved: ", StringComparison.Ordinal)) continue;
-                frame.Barks.RemoveAt(i);
-                outLines.Add(growers == 1 ? $"{grower.Display}: {b}." : EnsurePeriod(b));
+                bool isSave = b.StartsWith("Saved: ", StringComparison.Ordinal);
+                bool attributable = isSave || b.StartsWith("Phalanx: ", StringComparison.Ordinal);
+                if (!attributable) continue;
+                if (confident)
+                {
+                    frame.Barks.RemoveAt(i);
+                    outLines.Add($"{grower.Display}: {EnsurePeriod(b)}");
+                }
+                else if (isSave)
+                {
+                    // Saves are combat events even unattributed — the event
+                    // path (no dedup second-guessing) is their right home.
+                    frame.Barks.RemoveAt(i);
+                    outLines.Add(EnsurePeriod(b));
+                }
+                // Non-save attributables without confidence stay residual.
             }
+        }
+
+        private static int CountOrphans(List<string> barks)
+        {
+            int n = 0;
+            foreach (string b in barks)
+                if (b.StartsWith("Saved: ", StringComparison.Ordinal)
+                    || b.StartsWith("Phalanx: ", StringComparison.Ordinal)) n++;
+            return n;
         }
 
         private static string UniqueDisplay(List<Member> roster, string bare)
@@ -330,10 +419,28 @@ namespace SkaldAccessibility
             return n == 1 ? only.Display : null;
         }
 
+        /// <summary>Whole-word containment (find 4) — "Wolf" never matches
+        /// inside "Dire Wolf". Case-insensitive.</summary>
+        internal static bool ContainsWord(string text, string word)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word)) return false;
+            int start = 0;
+            while (true)
+            {
+                int idx = text.IndexOf(word, start, StringComparison.OrdinalIgnoreCase);
+                if (idx < 0) return false;
+                bool leftOk = idx == 0 || !char.IsLetterOrDigit(text[idx - 1]);
+                int after = idx + word.Length;
+                bool rightOk = after >= text.Length || !char.IsLetterOrDigit(text[after]);
+                if (leftOk && rightOk) return true;
+                start = idx + 1;
+            }
+        }
+
         /// <summary>Replace every known combatant name (the render's uppercase
-        /// form included) with the display name where the name-group is
-        /// unambiguous; ambiguous groups get the bare name — normalized
-        /// casing either way (the transcode ruling).</summary>
+        /// form included) with normalized casing, whole-word only (find 4).
+        /// Letters never enter here — string-only attribution cannot pick a
+        /// letter; the attributed paths carry them.</summary>
         internal static string NormalizeNames(string text, List<Member> roster)
         {
             if (string.IsNullOrEmpty(text)) return text;
@@ -341,16 +448,30 @@ namespace SkaldAccessibility
             foreach (var m in roster)
             {
                 if (m.Bare == null || !seen.Add(m.Bare)) continue;
-                string replacement = UniqueDisplayOrBare(roster, m.Bare);
                 string upper = m.Bare.ToUpperInvariant();
-                if (upper != m.Bare) text = text.Replace(upper, replacement);
-                if (replacement != m.Bare) text = text.Replace(m.Bare, replacement);
+                if (upper != m.Bare) text = ReplaceWholeWord(text, upper, m.Bare);
             }
             return text;
         }
 
-        private static string UniqueDisplayOrBare(List<Member> roster, string bare)
-            => UniqueDisplay(roster, bare) ?? bare;
+        private static string ReplaceWholeWord(string text, string word, string replacement)
+        {
+            int start = 0;
+            while (true)
+            {
+                int idx = text.IndexOf(word, start, StringComparison.Ordinal);
+                if (idx < 0) return text;
+                bool leftOk = idx == 0 || !char.IsLetterOrDigit(text[idx - 1]);
+                int after = idx + word.Length;
+                bool rightOk = after >= text.Length || !char.IsLetterOrDigit(text[after]);
+                if (leftOk && rightOk)
+                {
+                    text = text.Substring(0, idx) + replacement + text.Substring(after);
+                    start = idx + replacement.Length;
+                }
+                else start = idx + 1;
+            }
+        }
 
         // ---- Vocabulary ----
 
@@ -382,6 +503,15 @@ namespace SkaldAccessibility
         }
 
         private static bool StartsWithDigit(string s) => s.Length > 0 && char.IsDigit(s[0]);
+
+        private static int ParseLeadingInt(string s)
+        {
+            int end = 0;
+            while (end < s.Length && char.IsDigit(s[end])) end++;
+            if (end == 0) return -1;
+            int val;
+            return int.TryParse(s.Substring(0, end), out val) ? val : -1;
+        }
 
         private static int ParseTrailingInt(string s, int from)
         {

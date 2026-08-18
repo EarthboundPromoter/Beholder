@@ -634,15 +634,20 @@ namespace SkaldAccessibility
         /// coalesced speech, exactly the old shape.</summary>
         private static void DrainCombatLog()
         {
-            if (_pendingCombatLog.Count == 0) return;
+            // Bark-only frames narrate too (review find 2: Phalanx and other
+            // log-less barks would otherwise skip attribution entirely) — but
+            // log lines still drop outside combat states, and barks outside
+            // combat stay untouched for the state-agnostic DrainBarks.
             var lines = new System.Collections.Generic.List<string>(_pendingCombatLog);
             _pendingCombatLog.Clear();
 
             object state = CurrentStateObject();
             string stateName = state?.GetType().Name ?? "";
             if (!stateName.Contains("Combat")) return;
+            if (lines.Count == 0 && _pendingBarks.Count == 0) return;
 
             if (CombatSpine.NarrateCombatFrame(lines, _pendingBarks)) return;
+            if (lines.Count == 0) return;
 
             int i = 0;
             while (i < lines.Count)

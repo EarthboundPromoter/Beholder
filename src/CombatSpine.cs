@@ -390,6 +390,11 @@ namespace SkaldAccessibility
                     {
                         frame.TargetDisplay = DisplayNameOf(tgt);
                         frame.TargetBare = NameOf(tgt);
+                        // Identity link for the kill-overrun trailer (review
+                        // find 8): frame.Roster rows are built in _roster
+                        // order, so the index carries the object identity.
+                        for (int i = 0; i < _roster.Count; i++)
+                            if (ReferenceEquals(_roster[i], tgt)) { frame.TargetRosterIndex = i; break; }
                     }
                 }
 
@@ -518,10 +523,16 @@ namespace SkaldAccessibility
         {
             try
             {
-                if (Seams.Character_getBarkControl == null || Seams.BarkControl_barks == null)
+                if (Seams.Character_barkControl == null || Seams.BarkControl_barks == null)
                     return -1;
-                object control = Seams.Character_getBarkControl.Invoke(c, null);
-                if (control == null) return -1;
+                // The FIELD, never the lazy getter: getBarkControl() would
+                // force-create the control, and physicMovementComplete's
+                // barkControl!=null clause would then evaluate target-bark
+                // waits vanilla skips — observing via the getter would CHANGE
+                // combat pacing (review find 1). A null field = never barked
+                // = an honest count of zero.
+                object control = Seams.Character_barkControl.GetValue(c);
+                if (control == null) return 0;
                 var barks = Seams.BarkControl_barks.GetValue(control) as System.Collections.ICollection;
                 return barks?.Count ?? -1;
             }

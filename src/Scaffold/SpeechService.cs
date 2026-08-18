@@ -116,7 +116,10 @@ namespace SkaldAccessibility.Scaffold
                     PenKeepLatest(new Pending { Text = text, Source = source });
                 return;
             }
-            if (Queue.Count >= 20)
+            // A pending overflow batch keeps chronological order: newer
+            // events append BEHIND it rather than racing into freed slots
+            // ahead of older coalesced content (review find 9).
+            if (Queue.Count >= 20 || _eventOverflow != null)
             {
                 _eventOverflow = _eventOverflow == null ? text : _eventOverflow + " " + text;
                 Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] (event, coalesced to overflow) {text}");

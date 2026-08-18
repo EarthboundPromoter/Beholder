@@ -494,7 +494,12 @@ namespace SkaldAccessibility
         internal static MethodInfo Character_getWounds;
         internal static MethodInfo Character_getTargetOpponent;
         internal static MethodInfo Character_isWeaponRanged;
-        internal static MethodInfo Character_getBarkControl;    // private accessor
+        internal static FieldInfo Character_barkControl;        // the FIELD, never the lazy getter —
+                                                                // getBarkControl() force-creates the control,
+                                                                // and physicMovementComplete's barkControl!=null
+                                                                // clause would then evaluate target-bark waits
+                                                                // vanilla skips: observing via the getter would
+                                                                // CHANGE combat pacing (review find 1, 2026-08-18)
         internal static Type BarkControlType;
         internal static FieldInfo BarkControl_barks;            // private List<Bark>
         internal static FieldInfo HoverElementControl_tacticalTextList; // private static List<HoverElement>
@@ -942,7 +947,7 @@ namespace SkaldAccessibility
             Character_getWounds = M(CharacterType, "Character", "getWounds");
             Character_getTargetOpponent = M(CharacterType, "Character", "getTargetOpponent");
             Character_isWeaponRanged = M(CharacterType, "Character", "isWeaponRanged");
-            Character_getBarkControl = M(CharacterType, "Character", "getBarkControl");
+            Character_barkControl = F(CharacterType, "Character", "barkControl");
             BarkControlType = T("BarkControl");
             BarkControl_barks = F(BarkControlType, "BarkControl", "barks");
             HoverElementControl_tacticalTextList
