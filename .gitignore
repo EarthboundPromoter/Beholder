@@ -34,3 +34,6 @@ docs/text-surface-audit.md
 # Dev bridge — local-only, never ships (lineage rule)
 bridge/bin/
 bridge/obj/
+
+# Session log snapshots (bridge log watcher, 2026-08-18)
+logs/

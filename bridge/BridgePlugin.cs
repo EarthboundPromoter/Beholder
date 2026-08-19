@@ -52,6 +52,46 @@ namespace SkaldBridge
             _serverThread.Start();
             Application.quitting += () => _stop = true;
             Logger.LogInfo($"[Bridge] SkaldBridge {BridgeVersion} starting on 127.0.0.1:{Port}");
+            SpawnLogWatcher();
+        }
+
+        /// <summary>Session-log persistence (owner ruling 2026-08-18): BepInEx
+        /// truncates LogOutput.log at every launch (AppendLog=false), which
+        /// destroyed each session's speech transcript. Each game session arms
+        /// its own detached watcher at boot: a hidden PowerShell that waits on
+        /// THIS process handle and copies the log into the repo's logs\ folder
+        /// when the process exits — any exit, clean quit or crash (the crash
+        /// log is the one worth keeping). Filename = session START stamp. No
+        /// deploy dependency, no manual start; the watcher dies with its copy.
+        /// Dev-only (the bridge never ships). Retention: sessions accumulate;
+        /// trim by hand or by ride ritual.</summary>
+        private void SpawnLogWatcher()
+        {
+            try
+            {
+                string repoLogs = @"C:\Users\IATPFNJ624\SkaldAccessibility\logs";
+                string src = Path.Combine(Paths.BepInExRootPath, "LogOutput.log");
+                string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                string dest = Path.Combine(repoLogs, $"session-{stamp}.log");
+                int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+                string cmd =
+                    $"Wait-Process -Id {pid} -ErrorAction SilentlyContinue; " +
+                    $"New-Item -ItemType Directory -Force '{repoLogs}' | Out-Null; " +
+                    $"Copy-Item -LiteralPath '{src}' -Destination '{dest}' -ErrorAction SilentlyContinue";
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -Command \"" + cmd + "\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                System.Diagnostics.Process.Start(psi);
+                Logger.LogInfo($"[Bridge] Log watcher armed: {dest}");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"[Bridge] Log watcher failed to arm: {ex.Message}");
+            }
         }
 
         private void Update()
