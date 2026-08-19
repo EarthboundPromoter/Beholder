@@ -490,6 +490,12 @@ namespace SkaldAccessibility
                                                                    // (NEVER Character.setTacticalHoverText — three-line
                                                                    // wrapper, Mono inline class; survey §4c.3)
         internal static FieldInfo CharacterComponentContainer_areaEffectSelection;   // CP4 consumer (protected)
+        internal static MethodInfo Character_getSpellContainer;            // the field's real homes: a Character
+        internal static MethodInfo Character_getAbilityManueverContainer;  // HAS two component containers [sic name]
+        internal static MethodInfo Map_findCombatPath;             // the game's own hover recompute (mouse-identity)
+        internal static MethodInfo Character_getTileParty;
+        internal static MethodInfo Character_canCharacterCombatMove;
+        internal static MethodInfo Character_isPanicked;
         internal static MethodInfo EffectSelection_getMapTiles;
         internal static MethodInfo EffectSelection_getBaseTile;
         internal static MethodInfo EffectSelection_getAllCharactersInSelection;
@@ -1001,6 +1007,12 @@ namespace SkaldAccessibility
                 = M(HoverElementControlType, "HoverElementControl", "addTacticalHoverTextFlashing");
             CharacterComponentContainer_areaEffectSelection
                 = F(CharacterComponentContainerType, "CharacterComponentContainer", "areaEffectSelection");
+            Character_getSpellContainer = M(CharacterType, "Character", "getSpellContainer");
+            Character_getAbilityManueverContainer = M(CharacterType, "Character", "getAbilityManueverContainer");
+            Map_findCombatPath = M(MapType, "Map", "findCombatPath");
+            Character_getTileParty = M(CharacterType, "Character", "getTileParty");
+            Character_canCharacterCombatMove = M(CharacterType, "Character", "canCharacterCombatMove");
+            Character_isPanicked = M(CharacterType, "Character", "isPanicked");
             EffectSelection_getMapTiles = M(EffectSelectionType, "EffectSelection", "getMapTiles");
             EffectSelection_getBaseTile = M(EffectSelectionType, "EffectSelection", "getBaseTile");
             EffectSelection_getAllCharactersInSelection

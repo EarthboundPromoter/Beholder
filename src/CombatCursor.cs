@@ -810,6 +810,19 @@ namespace SkaldAccessibility
                 int len = CourseLength(actor, tx, ty);
                 if (len <= 0)
                 {
+                    // The game's hover recompute can be MISSED (its gate
+                    // requires an open neighbour via getNextMoveTile — null
+                    // when the actor is boxed in — and a hover-tile change
+                    // edge; the ride showed path facts vanishing after the
+                    // first landing, Opus log review 2026-08-19). Repair with
+                    // the game's OWN recompute — the identical findCombatPath
+                    // call hover makes — under the game's own actor
+                    // conditions, then re-read through the destination guard.
+                    if (RequestCourseRecompute(map, actor, tx, ty))
+                        len = CourseLength(actor, tx, ty);
+                }
+                if (len <= 0)
+                {
                     // No course terminating at THIS tile = unreachable (a
                     // failed hover recompute leaves the previous course in
                     // place — the destination check is the guard, review
@@ -851,19 +864,59 @@ namespace SkaldAccessibility
             catch { return -1; }
         }
 
+        /// <summary>Invoke the game's own combat-path recompute for the
+        /// cursor tile — mouse-identity: the exact call CombatEncounter.
+        /// updateMousePosition makes on a hover-tile change, under the same
+        /// actor conditions (PC and planning established by the caller). The
+        /// one game gate deliberately skipped is canMouseMove's open-neighbour
+        /// check — a boxed-in actor still deserves a truthful path readout,
+        /// and setPath on an unreachable target writes nothing.</summary>
+        private static bool RequestCourseRecompute(object map, object actor, int tx, int ty)
+        {
+            try
+            {
+                if (Seams.Map_findCombatPath == null || Seams.Character_getTileParty == null) return false;
+                if (Seams.Character_canCharacterCombatMove == null
+                    || !(bool)Seams.Character_canCharacterCombatMove.Invoke(actor, null)) return false;
+                if (Seams.Character_moveAlongCombatPath != null
+                    && (bool)Seams.Character_moveAlongCombatPath.GetValue(actor)) return false;
+                if (Seams.Character_isPanicked != null
+                    && (bool)Seams.Character_isPanicked.Invoke(actor, null)) return false;
+                object party = Seams.Character_getTileParty.Invoke(actor, null);
+                if (party == null) return false;
+                Seams.Map_findCombatPath.Invoke(map, new object[] { party, tx, ty });
+                return true;
+            }
+            catch { return false; }
+        }
+
+        // The course destination is System.Drawing.Point (NavigationCourse's
+        // own using) — X/Y are PROPERTIES; the old field-first probe made
+        // HarmonyX warn twice per landing (Opus log review 2026-08-19).
+        // Property-first via plain reflection (never logs), cached per type.
+        private static Type _pointType;
+        private static System.Reflection.PropertyInfo _pointPX, _pointPY;
+        private static System.Reflection.FieldInfo _pointFX, _pointFY;
+
         private static bool PointMatches(object point, int x, int y)
         {
             try
             {
                 var t = point.GetType();
-                var fx = HarmonyLib.AccessTools.Field(t, "X") ?? HarmonyLib.AccessTools.Field(t, "x");
-                var fy = HarmonyLib.AccessTools.Field(t, "Y") ?? HarmonyLib.AccessTools.Field(t, "y");
-                if (fx != null && fy != null)
-                    return Convert.ToInt32(fx.GetValue(point)) == x && Convert.ToInt32(fy.GetValue(point)) == y;
-                var px = HarmonyLib.AccessTools.Property(t, "X") ?? HarmonyLib.AccessTools.Property(t, "x");
-                var py = HarmonyLib.AccessTools.Property(t, "Y") ?? HarmonyLib.AccessTools.Property(t, "y");
-                if (px != null && py != null)
-                    return Convert.ToInt32(px.GetValue(point, null)) == x && Convert.ToInt32(py.GetValue(point, null)) == y;
+                if (t != _pointType)
+                {
+                    _pointType = t;
+                    _pointPX = t.GetProperty("X") ?? t.GetProperty("x");
+                    _pointPY = t.GetProperty("Y") ?? t.GetProperty("y");
+                    _pointFX = _pointPX == null ? (t.GetField("X") ?? t.GetField("x")) : null;
+                    _pointFY = _pointPY == null ? (t.GetField("Y") ?? t.GetField("y")) : null;
+                }
+                if (_pointPX != null && _pointPY != null)
+                    return Convert.ToInt32(_pointPX.GetValue(point, null)) == x
+                        && Convert.ToInt32(_pointPY.GetValue(point, null)) == y;
+                if (_pointFX != null && _pointFY != null)
+                    return Convert.ToInt32(_pointFX.GetValue(point)) == x
+                        && Convert.ToInt32(_pointFY.GetValue(point)) == y;
                 return false;
             }
             catch { return false; }

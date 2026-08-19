@@ -280,8 +280,12 @@ namespace SkaldAccessibility
                     if (moved)
                     {
                         _ringsDirty = true;
-                        // Beacon: party stepped while an entity is landed.
-                        if (_listIdx >= 0) SpeakBeacon(map, px, py);
+                        // Beacon: party stepped while an entity is landed —
+                        // but SILENT while an auto-walk course is running (42
+                        // offsets in 5 seconds on the ride — Opus log review
+                        // 2026-08-19, owner-ruled). The arrival step's course
+                        // is already empty, so arrival speaks naturally.
+                        if (_listIdx >= 0 && !PartyCourseActive(map)) SpeakBeacon(map, px, py);
                     }
                     _lastPartyX = px; _lastPartyY = py;
                 }
@@ -331,14 +335,37 @@ namespace SkaldAccessibility
             if (!hadSel)
             {
                 if (_listIdx >= _rings[_listCat].Count) _listIdx = -1;
-                return;
             }
-            var ring = _rings[_listCat];
-            int found = trackedSel != null
-                ? ring.FindIndex(e => ReferenceEquals(e.Tracked, trackedSel))
-                : ring.FindIndex(e => e.Tracked == null && e.X == selX && e.Y == selY);
-            _listIdx = found;
+            else
+            {
+                var ring = _rings[_listCat];
+                int found = trackedSel != null
+                    ? ring.FindIndex(e => ReferenceEquals(e.Tracked, trackedSel))
+                    : ring.FindIndex(e => e.Tracked == null && e.X == selX && e.Y == selY);
+                _listIdx = found;
+            }
+
+            // The list never RESTS on an emptied page (owner ruling
+            // 2026-08-19): if this category drained and another has content,
+            // move there silently; the next landing carries its category
+            // prefix so the player learns where they are.
+            if (_rings[_listCat].Count == 0)
+            {
+                for (int step = 1; step < 5; step++)
+                {
+                    int cat = (_listCat + step) % 5;
+                    if (_rings[cat].Count > 0)
+                    {
+                        _listCat = cat;
+                        _listIdx = -1;
+                        _prefixNextLand = true;
+                        break;
+                    }
+                }
+            }
         }
+
+        private static bool _prefixNextLand;
 
         /// <summary>Compute the held tile's virtual-screen center and set the
         /// virtual mouse there. Formula from the adversarial review (A9):
@@ -933,14 +960,15 @@ namespace SkaldAccessibility
             Land(map, prefix: null);
         }
 
+        /// <summary>Left/Right: visit EVERY category in order, empty ones
+        /// included, announcing "Hostiles: none." on the empty stops (owner
+        /// ruling 2026-08-19 — skipping them made empty pages a trap; every
+        /// press also refreshes via EnsureFresh, so cycling IS the manual
+        /// refresh).</summary>
         private static void ListCat(object map, int dir)
         {
             EnsureFresh(map);
-            int start = _listCat;
-            do
-            {
-                _listCat = (_listCat + dir + 5) % 5;
-            } while (_rings[_listCat].Count == 0 && _listCat != start);
+            _listCat = (_listCat + dir + 5) % 5;
             _listIdx = _rings[_listCat].Count > 0 ? 0 : -1;
             string catName = char.ToUpper(CategoryNames[_listCat][0]) + CategoryNames[_listCat].Substring(1);
             if (_listIdx < 0) { Scaffold.SpeechService.Say($"{catName}: none.", "Nav"); return; }
@@ -951,6 +979,12 @@ namespace SkaldAccessibility
         /// panel. Entities re-validate at speech time.</summary>
         private static void Land(object map, string prefix)
         {
+            if (prefix == null && _prefixNextLand)
+            {
+                // First landing after an automatic page switch: say where we are.
+                prefix = char.ToUpper(CategoryNames[_listCat][0]) + CategoryNames[_listCat].Substring(1) + ": ";
+            }
+            _prefixNextLand = false;
             var e = _rings[_listCat][_listIdx];
             if (!PartyPos(map, out int px, out int py)) return;
 
@@ -989,6 +1023,20 @@ namespace SkaldAccessibility
             object t = TileAt(map, e.X, e.Y);
             string inspect = t != null ? S(Seams.MapTile_getInspectDescription, t) : null;
             if (!string.IsNullOrWhiteSpace(inspect)) ReviewLayer.NotePanel("Inspect", inspect);
+        }
+
+        /// <summary>True while the player party is mid auto-walk (the game's
+        /// own course truth). Failure degrades to false — the beacon speaks,
+        /// the pre-fix behavior.</summary>
+        private static bool PartyCourseActive(object map)
+        {
+            try
+            {
+                if (Seams.Map_playerParty == null || Seams.Party_navigationCourseHasNodes == null) return false;
+                object party = Seams.Map_playerParty.GetValue(map);
+                return party != null && (bool)Seams.Party_navigationCourseHasNodes.Invoke(party, null);
+            }
+            catch { return false; }
         }
 
         /// <summary>The beacon: party stepped while an entity is landed —

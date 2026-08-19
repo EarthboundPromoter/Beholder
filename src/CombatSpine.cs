@@ -586,7 +586,11 @@ namespace SkaldAccessibility
             object actor = GetCurrentCharacter(_encounter);
             if (actor == null || Seams.CharacterComponentContainer_areaEffectSelection == null
                 || Seams.EffectSelection_getAllCharactersInSelection == null) return;
-            object sel = Seams.CharacterComponentContainer_areaEffectSelection.GetValue(actor);
+            // The field lives on the Character's COMPONENT CONTAINERS, not the
+            // Character (the shipped read threw per targeting frame — Opus log
+            // review 2026-08-19, 3,790 misses). The game checks the maneuver
+            // container first, then spells (Character.areaEffectSelectionContains).
+            object sel = AreaSelectionOf(actor);
             if (sel == null) return;
             var members = Seams.EffectSelection_getAllCharactersInSelection.Invoke(sel, null)
                 as System.Collections.IEnumerable;
@@ -639,6 +643,31 @@ namespace SkaldAccessibility
                   + (terse ? "" : ": " + string.Join(", ", allies.ToArray()));
             string line = "In AoE, " + (e != null && a != null ? e + ". " + a : e ?? a) + ".";
             Scaffold.SpeechService.Say(line, "Nav");
+        }
+
+        /// <summary>The actor's live area selection, read from whichever of
+        /// the two component containers holds one — maneuver first, then
+        /// spells, the game's own precedence (Character.
+        /// areaEffectSelectionContains). Null when nothing is being aimed.</summary>
+        private static object AreaSelectionOf(object actor)
+        {
+            try
+            {
+                var field = Seams.CharacterComponentContainer_areaEffectSelection;
+                if (Seams.Character_getAbilityManueverContainer != null)
+                {
+                    object cont = Seams.Character_getAbilityManueverContainer.Invoke(actor, null);
+                    object sel = cont != null ? field.GetValue(cont) : null;
+                    if (sel != null) return sel;
+                }
+                if (Seams.Character_getSpellContainer != null)
+                {
+                    object cont = Seams.Character_getSpellContainer.Invoke(actor, null);
+                    return cont != null ? field.GetValue(cont) : null;
+                }
+                return null;
+            }
+            catch { return null; }
         }
 
         /// <summary>CP4: the weapon-toggle join (T / right-stick click) — the
