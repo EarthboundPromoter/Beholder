@@ -390,6 +390,10 @@ namespace SkaldAccessibility
         internal static FieldInfo InvSegment_itemTypes;
         internal static FieldInfo InvSegment_gridWidth;
         internal static FieldInfo InvSegment_column;
+        internal static FieldInfo InvSheet_secondaryInventoryGrid;
+        internal static Type UIInventorySheetCraftingType;
+        internal static FieldInfo InvSheetCrafting_listButtons;
+        internal static FieldInfo InvSheetCrafting_buttons;
         internal static FieldInfo InvSegment_offsetIndex;
         internal static MethodInfo Inventory_getListByType;
         // The funnel walks the SHEET, not a segment — its index lives there
@@ -906,6 +910,14 @@ namespace SkaldAccessibility
             Inventory_getListByType = M(InventoryType, "Inventory", "getListByType");
             UIInventorySheetBaseType = T("UIInventorySheetBase");
             InvSheet_currentControllerSurface = F(UIInventorySheetBaseType, "UIInventorySheetBase", "currentControllerSurface");
+            InvSheet_secondaryInventoryGrid = F(UIInventorySheetBaseType, "UIInventorySheetBase", "secondaryInventoryGrid");
+            // Crafting zone chain (owner build 2026-08-18): the crafting
+            // sheet's two mouse islands — the workstation grid and the
+            // Craft/Clear technical row (AXBY-no-numbers: mouse or controller
+            // A/X only in the shipped game).
+            UIInventorySheetCraftingType = T("UIInventorySheetCrafting");
+            InvSheetCrafting_listButtons = F(UIInventorySheetCraftingType, "UIInventorySheetCrafting", "listButtons");
+            InvSheetCrafting_buttons = F(UIInventorySheetCraftingType, "UIInventorySheetCrafting", "buttons");
             InvSheet_mainInventoryGrid = F(UIInventorySheetBaseType, "UIInventorySheetBase", "mainInventoryGrid");
             InvSegment_grid = F(InventorySegmentType, "UIGridCharacterInventorySegment", "grid");
             InvSegment_update = M(InventorySegmentType, "UIGridCharacterInventorySegment", "update");
