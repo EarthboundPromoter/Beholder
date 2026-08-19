@@ -182,6 +182,13 @@ namespace SkaldAccessibility.Patches
             static void Postfix(string __0)
             {
                 SpeakIfChanged(__0, "Tooltip", interrupt: true);
+                // Auto-dismiss (owner ruling 2026-08-19): stamp the raise; the
+                // drain clears it inside the two-frame grace window BEFORE the
+                // tooltip's hover flag latches the global UIElement yield
+                // (yieldToTooltips) — the focus lockout never occurs. Every
+                // raise site in the game is edge-triggered (survey-verified:
+                // no re-raise while the cursor stays put).
+                Pump.NoteTooltipRaised();
             }
         }
 

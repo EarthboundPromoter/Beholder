@@ -206,6 +206,29 @@ namespace SkaldAccessibility
         public static void NotePointPress(bool isAttribute, bool isPlus, object row)
             => _pendingPress = new PointPress { IsAttribute = isAttribute, IsPlus = isPlus, Row = row };
 
+        // ---- Tooltip auto-dismiss (owner ruling 2026-08-19) ----
+        private static int _tooltipRaisedFrame = -1;
+
+        /// <summary>Note-only: a tooltip was raised this frame (the single
+        /// setToolTip choke). The drain clears it within the two-frame grace
+        /// window, before its hover flag latches the global UIElement yield.</summary>
+        public static void NoteTooltipRaised() => _tooltipRaisedFrame = Time.frameCount;
+
+        private static void DrainTooltipDismiss()
+        {
+            if (_tooltipRaisedFrame < 0) return;
+            if (Time.frameCount - _tooltipRaisedFrame > 2) { _tooltipRaisedFrame = -1; return; }
+            if (!PanelPolicy.TooltipAutoDismiss) { _tooltipRaisedFrame = -1; return; }
+            try
+            {
+                if (Seams.ToolTipPrinter_hasToolTip != null
+                    && (bool)Seams.ToolTipPrinter_hasToolTip.Invoke(null, null))
+                    Seams.ToolTipPrinter_clearToolTip?.Invoke(null, null);
+            }
+            catch { }
+            _tooltipRaisedFrame = -1;
+        }
+
         /// <summary>Note-only: a points-pool render write (setAttributePoints /
         /// setSkillPoints — fires every frame with the settled value).</summary>
         public static void NotePointPool(bool isAttribute, int value)
@@ -403,6 +426,9 @@ namespace SkaldAccessibility
 
             try { DrainContent(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:content] {ex.Message}"); }
+
+            try { DrainTooltipDismiss(); }
+            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:tipclear] {ex.Message}"); }
 
             try { DrainCanvasSwitch(); }
             catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:canvas] {ex.Message}"); }

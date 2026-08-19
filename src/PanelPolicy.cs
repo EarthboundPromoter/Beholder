@@ -50,7 +50,14 @@ namespace SkaldAccessibility
                 "Speak time/day changes from the status strip (noisy: the clock advances every step).");
             _cfgPosition = config.Bind("Overland", "SpeakPositionChange", false,
                 "Speak X/Y position changes from the status strip (noisy: changes every step).");
+            _cfgTooltipDismiss = config.Bind("Tooltip", "AutoDismiss", true,
+                "Clear a tooltip the moment its text has been captured and spoken. While a tooltip is "
+                + "visible the game deadens every UI element under the mouse (hover, clicks, focus speech); "
+                + "the text stays available in the review buffer. Off restores the visual tooltip.");
         }
+
+        private static ConfigEntry<bool> _cfgTooltipDismiss;
+        internal static bool TooltipAutoDismiss => _cfgTooltipDismiss == null || _cfgTooltipDismiss.Value;
 
         internal static bool AutoReadBody => _cfgAutoReadBody?.Value ?? true;
 
