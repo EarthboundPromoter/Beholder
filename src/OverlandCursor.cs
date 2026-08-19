@@ -29,7 +29,11 @@ namespace SkaldAccessibility
     ///
     /// Composition is lazy at keypress; nothing is cached but two ints and
     /// the list rings. All game reads are the side-effect-safe set
-    /// (never setSpotted, never getAccessibleTilesFromParty, never getParty).
+    /// (never setSpotted, never getAccessibleTilesFromParty, never getParty)
+    /// with ONE named exception: MapTile.getInventory() lazily allocates an
+    /// empty Inventory on first read — benign, and the game's own draw loop
+    /// performs the identical read on viewport tiles (MapIllustrator:913);
+    /// we make it at browse cadence only.
     ///
     /// The POI list (owner redesign 2026-08-19): persistent and DYNAMIC.
     /// It survives interactions; it suspends (never dies) when a popup or a
@@ -37,8 +41,10 @@ namespace SkaldAccessibility
     /// list active." / "POI list closed."), and resumes on return to
     /// overland with rings rebuilt from live truth and the selection
     /// re-anchored by identity. Combat is the one force-close (deployment
-    /// needs the free mouse). Rings rebuild on the game's own mutation
-    /// clock — the step commit plus player action keys — never on a timer.
+    /// needs the free mouse). Rings go stale on the game's own mutation
+    /// clock — the step commit plus player action keys, never a timer — and
+    /// rebuild lazily at the next browse press (every landing reads live
+    /// truth; no per-step sweep).
     /// Ring membership mirrors the renderer: the removed-prop gate
     /// (shouldBeRemovedFromGame, the picked-up-item fix), hidden, undrawn.
     /// Unlocked empty containers carry ", empty" and sink to the ring tail.
@@ -83,7 +89,10 @@ namespace SkaldAccessibility
         private static int _listIdx = -1;
         private static int _lastPartyX = int.MinValue, _lastPartyY = int.MinValue;
         private static int _swallowTailFrame = -1;
-        private static int _rebuildFrame = -1;      // action keys schedule a next-frame rebuild
+        private static bool _ringsDirty;            // world may have mutated since the last build;
+                                                    // rings refresh at the next browse press (Sonnet
+                                                    // SHOULD-FIX 2026-08-19: no per-step rebuild —
+                                                    // an auto-walk would pay it per path node)
         private static bool _announcedActive;       // the on/off edge announcer's memory
         private static int _activeFrame = -1;       // frame-stamped modality cache (predicates
         private static bool _activeCache;           // may run before Tick in a frame)
@@ -91,14 +100,18 @@ namespace SkaldAccessibility
         public static bool ListOpen => _listOpen;
 
         /// <summary>The list is open AND owns input right now — overland, no
-        /// popup over it. While suspended, every key predicate stands down so
-        /// popups and other states keep their native input.</summary>
+        /// popup and no selector grid over it (grid-open is modal per the
+        /// WP9 ruling; its only keyboard dismiss is the native Escape, which
+        /// a swallowing list would eat — Sonnet MUST-FIX 2026-08-19). While
+        /// suspended, every key predicate stands down so popups, grids, and
+        /// other states keep their native input.</summary>
         private static bool ActiveNow()
         {
             if (Time.frameCount != _activeFrame)
             {
                 _activeFrame = Time.frameCount;
-                _activeCache = _listOpen && InOverland() && CurrentMap() != null && !PopupUp();
+                _activeCache = _listOpen && InOverland() && CurrentMap() != null
+                    && !PopupUp() && !Patches.GridNavigationPatch.GridActive();
             }
             return _activeCache;
         }
@@ -220,17 +233,19 @@ namespace SkaldAccessibility
                 }
 
                 // ---- Modality edges (run in every state) ----
-                bool active = _listOpen && map != null && !PopupUp();
+                bool active = _listOpen && map != null && !PopupUp()
+                    && !Patches.GridNavigationPatch.GridActive();
                 _activeFrame = Time.frameCount;
                 _activeCache = active;
                 if (active && !_announcedActive)
                 {
-                    // Resume from an excursion: fresh truth, silent re-anchor,
-                    // one announcement. (Explicit K opens announce for
-                    // themselves and pre-set the flag — they never land here.)
+                    // Resume from an excursion: one announcement; the rings
+                    // are marked stale and refresh at the next browse press.
+                    // (Explicit K opens announce for themselves and pre-set
+                    // the flag — they never land here.)
+                    _ringsDirty = true;
                     if (PartyPos(map, out int rx, out int ry))
                     {
-                        RebuildRings(map, rx, ry);
                         _lastPartyX = rx; _lastPartyY = ry;
                     }
                     _announcedActive = true;
@@ -245,24 +260,28 @@ namespace SkaldAccessibility
                 if (map == null) return;
                 if (PopupUp() || Patches.GridNavigationPatch.GridActive()) return;
 
-                // ---- Dynamic rebuild + beacon (list open, overland, unobstructed) ----
+                // ---- Staleness clock + beacon (list open, overland, unobstructed) ----
+                // The world only mutates on player actions (step commits,
+                // bump interacts, clicks) — there is nothing to poll between
+                // them. Those edges only MARK the rings dirty; the rebuild
+                // runs at the next browse press, so an auto-walked path or a
+                // held-key march never pays the ring sweep per tile (Sonnet
+                // SHOULD-FIX 2026-08-19). The beacon stays live regardless:
+                // tracked entities re-read their own coordinates.
                 if (_listOpen && PartyPos(map, out int px, out int py))
                 {
-                    // Action keys schedule a next-frame rebuild: the world only
-                    // mutates on player actions (step commits, bump interacts,
-                    // clicks) — there is nothing to poll between them.
                     if (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.X)
                         || Input.GetKeyDown(KeyCode.Space)
                         || Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.A)
                         || Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.D))
-                        _rebuildFrame = Time.frameCount + 1;
+                        _ringsDirty = true;
 
                     bool moved = (_lastPartyX != px || _lastPartyY != py) && _lastPartyX != int.MinValue;
-                    if (moved || Time.frameCount == _rebuildFrame)
+                    if (moved)
                     {
-                        RebuildRings(map, px, py);
+                        _ringsDirty = true;
                         // Beacon: party stepped while an entity is landed.
-                        if (moved && _listIdx >= 0) SpeakBeacon(map, px, py);
+                        if (_listIdx >= 0) SpeakBeacon(map, px, py);
                     }
                     _lastPartyX = px; _lastPartyY = py;
                 }
@@ -274,6 +293,17 @@ namespace SkaldAccessibility
             {
                 Plugin.Logger?.LogDebug($"[Cursor] {ex.Message}");
             }
+        }
+
+        /// <summary>Refresh the rings if the staleness clock marked them
+        /// dirty — called at every browse press, so every landing reads live
+        /// truth without any per-step sweep.</summary>
+        private static void EnsureFresh(object map)
+        {
+            if (!_ringsDirty || _rings == null) return;
+            if (!PartyPos(map, out int px, out int py)) return;
+            _ringsDirty = false;
+            RebuildRings(map, px, py);
         }
 
         /// <summary>Rebuild all five rings from live map truth and re-anchor
@@ -543,6 +573,9 @@ namespace SkaldAccessibility
         {
             // Mirrors the renderer's ground-item icon gate: non-empty inventory
             // on a passable tile (the illustrator runs this same read per frame).
+            // NOTE: getInventory() lazily ALLOCATES on first read — the one
+            // sanctioned side effect (see class doc); the game's draw loop
+            // makes the same read on these tiles anyway.
             try
             {
                 if (!B(Seams.MapTile_isPassable, tile)) return false;
@@ -852,6 +885,7 @@ namespace SkaldAccessibility
             _listCat = 0;
             while (_listCat < 4 && _rings[_listCat].Count == 0) _listCat++;
             _lastPartyX = px; _lastPartyY = py;
+            _ringsDirty = false;       // just built
             _announcedActive = true;   // the explicit open IS the on edge
             Scaffold.SpeechService.Say("POI list active. " + string.Join(", ", census.ToArray()) + ".", "Nav");
         }
@@ -875,7 +909,7 @@ namespace SkaldAccessibility
             {
                 ClearTooltip();
                 if (_cfgCloseOnUse != null && _cfgCloseOnUse.Value) CloseList(announce: true);
-                else _rebuildFrame = Time.frameCount + 1;
+                else _ringsDirty = true;
                 return false;
             }
 
@@ -889,6 +923,7 @@ namespace SkaldAccessibility
 
         private static void ListStep(object map, int dir)
         {
+            EnsureFresh(map);
             var ring = _rings[_listCat];
             if (ring.Count == 0) { Scaffold.SpeechService.Say("Empty.", "Nav"); return; }
             int next = _listIdx < 0 ? (dir > 0 ? 0 : ring.Count - 1) : _listIdx + dir;
@@ -900,6 +935,7 @@ namespace SkaldAccessibility
 
         private static void ListCat(object map, int dir)
         {
+            EnsureFresh(map);
             int start = _listCat;
             do
             {
