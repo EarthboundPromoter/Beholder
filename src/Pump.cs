@@ -1203,10 +1203,15 @@ namespace SkaldAccessibility
             }
 
             // Slider controls (UITextSliderControl — the visual-style modal,
-            // settings sliders): the scrollable elements are each row's chosen
-            // minus/plus arrow, so the buttons-list path never matches. Map the
-            // arrow back to its owning row and speak the slider composition
-            // (closes the B2-class silence on vertical nav over slider rows).
+            // settings sliders, the CAMP ACTIVITY column): the scrollable
+            // elements are each row's chosen minus/plus arrow, so the
+            // buttons-list path never matches. Map the arrow back to its
+            // owning row and speak the slider composition (closes the
+            // B2-class silence on vertical nav over slider rows). When the
+            // control is an inventory SHEET delegating to a slider surface
+            // (camp activities), the rows live on the SURFACE, not the sheet
+            // — resolve against it (camp survey fix 2026-08-19: W/S over
+            // party members spoke nothing).
             if (text == null && Seams.UICanvas_getScrollableElements != null)
             {
                 try
@@ -1215,7 +1220,11 @@ namespace SkaldAccessibility
                         as System.Collections.Generic.List<UIElement>;
                     if (elements != null && index >= 0 && index < elements.Count)
                     {
-                        object row = Patches.SliderArrowPatch.RowForScrollableElement(control, elements[index]);
+                        object rowOwner = control;
+                        if (invSurface != null && Seams.UITextSliderControlType != null
+                            && Seams.UITextSliderControlType.IsInstanceOfType(invSurface))
+                            rowOwner = invSurface;
+                        object row = Patches.SliderArrowPatch.RowForScrollableElement(rowOwner, elements[index]);
                         if (row != null)
                         {
                             count = elements.Count;
@@ -1891,6 +1900,7 @@ namespace SkaldAccessibility
             Patches.MouseGuardPatch.OnStateTransition();    // nor a snap latch
                                                             // (entry snaps re-latch)
             Patches.WornZonePatch.OnStateTransition();      // zone dies with its screen
+            Patches.CampZonePatch.OnStateTransition();      // camp entry facts re-arm
             _pendingZoneLabel = null;
             // Point-pool records reset per state so re-entering an editor
             // screen re-announces its pools (the diff records otherwise

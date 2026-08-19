@@ -56,6 +56,16 @@ namespace SkaldAccessibility
         internal static Type ToolTipCategoryType;          // ToolTipControl+ToolTipCategory
         internal static Type BarkType;                     // BarkControl+Bark (non-public nested)
         internal static Type UITextSliderControlType;
+
+        // ---- Camp package (owner rulings 2026-08-19) ----
+        internal static Type UIInventorySheetCampingFoodType;
+        internal static FieldInfo InvSheetCamp_activities;   // the member/activity slider column
+        internal static FieldInfo InvSheetCamp_buttons;      // the Clear technical row (mouse island)
+        internal static FieldInfo InvSheetCamp_mealLabel;    // the live "Food: n/m" TextLable
+        internal static MethodInfo InvSheetCamp_setMealLabel; // per-frame writer — the food-readout choke
+        internal static MethodInfo TextSlider_canScrollLeft;  // flip-state reads (row 0 delegate)
+        internal static MethodInfo TextSlider_canScrollRight;
+        internal static MethodInfo Character_isBloodied;      // any wound blocks camp work — never drawn
         internal static Type SliderButtonType;             // UITextSliderControl+UITextSliderButton
         internal static Type SliderSettingsButtonType;     // UITextSliderControl+UITextSliderSettingsButton
         internal static Type SheetComplexSettingsType;     // GUIControl+SheetComplexSettings
@@ -925,6 +935,16 @@ namespace SkaldAccessibility
             // sheet's two mouse islands — the workstation grid and the
             // Craft/Clear technical row (AXBY-no-numbers: mouse or controller
             // A/X only in the shipped game).
+            // Camp package (owner rulings 2026-08-19)
+            UIInventorySheetCampingFoodType = T("UIInventorySheetCampingFood");
+            InvSheetCamp_activities = F(UIInventorySheetCampingFoodType, "UIInventorySheetCampingFood", "activities");
+            InvSheetCamp_buttons = F(UIInventorySheetCampingFoodType, "UIInventorySheetCampingFood", "buttons");
+            InvSheetCamp_mealLabel = F(UIInventorySheetCampingFoodType, "UIInventorySheetCampingFood", "mealLabel");
+            InvSheetCamp_setMealLabel = M(UIInventorySheetCampingFoodType, "UIInventorySheetCampingFood", "setMealLabel");
+            TextSlider_canScrollLeft = M(UITextSliderControlType, "UITextSliderControl", "canControllerScrollLeft");
+            TextSlider_canScrollRight = M(UITextSliderControlType, "UITextSliderControl", "canControllerScrollRight");
+            Character_isBloodied = M(CharacterType, "Character", "isBloodied");
+
             UIInventorySheetCraftingType = T("UIInventorySheetCrafting");
             InvSheetCrafting_listButtons = F(UIInventorySheetCraftingType, "UIInventorySheetCrafting", "listButtons");
             InvSheetCrafting_buttons = F(UIInventorySheetCraftingType, "UIInventorySheetCrafting", "buttons");

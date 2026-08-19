@@ -117,11 +117,11 @@ namespace SkaldAccessibility.Patches
                 }
                 else
                 {
-                    // A crafting-zone crossing claimed this press (the bench
-                    // and party grids are real segments, so a crossing at
-                    // their edges reaches this unmoved branch too) — the
-                    // crossing announcement owns the utterance, not the edge.
-                    if (CraftingZonePatch.ClaimedThisFrame) return;
+                    // A crafting- or camp-zone crossing claimed this press
+                    // (their grids are real segments, so a crossing at their
+                    // edges reaches this unmoved branch too) — the crossing
+                    // announcement owns the utterance, not the edge.
+                    if (CraftingZonePatch.ClaimedThisFrame || CampZonePatch.ClaimedThisFrame) return;
                     // A at the MAIN grid's first column crosses into the worn
                     // zone when the sheet has one (the 45acaca A/D-chain
                     // precedent); every other unmoved press speaks its edge.

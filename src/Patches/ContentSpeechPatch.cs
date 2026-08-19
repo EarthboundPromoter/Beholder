@@ -251,6 +251,12 @@ namespace SkaldAccessibility.Patches
             [HarmonyPostfix]
             static void Postfix(string __0)
             {
+                // The rest popup's snore filler ("Z", "Z z", "Z z Z" —
+                // CampActivityState.cs:217-219) is ASCII animation, not
+                // content (owner ruling 2026-08-19).
+                if (__0 != null && System.Text.RegularExpressions.Regex.IsMatch(
+                        __0.Trim(), "^[Zz]( [Zz])*$"))
+                    return;
                 SpeakIfChanged(__0, "PopupTertiary", interrupt: false);
             }
         }
