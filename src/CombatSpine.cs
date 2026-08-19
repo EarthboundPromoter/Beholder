@@ -325,12 +325,12 @@ namespace SkaldAccessibility
             // movement (the cursor is the sensing tool); the SWAP side effect
             // (stepping onto a party member exchanges places, silently) is
             // the surprise that speaks.
-            try { DrainPlacementSwap(state); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:swap] {ex.Message}"); }
+            try { DrainPlacementSwap(state); } catch (Exception ex) { Scaffold.Log.Throttled("CombatSpine:swap", ex.Message); }
 
             // CP4 joins: Ctrl-row compose, AoE census, weapon-toggle diff.
-            try { DrainRowShift(); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:row] {ex.Message}"); }
-            try { DrainAoECensus(state); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:aoe] {ex.Message}"); }
-            try { DrainWeaponToggle(cur); } catch (Exception ex) { Plugin.Logger?.LogDebug($"[CombatSpine:weapon] {ex.Message}"); }
+            try { DrainRowShift(); } catch (Exception ex) { Scaffold.Log.Throttled("CombatSpine:row", ex.Message); }
+            try { DrainAoECensus(state); } catch (Exception ex) { Scaffold.Log.Throttled("CombatSpine:aoe", ex.Message); }
+            try { DrainWeaponToggle(cur); } catch (Exception ex) { Scaffold.Log.Throttled("CombatSpine:weapon", ex.Message); }
 
             // Cost forecast — the pending ability from the game's own action
             // counter update (targeting states pass their aimed component;
@@ -442,7 +442,7 @@ namespace SkaldAccessibility
             }
             catch (Exception ex)
             {
-                Plugin.Logger?.LogDebug($"[CombatSpine:facts] {ex.Message}");
+                Scaffold.Log.Throttled("CombatSpine:facts", ex.Message);
             }
             _frame = frame;
         }
@@ -770,7 +770,7 @@ namespace SkaldAccessibility
             }
             catch (Exception ex)
             {
-                Plugin.Logger?.LogDebug($"[CombatSpine:tactical] {ex.Message}");
+                Scaffold.Log.Throttled("CombatSpine:tactical", ex.Message);
             }
         }
 

@@ -26,6 +26,10 @@ namespace SkaldAccessibility
         {
             if (Patches.ControllerFeedPatch.TextEntryActive()) return;
 
+            // Input edges (L1): one Debug line per watched key-down with the
+            // state and modality owners — before any handler consumes it.
+            Scaffold.Log.InputEdges();
+
             // Stop speech: / — processed before everything; the silencer is
             // sacred and works inside the review state too.
             if (Input.GetKeyDown(KeyCode.Slash))

@@ -316,7 +316,7 @@ namespace SkaldAccessibility
             }
             catch (Exception ex)
             {
-                Plugin.Logger?.LogDebug($"[CombatCursor] {ex.Message}");
+                Scaffold.Log.Throttled("CombatCursor", ex.Message);
             }
         }
 
@@ -827,6 +827,8 @@ namespace SkaldAccessibility
                     // failed hover recompute leaves the previous course in
                     // place — the destination check is the guard, review
                     // find 1).
+                    Scaffold.Log.Debug("Compose",
+                        $"path absent ({tx},{ty}) — no course at tile after recompute");
                     if (occ == null && B(Seams.MapTile_isPassable, tile) && !B(Seams.MapTile_isWater, tile))
                         return ", no path";
                     return "";

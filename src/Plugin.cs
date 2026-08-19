@@ -50,6 +50,9 @@ namespace SkaldAccessibility
                 // POI list: close-on-use opt-in (default: persistent list,
                 // owner ruling 2026-08-19).
                 OverlandCursor.BindConfig(Config);
+                // Diagnosability scaffold: per-channel debug gating (owner
+                // directive 2026-08-19).
+                Scaffold.Log.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own
@@ -75,6 +78,17 @@ namespace SkaldAccessibility
                 // The audit receipt: every missing row logged, one spoken line
                 // if anything is gone ("N game hooks missing after an update").
                 Seams.Report();
+
+                // Build identity (L4): two logs of the same version string
+                // proved to be different builds in the Opus review — the DLL
+                // write time disambiguates without any build machinery.
+                try
+                {
+                    var loc = Assembly.GetExecutingAssembly().Location;
+                    Logger.LogInfo($"[Build] v{Version} dll={System.IO.File.GetLastWriteTime(loc):yyyy-MM-dd'T'HH:mm:ss} "
+                        + $"session={DateTime.Now:yyyy-MM-dd'T'HH:mm:ss}");
+                }
+                catch { }
             }
             catch (Exception e)
             {
@@ -105,6 +119,15 @@ namespace SkaldAccessibility
             // composition, and the speech queue pump happen here, once per frame,
             // after the game's own update has settled.
             Pump.Drain();
+            Scaffold.Log.ClockTick();   // wall-clock stamp ~every 10s (L3)
+        }
+
+        /// <summary>Session-end receipt (L9): the line's PRESENCE in a
+        /// watcher-captured log distinguishes a clean quit from a crash.</summary>
+        private void OnApplicationQuit()
+        {
+            Scaffold.Log.ClockNow();
+            Logger.LogInfo("[Session] Clean exit (OnApplicationQuit).");
         }
     }
 }

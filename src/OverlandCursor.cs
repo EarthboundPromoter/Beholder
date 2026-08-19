@@ -249,11 +249,14 @@ namespace SkaldAccessibility
                         _lastPartyX = rx; _lastPartyY = ry;
                     }
                     _announcedActive = true;
+                    Scaffold.Log.Debug("Mode", "POIList resumed");
                     Scaffold.SpeechService.SayQueued("POI list active.", "Nav");
                 }
                 else if (!active && _announcedActive)
                 {
                     _announcedActive = false;
+                    Scaffold.Log.Debug("Mode",
+                        _listOpen ? "POIList suspended" : "POIList closed (structural)");
                     Scaffold.SpeechService.SayQueued("POI list closed.", "Nav");
                 }
 
@@ -295,7 +298,7 @@ namespace SkaldAccessibility
             }
             catch (Exception ex)
             {
-                Plugin.Logger?.LogDebug($"[Cursor] {ex.Message}");
+                Scaffold.Log.Throttled("Cursor", ex.Message);
             }
         }
 
@@ -331,6 +334,9 @@ namespace SkaldAccessibility
 
             for (int i = 0; i < 5; i++)
                 _rings[i] = BuildRing(map, (Category)i, px, py);
+            Scaffold.Log.Debug("POI",
+                $"rebuild h={_rings[0].Count} n={_rings[1].Count} l={_rings[2].Count}"
+                + $" o={_rings[3].Count} x={_rings[4].Count} hadSel={hadSel}");
 
             if (!hadSel)
             {
@@ -914,6 +920,7 @@ namespace SkaldAccessibility
             _lastPartyX = px; _lastPartyY = py;
             _ringsDirty = false;       // just built
             _announcedActive = true;   // the explicit open IS the on edge
+            Scaffold.Log.Debug("Mode", "POIList opened (K)");
             Scaffold.SpeechService.Say("POI list active. " + string.Join(", ", census.ToArray()) + ".", "Nav");
         }
 
@@ -1065,6 +1072,7 @@ namespace SkaldAccessibility
             _listIdx = -1;
             _swallowTailFrame = Time.frameCount + 2;
             _announcedActive = false;   // the explicit close IS the off edge
+            Scaffold.Log.Debug("Mode", "POIList closed (explicit)");
             if (announce) Scaffold.SpeechService.Say("POI list closed.", "Nav");
         }
 

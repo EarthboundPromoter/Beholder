@@ -31,7 +31,13 @@ namespace SkaldAccessibility.Scaffold
         {
             public string Text;
             public string Source;
+            public int Id;      // monotonic send id — queue/flush pairing is
+                                // exact in the log even for duplicate text (L8)
         }
+
+        private static int _seq;
+        private static int _lastEmitId;
+        private static int _lastEmitFrame = int.MinValue;
 
         private static bool _loaded;
         private static bool _available;
@@ -125,8 +131,9 @@ namespace SkaldAccessibility.Scaffold
                 Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] (event, coalesced to overflow) {text}");
                 return;
             }
-            Queue.Enqueue(new Pending { Text = text, Source = source });
-            Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] (event) {text}");
+            int id = ++_seq;
+            Queue.Enqueue(new Pending { Text = text, Source = source, Id = id });
+            Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] #{id} (event) {text}");
         }
 
         /// <summary>Pump the queue: speak the next queued announcement once the reader is free.</summary>
@@ -136,7 +143,7 @@ namespace SkaldAccessibility.Scaffold
             // the queue has room (compress, don't curate — applied to delivery).
             if (_eventOverflow != null && Queue.Count < 20)
             {
-                Queue.Enqueue(new Pending { Text = _eventOverflow, Source = "CombatEvent" });
+                Queue.Enqueue(new Pending { Text = _eventOverflow, Source = "CombatEvent", Id = ++_seq });
                 _eventOverflow = null;
             }
             if (Queue.Count == 0) return;
@@ -147,7 +154,7 @@ namespace SkaldAccessibility.Scaffold
             }
             catch { }
             var next = Queue.Dequeue();
-            Emit(next.Text, interrupt: false, next.Source);
+            Emit(next.Text, interrupt: false, next.Source, next.Id);
         }
 
         /// <summary>Convenience: immediate (interrupting) speech — this codebase's
@@ -191,8 +198,9 @@ namespace SkaldAccessibility.Scaffold
                     return;
                 }
                 _lastQueued = text;
-                Queue.Enqueue(new Pending { Text = text, Source = source });
-                Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] (queued) {text}");
+                int id = ++_seq;
+                Queue.Enqueue(new Pending { Text = text, Source = source, Id = id });
+                Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] #{id} (queued) {text}");
             }
         }
 
@@ -295,7 +303,7 @@ namespace SkaldAccessibility.Scaffold
             try { if (_loaded) Tolk.Tolk_Silence(); } catch { }
         }
 
-        private static void Emit(string text, bool interrupt, string source)
+        private static void Emit(string text, bool interrupt, string source, int id = -1)
         {
             _lastSpokeAt = Time.unscaledTime;
             History.Add(text);
@@ -303,7 +311,20 @@ namespace SkaldAccessibility.Scaffold
                 History.RemoveRange(0, History.Count - HistoryCapacity);
             _historyCursor = -1; // new speech returns the browse cursor to the live end
 
-            Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] {text}");
+            if (id < 0) id = ++_seq;
+            // Interrupt disposition (L2): whether this send cut an utterance
+            // that was still speaking, and how old the previous send was —
+            // stomp RISK becomes stomp FACT in the log.
+            string disposition = "";
+            if (interrupt && _lastEmitId > 0)
+            {
+                bool cut = false;
+                try { cut = _loaded && Tolk.Tolk_IsSpeaking(); } catch { }
+                disposition = $" (interrupt, prev #{_lastEmitId} +{Time.frameCount - _lastEmitFrame}f{(cut ? ", cut" : "")})";
+            }
+            Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] #{id}{disposition} {text}");
+            _lastEmitId = id;
+            _lastEmitFrame = Time.frameCount;
             try
             {
                 if (_loaded) Tolk.Tolk_Output(text, interrupt);

@@ -252,7 +252,11 @@ namespace SkaldAccessibility
         //      selection line so "Maneuver Abilities. Cleave, 1 of 5" arrives
         //      as one utterance. Latest wins; consumed on speak. ----
         private static string _pendingZoneLabel;
-        public static void NoteZoneLabel(string label) => _pendingZoneLabel = label;
+        public static void NoteZoneLabel(string label)
+        {
+            _pendingZoneLabel = label;
+            Scaffold.Log.Debug("Mode", $"zone={label}");   // L7: zone truth, one grep
+        }
 
         // Overland status strip: first value after a state transition settles
         // silently (owner ruling 2026-08-17 — quiet on load).
@@ -416,56 +420,56 @@ namespace SkaldAccessibility
             _filterSpokeThisFrame = false;
 
             try { DrainState(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:state] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:state", ex.Message); }
 
             try { DrainPopup(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:popup] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:popup", ex.Message); }
 
             try { DrainPoints(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:points] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:points", ex.Message); }
 
             try { DrainContent(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:content] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:content", ex.Message); }
 
             try { DrainTooltipDismiss(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:tipclear] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:tipclear", ex.Message); }
 
             try { DrainCanvasSwitch(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:canvas] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:canvas", ex.Message); }
 
             try { DrainFilterChange(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:filter] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:filter", ex.Message); }
 
             try { DrainSelection(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:sel] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:sel", ex.Message); }
 
             try { DrainInventoryHover(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:invhover] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:invhover", ex.Message); }
 
             try { DrainEdge(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:edge] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:edge", ex.Message); }
 
             try { DrainSliderValue(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:slider] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:slider", ex.Message); }
 
             try { DrainSliderArrowFlip(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:flip] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:flip", ex.Message); }
 
             try { DrainEditorFlip(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:editorflip] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:editorflip", ex.Message); }
 
             try { DrainListSelection(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:listsel] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:listsel", ex.Message); }
 
             try { DrainTravel(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:travel] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:travel", ex.Message); }
 
             // CP3 combat cursor: the deferred landing line speaks from settled
             // truth (the game's update re-hovered and recomputed the course
             // since the nudge). Before the spine so a landing interrupt lands
             // ahead of the same frame's queued combat cues.
             try { CombatCursor.DrainSpeak(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:ccursor] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:ccursor", ex.Message); }
 
             // CP1 turn spine: before DrainCombatLog so a turn boundary always
             // precedes that turn's own log narration (and can steal a pending
@@ -473,24 +477,24 @@ namespace SkaldAccessibility
             // ruling). The native "Round N" primaryHeader spoke in
             // DrainContent above — round-line-then-turn-line by construction.
             try { CombatSpine.Drain(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:spine] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:spine", ex.Message); }
 
             try { DrainCombatLog(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:combat] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:combat", ex.Message); }
 
             // Tactical flashes with no log event this frame (Cascade's only
             // channel) — a no-op when the composer already spoke them.
             try { CombatSpine.SpeakOrphanTactical(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:tactical] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:tactical", ex.Message); }
 
             try { DrainBarks(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:bark] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:bark", ex.Message); }
 
             try { ReviewLayer.MaintainFromDrain(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:review] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:review", ex.Message); }
 
             try { Scaffold.SpeechService.Tick(); }
-            catch (Exception ex) { Plugin.Logger?.LogDebug($"[Pump:speech] {ex.Message}"); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:speech", ex.Message); }
         }
 
         /// <summary>The top-of-stack watch: announce whenever the game's own
@@ -1916,6 +1920,8 @@ namespace SkaldAccessibility
             string name = state.GetType().Name;
             if (name == _lastStateName) return;
             _lastStateName = name;
+            Scaffold.Log.ClockNow();        // wall time on every transition (L3)
+            Scaffold.Log.HealthRollup();    // seam failures since last rollup (L5)
 
             // Locality hold window (owner ruling 2026-08-17). Entering the
             // scene family also RECLAIMS furniture already sitting in the
