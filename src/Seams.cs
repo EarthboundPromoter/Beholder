@@ -57,6 +57,27 @@ namespace SkaldAccessibility
         internal static Type BarkType;                     // BarkControl+Bark (non-public nested)
         internal static Type UITextSliderControlType;
 
+        // ---- Crafting feedback package (owner rulings 2026-08-19) ----
+        internal static Type CraftingStateType;
+        internal static MethodInfo CraftingState_interactMain;      // whole-stack party→bench (the only single paths)
+        internal static MethodInfo CraftingState_interactSecondary; // whole-stack bench→party
+        internal static MethodInfo CraftingState_clearWorkbench;    // button, exit, AND recipe-click all clear
+        internal static FieldInfo CraftingState_workbenchInventory; // = the target tile's inventory
+        internal static Type CampActivityStateType;
+        internal static MethodInfo CampState_interactMain;          // ONE item party→pot
+        internal static MethodInfo CampState_interactSecondary;     // ONE item pot→party
+        internal static MethodInfo DataControl_getCraftingControl;
+        internal static MethodInfo CraftingControl_craft;            // returns null on failure — the diagnosis hook
+        internal static MethodInfo CraftingControl_getCurrentRecipeFullDescription;
+        internal static MethodInfo CraftingControl_transferItemsFromPartyToWorkbench; // recipe-click bulk
+        internal static MethodInfo Inventory_printCountList;         // "Name (n)" per distinct name / "Empty"
+        internal static MethodInfo Inventory_getCurrentItemNameAndAmount;
+        internal static MethodInfo Inventory_getCurrentObject;
+        internal static Type ItemFoodType;
+        internal static MethodInfo ItemFood_getFoodValue;
+        internal static MethodInfo InvBaseState_getMainInventory;    // current PC's bag
+        internal static MethodInfo InvBaseState_getSecondaryInventory; // virtual — bench / cookingPot per state
+
         // ---- Camp package (owner rulings 2026-08-19) ----
         internal static Type UIInventorySheetCampingFoodType;
         internal static FieldInfo InvSheetCamp_activities;   // the member/activity slider column
@@ -935,6 +956,30 @@ namespace SkaldAccessibility
             // sheet's two mouse islands — the workstation grid and the
             // Craft/Clear technical row (AXBY-no-numbers: mouse or controller
             // A/X only in the shipped game).
+            // Crafting feedback package (owner rulings 2026-08-19)
+            CraftingStateType = T("CraftingState");
+            CraftingState_interactMain = M(CraftingStateType, "CraftingState", "interactWithCurrentItemFromMainInventory");
+            CraftingState_interactSecondary = M(CraftingStateType, "CraftingState", "interactWithCurrentItemFromSecondaryInventory");
+            CraftingState_clearWorkbench = M(CraftingStateType, "CraftingState", "clearWorkbench");
+            CraftingState_workbenchInventory = F(CraftingStateType, "CraftingState", "workbenchInventory");
+            CampActivityStateType = T("CampActivityState");
+            CampState_interactMain = M(CampActivityStateType, "CampActivityState", "interactWithCurrentItemFromMainInventory");
+            CampState_interactSecondary = M(CampActivityStateType, "CampActivityState", "interactWithCurrentItemFromSecondaryInventory");
+            DataControl_getCraftingControl = M(DataControlType, "DataControl", "getCraftingControl");
+            var craftingControlType = T("CraftingControl");
+            CraftingControl_craft = M(craftingControlType, "CraftingControl", "craft");
+            CraftingControl_getCurrentRecipeFullDescription
+                = M(craftingControlType, "CraftingControl", "getCurrentRecipeFullDescription");
+            CraftingControl_transferItemsFromPartyToWorkbench
+                = M(craftingControlType, "CraftingControl", "transferItemsFromPartyToWorkbench");
+            Inventory_printCountList = M(InventoryType, "Inventory", "printCountList");
+            Inventory_getCurrentItemNameAndAmount = M(InventoryType, "Inventory", "getCurrentItemNameAndAmount");
+            Inventory_getCurrentObject = M(InventoryType, "Inventory", "getCurrentObject");
+            ItemFoodType = T("ItemFood");
+            ItemFood_getFoodValue = M(ItemFoodType, "ItemFood", "getFoodValue");
+            InvBaseState_getMainInventory = M(T("InventoryBaseState"), "InventoryBaseState", "getMainInventory");
+            InvBaseState_getSecondaryInventory = M(T("InventoryBaseState"), "InventoryBaseState", "getSecondaryInventory");
+
             // Camp package (owner rulings 2026-08-19)
             UIInventorySheetCampingFoodType = T("UIInventorySheetCampingFood");
             InvSheetCamp_activities = F(UIInventorySheetCampingFoodType, "UIInventorySheetCampingFood", "activities");

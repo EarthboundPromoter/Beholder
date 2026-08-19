@@ -198,7 +198,7 @@ namespace SkaldAccessibility.Patches
                         // Native flip minus→plus first; at plus, cross (the
                         // native crossing exists but is silent).
                         if (CanFlip(activities, Seams.TextSlider_canScrollRight)) return true;
-                        EnterGrid(gui, sheet, party, column: 0, "Party's Food.");
+                        EnterGrid(gui, sheet, party, column: 0, "Party's Food");
                         return false;
                     }
                     if (CanFlip(activities, Seams.TextSlider_canScrollLeft)) return true;
@@ -216,7 +216,7 @@ namespace SkaldAccessibility.Patches
                         Claim();
                         SetIndex(sheet, 0);
                         Snap(gui, sheet);
-                        Scaffold.SpeechService.Say("Activities.", "Nav");
+                        Pump.NoteZoneLabel("Activities"); // one utterance with the landing
                         Pump.NoteSelection(sheet); // composes "Name: Activity" via the slider path
                         return false;
                     }
@@ -233,7 +233,7 @@ namespace SkaldAccessibility.Patches
                     int col = Column(pot);
                     if (dir < 0 && col <= 0)
                     {
-                        EnterGrid(gui, sheet, party, column: Width(party, 5) - 1, "Party's Food.");
+                        EnterGrid(gui, sheet, party, column: Width(party, 5) - 1, "Party's Food");
                         return false;
                     }
                     if (dir > 0 && col >= Width(pot, 5) - 1)
@@ -273,7 +273,8 @@ namespace SkaldAccessibility.Patches
             try { Seams.InvSegment_column.SetValue(pot, column); } catch { }
             SetIndex(sheet, 0);
             Snap(gui, sheet);
-            // The crossing carries the live meal readout — the game's own label.
+            // The crossing carries the live meal readout — the game's own
+            // label — riding the landed cell's line as one utterance.
             string meal = null;
             try
             {
@@ -282,8 +283,8 @@ namespace SkaldAccessibility.Patches
                 if (!string.IsNullOrWhiteSpace(raw)) meal = TextCleaner.CleanText(raw);
             }
             catch { }
-            Scaffold.SpeechService.Say(
-                string.IsNullOrWhiteSpace(meal) ? "Tonight's Meal." : $"Tonight's Meal. {meal}.", "Nav");
+            Pump.NoteZoneLabel(string.IsNullOrWhiteSpace(meal)
+                ? "Tonight's Meal" : $"Tonight's Meal. {meal}");
             Pump.NoteSelection(sheet);
         }
 
@@ -294,7 +295,7 @@ namespace SkaldAccessibility.Patches
             try { Seams.InvSegment_column.SetValue(grid, column); } catch { }
             SetIndex(sheet, 0);
             Snap(gui, sheet);
-            Scaffold.SpeechService.Say(label, "Nav");
+            Pump.NoteZoneLabel(label);
             Pump.NoteSelection(sheet);
         }
 

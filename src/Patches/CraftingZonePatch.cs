@@ -121,11 +121,13 @@ namespace SkaldAccessibility.Patches
                     int width = BenchWidth(bench);
                     if (dir < 0 && col <= 0)
                     {
-                        // Workstation → A → recipes.
+                        // Workstation → A → recipes. The label rides the
+                        // landing line (one utterance — the ride's same-frame
+                        // interrupt pairs, Opus log review 2026-08-19).
                         SetSurface(sheet, recipes);
                         Claim();
                         Snap(gui, sheet);
-                        Scaffold.SpeechService.Say("Recipes.", "Nav");
+                        Pump.NoteZoneLabel("Recipes");
                         Pump.NoteSelection(sheet);
                         return false;
                     }
@@ -159,7 +161,7 @@ namespace SkaldAccessibility.Patches
                         Claim();
                         SetIndex(sheet, 0);
                         Snap(gui, sheet);
-                        Scaffold.SpeechService.Say("Party Inventory.", "Nav");
+                        Pump.NoteZoneLabel("Party Inventory");
                         Pump.NoteSelection(sheet);
                     }
                     else MoveIndex(gui, sheet, idx + 1);
@@ -189,8 +191,8 @@ namespace SkaldAccessibility.Patches
             try { Seams.InvSegment_column.SetValue(bench, column); } catch { }
             SetIndex(sheet, 0); // top bench row — deterministic landing
             Snap(gui, sheet);
-            Scaffold.SpeechService.Say("Workstation.", "Nav");
-            Pump.NoteSelection(sheet); // the drain composes the landed cell
+            Pump.NoteZoneLabel("Workstation"); // rides the landed cell's line
+            Pump.NoteSelection(sheet);         // the drain composes the landed cell
         }
 
         private static void EnterButtons(object gui, object sheet, object buttons, int index)

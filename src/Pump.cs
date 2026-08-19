@@ -843,16 +843,57 @@ namespace SkaldAccessibility
 
             if (ReferenceEquals(segment, _invHoverSegment)
                 && row == _invHoverRow && col == _invHoverCol) return;
+            bool segmentChanged = !ReferenceEquals(segment, _invHoverSegment);
             _invHoverSegment = segment;
             _invHoverRow = row;
             _invHoverCol = col;
 
             string text = ComposeInventoryCellAt(segment, row, col);
             if (text == null) return;
+            // Panel identity (owner ruling 2026-08-19): entering a DIFFERENT
+            // grid names it — two grids on one sheet otherwise share a voice
+            // ("Workstation. Empty." vs a bare "Empty.").
+            if (segmentChanged)
+            {
+                string zone = HoverZoneLabelFor(segment);
+                if (zone != null) text = $"{zone}. {text}";
+            }
             bool arrival = _spokenCanvases.Add(segment);
             if (_filterSpokeThisFrame || (arrival && _playerNavFrame != Time.frameCount))
                 Scaffold.SpeechService.SayQueued(text, "Nav");
             else Scaffold.SpeechService.Say(text, "Nav");
+        }
+
+        /// <summary>The hovered segment's panel label, resolved by identity
+        /// against the current sheet's own grid fields (crafting and camp —
+        /// the sheets whose twin grids the owner flagged as voice-identical).
+        /// Null anywhere else.</summary>
+        private static string HoverZoneLabelFor(object segment)
+        {
+            try
+            {
+                object sheet = _selControl;
+                if (sheet == null || Seams.UIInventorySheetBaseType == null
+                    || !Seams.UIInventorySheetBaseType.IsInstanceOfType(sheet)) return null;
+                if (Seams.UIInventorySheetCraftingType != null
+                    && Seams.UIInventorySheetCraftingType.IsInstanceOfType(sheet))
+                {
+                    if (ReferenceEquals(segment, Seams.InvSheet_secondaryInventoryGrid?.GetValue(sheet)))
+                        return "Workstation";
+                    if (ReferenceEquals(segment, Seams.InvSheet_mainInventoryGrid?.GetValue(sheet)))
+                        return "Party Inventory";
+                }
+                else if (Seams.UIInventorySheetCampingFoodType != null
+                    && Seams.UIInventorySheetCampingFoodType.IsInstanceOfType(sheet))
+                {
+                    if (ReferenceEquals(segment, Seams.InvSheet_secondaryInventoryGrid?.GetValue(sheet)))
+                        return "Tonight's Meal";
+                    if (ReferenceEquals(segment, Seams.InvSheet_mainInventoryGrid?.GetValue(sheet)))
+                        return "Party's Food";
+                }
+            }
+            catch { }
+            return null;
         }
 
         /// <summary>Speak which arrow column the attribute editor's row cursor
@@ -1164,6 +1205,7 @@ namespace SkaldAccessibility
             int count = -1;
             string text = null;
             bool isCurrentListRow = false;
+            bool isAvailableRow = false;
 
             if (Seams.UIButtonControlBase_getButtonsList != null && Seams.UITextBlock_content != null)
             {
@@ -1181,6 +1223,11 @@ namespace SkaldAccessibility
                         // markup into "selected" instead of stripping it (B6).
                         string yellow = YellowTag();
                         isCurrentListRow = yellow != null && raw != null && raw.StartsWith(yellow);
+                        // Green = the game's own "available" convention (its
+                        // tutorial popup names it: recipe craftable from
+                        // stock) — transcode, never strip (2026-08-19).
+                        string green = GreenTag();
+                        isAvailableRow = green != null && raw != null && raw.StartsWith(green);
                         if (!string.IsNullOrWhiteSpace(raw) && raw != " ")
                         {
                             string cleaned = Patches.TextCleaner.CleanText(raw);
@@ -1311,6 +1358,7 @@ namespace SkaldAccessibility
 
             if (numericClass) return $"{index + 1}: {GameStateTracker.TranscodeQuickLabel(text, index, CurrentStateObject())}";
             if (isCurrentListRow) text = $"{text}, selected";
+            if (isAvailableRow) text = $"{text}, available";
             if (count > 1) return $"{text}, {index + 1} of {count}";
             return text;
         }
@@ -1670,6 +1718,14 @@ namespace SkaldAccessibility
         /// C64Color.YELLOW_TAG via the Seams handle (colors load with game
         /// data; composition only runs post-ready, so the lazy value read is
         /// safe here — never at Awake).</summary>
+        private static string _greenTag;
+        private static string GreenTag()
+        {
+            if (_greenTag != null) return _greenTag.Length == 0 ? null : _greenTag;
+            _greenTag = Seams.TagValue(Seams.C64_GreenLightTag) ?? "";
+            return _greenTag.Length == 0 ? null : _greenTag;
+        }
+
         private static string YellowTag()
         {
             if (_yellowTag != null) return _yellowTag.Length == 0 ? null : _yellowTag;
