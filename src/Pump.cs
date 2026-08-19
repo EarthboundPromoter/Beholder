@@ -1858,7 +1858,8 @@ namespace SkaldAccessibility
             DialogueCursor.OnStateTransition(); // text mode dies with its scene
             PanelPolicy.OnStateTransition();    // fact differ re-seeds: first strip
                                                 // in a new state settles silently (B7)
-            OverlandCursor.OnStateTransition(); // neither does the cursor or its list
+            OverlandCursor.OnStateTransition(); // cursor hold drops; the POI list
+                                                // suspends (combat force-closes it)
             CombatCursor.OnStateTransition();   // survives intra-combat churn, dies on leaving the family
             Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone
             Patches.MouseGuardPatch.OnStateTransition();    // nor a snap latch

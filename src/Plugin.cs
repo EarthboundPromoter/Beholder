@@ -47,6 +47,9 @@ namespace SkaldAccessibility
                 // TP1: the panel policy — AutoReadBody plus the strip's
                 // per-fact toggles (weather/phase on, clock/position off).
                 PanelPolicy.BindConfig(Config);
+                // POI list: close-on-use opt-in (default: persistent list,
+                // owner ruling 2026-08-19).
+                OverlandCursor.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own

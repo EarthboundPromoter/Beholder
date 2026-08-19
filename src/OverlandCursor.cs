@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using BepInEx.Configuration;
 using UnityEngine;
 
 namespace SkaldAccessibility
@@ -27,8 +28,21 @@ namespace SkaldAccessibility
     /// testLineOfSight — overland the party occupies one tile).
     ///
     /// Composition is lazy at keypress; nothing is cached but two ints and
-    /// the frozen list rings. All game reads are the side-effect-safe set
+    /// the list rings. All game reads are the side-effect-safe set
     /// (never setSpotted, never getAccessibleTilesFromParty, never getParty).
+    ///
+    /// The POI list (owner redesign 2026-08-19): persistent and DYNAMIC.
+    /// It survives interactions; it suspends (never dies) when a popup or a
+    /// non-overland state takes over, announcing every on/off edge ("POI
+    /// list active." / "POI list closed."), and resumes on return to
+    /// overland with rings rebuilt from live truth and the selection
+    /// re-anchored by identity. Combat is the one force-close (deployment
+    /// needs the free mouse). Rings rebuild on the game's own mutation
+    /// clock — the step commit plus player action keys — never on a timer.
+    /// Ring membership mirrors the renderer: the removed-prop gate
+    /// (shouldBeRemovedFromGame, the picked-up-item fix), hidden, undrawn.
+    /// Unlocked empty containers carry ", empty" and sink to the ring tail.
+    /// P re-anchors the cursor on the party tile from any overland context.
     /// </summary>
     public static class OverlandCursor
     {
@@ -41,6 +55,16 @@ namespace SkaldAccessibility
             public string Label;
             public object Tracked;   // Character instance for People rings (beacon follows it)
             public int Dist;
+            public bool Deprioritized;   // empty containers: ring tail regardless of distance
+        }
+
+        private static ConfigEntry<bool> _cfgCloseOnUse;
+
+        internal static void BindConfig(ConfigFile config)
+        {
+            _cfgCloseOnUse = config.Bind("Overland", "POIListCloseOnUse", false,
+                "Close the POI list every time Z activates an entry (default: the list stays open and "
+                + "suspends/resumes around whatever the interaction opens).");
         }
 
         // ---- Cursor state (two ints + a held flag; the latch re-asserts) ----
@@ -52,26 +76,41 @@ namespace SkaldAccessibility
         /// held — the general mouse guard defers to it.</summary>
         internal static bool HoldsMouse => _held;
 
-        // ---- Scan state (the cursor position IS the ring position; only the
-        //      last-used category persists, for P-reverse) ----
-        private static int _lastScanCategory = -1;
-
-        // ---- List state ----
+        // ---- List state (the POI list: persistent, dynamic) ----
         private static bool _listOpen;
-        private static List<Entry>[] _rings;    // frozen at open
+        private static List<Entry>[] _rings;    // rebuilt on the step/action clock
         private static int _listCat;
         private static int _listIdx = -1;
         private static int _lastPartyX = int.MinValue, _lastPartyY = int.MinValue;
         private static int _swallowTailFrame = -1;
+        private static int _rebuildFrame = -1;      // action keys schedule a next-frame rebuild
+        private static bool _announcedActive;       // the on/off edge announcer's memory
+        private static int _activeFrame = -1;       // frame-stamped modality cache (predicates
+        private static bool _activeCache;           // may run before Tick in a frame)
 
         public static bool ListOpen => _listOpen;
 
+        /// <summary>The list is open AND owns input right now — overland, no
+        /// popup over it. While suspended, every key predicate stands down so
+        /// popups and other states keep their native input.</summary>
+        private static bool ActiveNow()
+        {
+            if (Time.frameCount != _activeFrame)
+            {
+                _activeFrame = Time.frameCount;
+                _activeCache = _listOpen && InOverland() && CurrentMap() != null && !PopupUp();
+            }
+            return _activeCache;
+        }
+
         /// <summary>Choke-point predicate (extends the review swallow): keys
-        /// the game must not see while the list is open (or in the closing
-        /// press's tail). Arrows browse the list; Esc/Backspace close it.</summary>
+        /// the game must not see while the list is ACTIVE (or in the closing
+        /// press's tail). Arrows browse the list; Esc/Backspace close it.
+        /// A suspended list swallows nothing — the popup or state over it
+        /// owns those keys natively.</summary>
         public static bool ShouldSwallowKey(KeyCode key)
         {
-            if (!_listOpen && Time.frameCount > _swallowTailFrame) return false;
+            if (!(Time.frameCount <= _swallowTailFrame || (_listOpen && ActiveNow()))) return false;
             switch (key)
             {
                 case KeyCode.UpArrow:
@@ -88,10 +127,11 @@ namespace SkaldAccessibility
         }
 
         /// <summary>Backspace must not fire the emulated B button while the
-        /// list is open (consulted by ControllerFeedPatch). Z and X stay LIVE
-        /// — native click semantics are the point.</summary>
+        /// list is ACTIVE (consulted by ControllerFeedPatch). Z and X stay
+        /// LIVE — native click semantics are the point. A suspended list
+        /// yields B back to the popup over it.</summary>
         public static bool SuppressButtonB()
-            => _listOpen || Time.frameCount <= _swallowTailFrame;
+            => (_listOpen && ActiveNow()) || Time.frameCount <= _swallowTailFrame;
 
         // ---- Game-truth reads ----
 
@@ -161,43 +201,113 @@ namespace SkaldAccessibility
 
         // ---- The latch ----
 
-        /// <summary>Called from Plugin.Update every frame (A3: must stay in
-        /// Update so a same-frame Z clicks the new tile). Re-asserts the
-        /// virtual mouse onto the held tile; suspended while a popup is up, a
-        /// selector grid is open, or we've left the overland state; resets on
-        /// map change; runs the list beacon.</summary>
+        /// <summary>Called from Plugin.Update every frame in EVERY state (A3:
+        /// must stay in Update so a same-frame Z clicks the new tile).
+        /// Runs the POI list's modality edges (suspend/resume announcing),
+        /// the dynamic ring rebuilds on the step/action clock, the beacon,
+        /// and the mouse latch; resets on map change.</summary>
         public static void Tick()
         {
             try
             {
-                if (!InOverland()) return;
-                object map = CurrentMap();
-                if (map == null) return;
+                bool inOverland = InOverland();
+                object map = inOverland ? CurrentMap() : null;
 
-                if (!ReferenceEquals(map, _lastMap))
+                if (map != null && !ReferenceEquals(map, _lastMap))
                 {
                     _lastMap = map;
-                    Drop();       // new map: cursor and list reset silently
-                    return;
+                    Drop();       // new map: cursor and list reset (the edge below announces)
                 }
 
-                if (!_held) return;
+                // ---- Modality edges (run in every state) ----
+                bool active = _listOpen && map != null && !PopupUp();
+                _activeFrame = Time.frameCount;
+                _activeCache = active;
+                if (active && !_announcedActive)
+                {
+                    // Resume from an excursion: fresh truth, silent re-anchor,
+                    // one announcement. (Explicit K opens announce for
+                    // themselves and pre-set the flag — they never land here.)
+                    if (PartyPos(map, out int rx, out int ry))
+                    {
+                        RebuildRings(map, rx, ry);
+                        _lastPartyX = rx; _lastPartyY = ry;
+                    }
+                    _announcedActive = true;
+                    Scaffold.SpeechService.SayQueued("POI list active.", "Nav");
+                }
+                else if (!active && _announcedActive)
+                {
+                    _announcedActive = false;
+                    Scaffold.SpeechService.SayQueued("POI list closed.", "Nav");
+                }
+
+                if (map == null) return;
                 if (PopupUp() || Patches.GridNavigationPatch.GridActive()) return;
 
-                // Beacon: party moved while the list is tracking an entity.
-                if (_listOpen && _listIdx >= 0 && PartyPos(map, out int px, out int py))
+                // ---- Dynamic rebuild + beacon (list open, overland, unobstructed) ----
+                if (_listOpen && PartyPos(map, out int px, out int py))
                 {
-                    if ((_lastPartyX != px || _lastPartyY != py) && _lastPartyX != int.MinValue)
-                        SpeakBeacon(map, px, py);
+                    // Action keys schedule a next-frame rebuild: the world only
+                    // mutates on player actions (step commits, bump interacts,
+                    // clicks) — there is nothing to poll between them.
+                    if (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.X)
+                        || Input.GetKeyDown(KeyCode.Space)
+                        || Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.A)
+                        || Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.D))
+                        _rebuildFrame = Time.frameCount + 1;
+
+                    bool moved = (_lastPartyX != px || _lastPartyY != py) && _lastPartyX != int.MinValue;
+                    if (moved || Time.frameCount == _rebuildFrame)
+                    {
+                        RebuildRings(map, px, py);
+                        // Beacon: party stepped while an entity is landed.
+                        if (moved && _listIdx >= 0) SpeakBeacon(map, px, py);
+                    }
                     _lastPartyX = px; _lastPartyY = py;
                 }
 
+                if (!_held) return;
                 AssertMouse(map);
             }
             catch (Exception ex)
             {
                 Plugin.Logger?.LogDebug($"[Cursor] {ex.Message}");
             }
+        }
+
+        /// <summary>Rebuild all five rings from live map truth and re-anchor
+        /// the selection by identity — tracked reference first, tile
+        /// coordinates second (props are tile-fixed; labels may legitimately
+        /// change, e.g. a chest gaining ", empty"). A vanished selection goes
+        /// to -1 (unbrowsed): the next arrow starts from the top. Silent by
+        /// design — additions and removals never speak (noise ruling).</summary>
+        private static void RebuildRings(object map, int px, int py)
+        {
+            if (_rings == null) return;
+            object trackedSel = null;
+            int selX = 0, selY = 0;
+            bool hadSel = _listIdx >= 0 && _listIdx < _rings[_listCat].Count;
+            if (hadSel)
+            {
+                var s = _rings[_listCat][_listIdx];
+                trackedSel = s.Tracked;
+                selX = s.X; selY = s.Y;
+            }
+
+            for (int i = 0; i < 5; i++)
+                _rings[i] = BuildRing(map, (Category)i, px, py);
+
+            if (!hadSel)
+            {
+                if (_listIdx >= _rings[_listCat].Count) _listIdx = -1;
+                return;
+            }
+            var ring = _rings[_listCat];
+            int found = trackedSel != null
+                ? ring.FindIndex(e => ReferenceEquals(e.Tracked, trackedSel))
+                : ring.FindIndex(e => e.Tracked == null && e.X == selX && e.Y == selY);
+            _listIdx = found;
         }
 
         /// <summary>Compute the held tile's virtual-screen center and set the
@@ -246,11 +356,22 @@ namespace SkaldAccessibility
             CloseListSilent();
         }
 
-        /// <summary>Force-clear from the state clock — the cursor never
-        /// survives a state transition (combat launch, menus, scenes).</summary>
+        /// <summary>From the state clock. The cursor hold never survives a
+        /// transition (the latch must not fight the new state's mouse). The
+        /// POI list survives SUSPENDED through non-combat excursions
+        /// (dialogue, sheets, menus) and resumes when overland returns;
+        /// combat force-closes it — deployment needs the free mouse (owner
+        /// ruling 2026-08-19). Tick's edge announcer speaks both cases.</summary>
         public static void OnStateTransition()
         {
-            Drop();
+            _held = false;
+            try
+            {
+                object state = Pump.CurrentStateObject();
+                if (state != null && state.GetType().Name.StartsWith("Combat"))
+                    CloseListSilent();
+            }
+            catch { }
         }
 
         // ---- Input (called from InputHandler after the review layer) ----
@@ -280,9 +401,24 @@ namespace SkaldAccessibility
             if (Input.GetKeyDown(KeyCode.B)) { Scan(map, Category.Loot); return true; }
             if (Input.GetKeyDown(KeyCode.O)) { Scan(map, Category.Objects); return true; }
             if (Input.GetKeyDown(KeyCode.M)) { Scan(map, Category.Exits); return true; }
-            if (Input.GetKeyDown(KeyCode.P)) { ScanReverse(map); return true; }
+            if (Input.GetKeyDown(KeyCode.P)) { Recenter(map); return true; }
 
             return false;
+        }
+
+        /// <summary>P: re-anchor the cursor on the party tile from any
+        /// overland context (owner ruling 2026-08-19, replacing the reverse
+        /// scan). Works with the list open — the cursor moves, the list and
+        /// its selection stay; the next arrow resumes browsing.</summary>
+        private static void Recenter(object map)
+        {
+            ClearTooltip();
+            if (!PartyPos(map, out int px, out int py)) return;
+            _held = true;
+            _tileX = px;
+            _tileY = py;
+            AssertMouse(map);
+            SpeakTile(map, px, py, px, py, null);
         }
 
         // ---- Nudge ----
@@ -371,14 +507,17 @@ namespace SkaldAccessibility
                 return string.IsNullOrWhiteSpace(vn) ? "Ship" : vn;
             }
 
-            object prop = null;
-            try { prop = Seams.MapTile_getPropOrGuestProp?.Invoke(tile, null); } catch { }
-            if (prop != null && !B(Seams.Prop_isHidden, prop) && !B(Seams.Prop_shouldNotBeDrawn, prop))
+            object prop = PropAt(tile);
+            if (prop != null)
             {
                 string pn = Patches.TextCleaner.CleanText(S(Seams.SkaldBaseObject_getName, prop) ?? "");
                 string verb = S(Seams.MapTile_getVerb, tile);
                 if (!string.IsNullOrWhiteSpace(pn))
-                    return string.IsNullOrWhiteSpace(verb) ? pn : pn + ", " + Patches.TextCleaner.CleanText(verb);
+                {
+                    string label = string.IsNullOrWhiteSpace(verb) ? pn : pn + ", " + Patches.TextCleaner.CleanText(verb);
+                    if (IsEmptyContainer(tile, prop)) label += ", empty";
+                    return label;
+                }
             }
 
             if (GroundItems(tile)) return "Items";
@@ -500,7 +639,17 @@ namespace SkaldAccessibility
                         {
                             object prop = PropAt(tile);
                             if (prop != null && (IsType(prop, Seams.PropContType) || IsType(prop, Seams.PropPickupType)))
-                                ring.Add(PropEntry(tile, prop, tx, ty, dist));
+                            {
+                                var pe = PropEntry(tile, prop, tx, ty, dist);
+                                if (IsEmptyContainer(tile, prop))
+                                {
+                                    // Pure QoL (owner ruling 2026-08-19): looted
+                                    // containers are labeled and sink to the tail.
+                                    pe.Label += ", empty";
+                                    pe.Deprioritized = true;
+                                }
+                                ring.Add(pe);
+                            }
                             else if (GroundItems(tile))
                                 ring.Add(new Entry { X = tx, Y = ty, Label = "Items", Dist = dist });
                             break;
@@ -544,7 +693,8 @@ namespace SkaldAccessibility
             }
 
             if (cat == Category.Exits) AddEdgeExits(map, ring, vx, vy, px, py);
-            ring.Sort((a, b) => a.Dist != b.Dist ? a.Dist - b.Dist : (a.Y != b.Y ? b.Y - a.Y : a.X - b.X));
+            ring.Sort((a, b) => a.Deprioritized != b.Deprioritized ? (a.Deprioritized ? 1 : -1)
+                : a.Dist != b.Dist ? a.Dist - b.Dist : (a.Y != b.Y ? b.Y - a.Y : a.X - b.X));
             if (unseenTail.Count > 0)
             {
                 unseenTail.Sort((a, b) => a.Dist - b.Dist);
@@ -598,16 +748,38 @@ namespace SkaldAccessibility
             if (found) ring.Add(best);
         }
 
+        /// <summary>The renderer's full prop gate (MapIllustrator.drawProps):
+        /// removed-from-game (a picked-up PropPickup stays referenced by its
+        /// tile forever — only this flag marks it dead), hidden, undrawn.</summary>
         private static object PropAt(object tile)
         {
             try
             {
                 object prop = Seams.MapTile_getPropOrGuestProp?.Invoke(tile, null);
                 if (prop == null) return null;
+                if (B(Seams.Prop_shouldBeRemovedFromGame, prop)) return null;
                 if (B(Seams.Prop_isHidden, prop) || B(Seams.Prop_shouldNotBeDrawn, prop)) return null;
                 return prop;
             }
             catch { return null; }
+        }
+
+        /// <summary>An unlocked container with nothing left to take. Loot
+        /// loadouts land in the TILE inventory at prop placement, so
+        /// emptiness is authoritative from map creation. Locked containers
+        /// never report empty — the lock hides the contents from sighted
+        /// players too (owner ruling 2026-08-19).</summary>
+        private static bool IsEmptyContainer(object tile, object prop)
+        {
+            try
+            {
+                if (!IsType(prop, Seams.PropContType)) return false;
+                if (B(Seams.PropLockable_isLocked, prop)) return false;
+                object inv = Seams.MapTile_getInventory?.Invoke(tile, null);
+                return inv != null && Seams.Inventory_isEmpty != null
+                    && (bool)Seams.Inventory_isEmpty.Invoke(inv, null);
+            }
+            catch { return false; }
         }
 
         private static Entry PropEntry(object tile, object prop, int tx, int ty, int dist)
@@ -623,7 +795,6 @@ namespace SkaldAccessibility
         private static void Scan(object map, Category cat)
         {
             ClearTooltip();
-            _lastScanCategory = (int)cat;
             if (!PartyPos(map, out int px, out int py)) return;
             var ring = BuildRing(map, cat, px, py);
             if (ring.Count == 0)
@@ -634,22 +805,6 @@ namespace SkaldAccessibility
             int at = _held ? ring.FindIndex(e => e.X == _tileX && e.Y == _tileY) : -1;
             int next = at < 0 ? 0 : (at + 1) % ring.Count;
             JumpTo(map, ring[next], next, ring.Count, px, py);
-        }
-
-        private static void ScanReverse(object map)
-        {
-            if (_lastScanCategory < 0) return;
-            ClearTooltip();
-            if (!PartyPos(map, out int px, out int py)) return;
-            var ring = BuildRing(map, (Category)_lastScanCategory, px, py);
-            if (ring.Count == 0)
-            {
-                Scaffold.SpeechService.Say($"No {CategoryNames[_lastScanCategory]}.", "Nav");
-                return;
-            }
-            int at = _held ? ring.FindIndex(e => e.X == _tileX && e.Y == _tileY) : -1;
-            int prev = at < 0 ? 0 : (at - 1 + ring.Count) % ring.Count;
-            JumpTo(map, ring[prev], prev, ring.Count, px, py);
         }
 
         private static void JumpTo(object map, Entry e, int index, int count, int px, int py)
@@ -697,7 +852,8 @@ namespace SkaldAccessibility
             _listCat = 0;
             while (_listCat < 4 && _rings[_listCat].Count == 0) _listCat++;
             _lastPartyX = px; _lastPartyY = py;
-            Scaffold.SpeechService.Say("List: " + string.Join(", ", census.ToArray()) + ".", "Nav");
+            _announcedActive = true;   // the explicit open IS the on edge
+            Scaffold.SpeechService.Say("POI list active. " + string.Join(", ", census.ToArray()) + ".", "Nav");
         }
 
         private static bool ProcessListInput(object map)
@@ -709,12 +865,17 @@ namespace SkaldAccessibility
                 return true;
             }
 
-            // Z: close silently and let the NATIVE click fire on the landed
-            // tile (the mouse is there by construction — no eat, by design).
+            // Z: let the NATIVE click fire on the landed tile (the mouse is
+            // there by construction — no eat, by design). The list STAYS OPEN
+            // (owner redesign 2026-08-19): if the click mounts a popup or a
+            // state, the modality edge suspends it and resumes it after;
+            // otherwise a next-frame rebuild absorbs whatever the click
+            // changed. POIListCloseOnUse restores the old close-per-use.
             if (Input.GetKeyDown(KeyCode.Z))
             {
                 ClearTooltip();
-                CloseListSilent();
+                if (_cfgCloseOnUse != null && _cfgCloseOnUse.Value) CloseList(announce: true);
+                else _rebuildFrame = Time.frameCount + 1;
                 return false;
             }
 
@@ -819,9 +980,13 @@ namespace SkaldAccessibility
             _rings = null;
             _listIdx = -1;
             _swallowTailFrame = Time.frameCount + 2;
-            if (announce) Scaffold.SpeechService.Say("Closed.", "Nav");
+            _announcedActive = false;   // the explicit close IS the off edge
+            if (announce) Scaffold.SpeechService.Say("POI list closed.", "Nav");
         }
 
+        /// <summary>Silent structural close (map change, combat). Leaves the
+        /// edge-announcer flag alone: if the list was audible-open, Tick's
+        /// next edge pass speaks the "POI list closed." for it.</summary>
         internal static void CloseListSilent()
         {
             _listOpen = false;

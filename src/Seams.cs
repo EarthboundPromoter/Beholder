@@ -284,6 +284,8 @@ namespace SkaldAccessibility
         internal static MethodInfo Character_isSpotted;
         internal static MethodInfo Prop_isHidden;
         internal static MethodInfo Prop_shouldNotBeDrawn;
+        internal static MethodInfo Prop_shouldBeRemovedFromGame;   // the renderer's third gate (MapIllustrator drawProps)
+        internal static MethodInfo PropLockable_isLocked;          // "empty" tag suppressed behind locks (owner ruling 2026-08-19)
         internal static MethodInfo SkaldIO_setVirtualMousePosition;
         internal static MethodInfo ToolTipPrinter_clearToolTip;
         internal static MethodInfo ToolTipPrinter_hasToolTip;
@@ -798,6 +800,8 @@ namespace SkaldAccessibility
             PropType = T("Prop");
             Prop_isHidden = M(PropType, "Prop", "isHidden");
             Prop_shouldNotBeDrawn = M(PropType, "Prop", "shouldNotBeDrawn");
+            Prop_shouldBeRemovedFromGame = M(PropType, "Prop", "shouldBeRemovedFromGame");
+            PropLockable_isLocked = M(T("PropLockable"), "PropLockable", "isLocked");
             SkaldIO_setVirtualMousePosition = M(SkaldIOType, "SkaldIO", "setVirtualMousePosition",
                 new[] { typeof(int), typeof(int) });
             SkaldIO_updateMousePosition = M(SkaldIOType, "SkaldIO", "updateMousePosition");
