@@ -80,6 +80,16 @@ namespace SkaldAccessibility
 
         public static void ClearStaged() { _staged = null; _stagedSource = null; }
 
+        private static bool PopupBlocking()
+        {
+            try
+            {
+                return Seams.PopUpControl_getCurrentPopUp != null
+                    && Seams.PopUpControl_getCurrentPopUp.Invoke(null, null) != null;
+            }
+            catch { return false; }
+        }
+
         // ---- Toggle state ----
         private static bool _active;
         private static int _eatUntilFrame = -1; // swallow tail after an eat-close
@@ -289,9 +299,11 @@ namespace SkaldAccessibility
         private static List<Composer.PanelSection> Parse()
         {
             // A staged document (combatant drilldown) wins over the lazy panel
-            // capture while present; it carries no trailing Status section —
-            // it is a snapshot of one object, not the world.
-            if (_staged != null && _staged.Count > 0)
+            // capture while present — EXCEPT under a popup, whose block must
+            // stay reachable on the reading plane (the popup is the world in
+            // front of the player). No trailing Status section: a staged
+            // document is a snapshot of one object, not the world.
+            if (_staged != null && _staged.Count > 0 && !PopupBlocking())
                 return new List<Composer.PanelSection>(_staged);
             PanelPolicy.EnsureTags();
             var sections = Composer.SectionPanel(_panelSource, _panelRaw);

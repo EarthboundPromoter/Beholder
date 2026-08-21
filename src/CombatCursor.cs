@@ -604,16 +604,20 @@ namespace SkaldAccessibility
             string fact = "";
             string valid = "";
 
-            // Layer 1 (§6.18): an identifiable combatant landing carries the
-            // ruled top-level payload and stages the drilldown document; any
-            // other landing clears the staged document so the plain tile
-            // inspect resumes on the reading plane. isPC short-circuits ahead
-            // of isSpotted (which mutates for PCs — survey hazard).
+            // Layer 1 (§6.18): a combatant landing carries the ruled
+            // top-level payload and stages the drilldown document; any other
+            // landing clears the staged document so the plain tile inspect
+            // resumes on the reading plane. The gate is the game's OWN
+            // inspect gate (isSpotted || isPC — getInspectDescription refuses
+            // unspotted units with "too dark", so stats for an
+            // illuminated-but-unspotted body render nowhere and stay
+            // unspoken; the label ladder still names it). isPC
+            // short-circuits ahead of isSpotted (which mutates for PCs —
+            // survey hazard).
             object occupant = null;
             try { occupant = Seams.MapTile_getLiveCharacter?.Invoke(tile, null); } catch { }
             bool identifiable = occupant != null
-                && (B(Seams.Character_isPC, occupant) || B(Seams.MapTile_isIlluminated, tile)
-                    || B(Seams.Character_isSpotted, occupant));
+                && (B(Seams.Character_isPC, occupant) || B(Seams.Character_isSpotted, occupant));
             string payload = "";
             if (identifiable)
             {
