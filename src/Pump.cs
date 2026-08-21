@@ -643,6 +643,12 @@ namespace SkaldAccessibility
 
                 _lastContent[source] = cleaned;
 
+                // Gate D: while the table owns an inventory-family screen the
+                // sheet panel is CAPTURED (review buffer + diff record above),
+                // never spoken — the R11 row already carries the comparative
+                // block; "Selected: X." stays the select feedback.
+                if (source == "SheetDesc" && TableCursor.SuppressSheetPanelSpeech()) continue;
+
                 // The one config (owner ruling 2026-08-18): tooltips and
                 // UI-nav-initiated populations auto-read their full body only
                 // while Panel.AutoReadBody is on; off speaks the identity line
@@ -820,6 +826,10 @@ namespace SkaldAccessibility
             _invHoverRow = _invHoverCol = -1;
             _filterSpokeThisFrame = true;
             Scaffold.SpeechService.Say($"Filter: {name}, {index + 1} of {paths.Count}.", "Nav");
+            // Gate D (R12): the table resets the teleporting window,
+            // re-anchors by item identity, and queues the naming census
+            // behind the filter line.
+            TableCursor.OnFilterChanged();
         }
 
         /// <summary>The game's own name for a filter, from its icon path:
@@ -852,7 +862,12 @@ namespace SkaldAccessibility
             _invHoverRow = row;
             _invHoverCol = col;
 
-            string text = ComposeInventoryCellAt(segment, row, col);
+            // Gate D: while the table owns the state, the hover join speaks
+            // the full R11 row (one voice for table steps, physical-mouse
+            // hover and native snaps alike) and the hover truth adopts the
+            // table's section + anchor.
+            string text = TableCursor.ComposeInvHoverCell(segment, row, col)
+                ?? ComposeInventoryCellAt(segment, row, col);
             if (text == null) return;
             // Panel identity (owner ruling 2026-08-19): entering a DIFFERENT
             // grid names it — two grids on one sheet otherwise share a voice
@@ -876,6 +891,12 @@ namespace SkaldAccessibility
         {
             try
             {
+                // Table-owned inventory screens: the section label is the
+                // grid-crossing announcement (physical-mouse path — table
+                // landings carry their own census line).
+                string owned = TableCursor.SectionLabelFor(segment);
+                if (owned != null) return owned;
+
                 object sheet = _selControl;
                 if (sheet == null || Seams.UIInventorySheetBaseType == null
                     || !Seams.UIInventorySheetBaseType.IsInstanceOfType(sheet)) return null;
@@ -1641,6 +1662,25 @@ namespace SkaldAccessibility
             "Melee", "Ranged", "Armor", "Shield", "Ammo", "Ring",
             "Head", "Clothing", "Hands", "Feet", "Off hand", "Necklace"
         };
+
+        /// <summary>Slot label by flat slot index (renderer order) — the
+        /// table's worn rows speak from the same single source.</summary>
+        internal static string WornSlotLabel(int slot)
+            => slot >= 0 && slot < _wornSlotLabels.Length ? _wornSlotLabels[slot] : null;
+
+        /// <summary>Align the hover join's records to a cell the table just
+        /// parked on and spoke itself — the park's own hover note must not
+        /// echo through the drain (gate D; the DrainSelection record-align
+        /// precedent).</summary>
+        internal static void AlignInvHover(object segment, int row, int col)
+        {
+            _pendingInvHoverSegment = null;
+            _pendingInvHoverRow = _pendingInvHoverCol = -1;
+            _invHoverSegment = segment;
+            _invHoverRow = row;
+            _invHoverCol = col;
+            _spokenCanvases.Add(segment);
+        }
 
         /// <summary>Worn cell at (funnel row, zone column): slot label plus
         /// the item from the same Character getter the renderer paints the

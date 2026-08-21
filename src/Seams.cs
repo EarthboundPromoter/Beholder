@@ -640,6 +640,33 @@ namespace SkaldAccessibility
         internal static MemberInfo C64_GreenLightTag;
         internal static MemberInfo C64_RedLightTag;
 
+        // ---- Table gate D: inventory family (2026-08-21) ----
+        internal static Type UIInventorySheetMerchantType;
+        internal static Type ItemMoneyType;
+        internal static Type StoreType;
+        internal static FieldInfo InvSegment_scrollBar;      // the segment's own window scrollbar
+        internal static FieldInfo UIGridBase_height;
+        internal static FieldInfo Merchant_serviceButtons;   // private nested ServiceButtons canvas
+        internal static FieldInfo InvSheet_filterButtons;
+        internal static FieldInfo FilterButtons_filterControl;
+        internal static FieldInfo DataControl_currentStore;
+        internal static MethodInfo Store_getSalePrice;       // private — invoke-only (no detour)
+        internal static MethodInfo Store_getBuyPrice;        // private — invoke-only (no detour)
+        internal static FieldInfo Store_fence;               // private
+        internal static MethodInfo Store_getInventory;
+        internal static MethodInfo Inventory_getMoney;
+        internal static MethodInfo Item_printComparativeStats;
+        internal static MethodInfo Item_getCount;
+        internal static MethodInfo Item_getValue;
+        internal static MethodInfo Item_getWeight;
+        internal static MethodInfo Item_isNewAddition;
+        internal static MethodInfo Item_isMagical;
+        internal static MethodInfo Item_getDescription;
+        internal static MethodInfo Item_isStolen;
+        internal static MethodInfo Item_canBeTraded;
+        internal static MethodInfo Character_isItemLegalToEquip;
+        internal static MethodInfo SkaldActionResult_wasSuccess;
+
         /// <summary>Resolve the whole manifest. Called once from Plugin.Awake,
         /// before any patching. Metadata reads only — safe at frame 0.</summary>
         internal static void ResolveAll()
@@ -1222,6 +1249,40 @@ namespace SkaldAccessibility
             Character_getListOfSpellSchools = M(CharacterType, "Character", "getListOfSpellSchools");
             AbilitySpell_getSchoolList = M(AbilitySpellType, "AbilitySpell", "getSchoolList");
             GameData_getAttributeName = M(T("GameData"), "GameData", "getAttributeName", new[] { typeof(string) });
+
+            // Table gate D: inventory family (2026-08-21). The Store price
+            // privates are invoke-only reflection (no detour — the Mono
+            // inline hazard applies to detours, not MethodInfo.Invoke); the
+            // segment scrollbar + degree drive the game's own window with a
+            // mod-side clamp (the native increment over-runs the list).
+            UIInventorySheetMerchantType = T("UIInventorySheetMerchant");
+            ItemMoneyType = T("ItemMoney");
+            StoreType = T("Store");
+            InvSegment_scrollBar = F(InventorySegmentType, "UIGridCharacterInventorySegment", "scrollBar");
+            UIGridBase_height = F(AccessTools.TypeByName("UIGridBase"), "UIGridBase", "height");
+            Merchant_serviceButtons = F(UIInventorySheetMerchantType, "UIInventorySheetMerchant", "serviceButtons");
+            InvSheet_filterButtons = F(UIInventorySheetBaseType, "UIInventorySheetBase", "filterButtons");
+            FilterButtons_filterControl = InvSheet_filterButtons == null ? null
+                : AccessTools.Field(InvSheet_filterButtons.FieldType, "filterControl");
+            Row("FilterButtons.filterControl", FilterButtons_filterControl != null);
+            DataControl_currentStore = F(DataControlType, "DataControl", "currentStore");
+            Store_getSalePrice = M(StoreType, "Store", "getSalePrice", new[] { ItemType });
+            Store_getBuyPrice = M(StoreType, "Store", "getBuyPrice", new[] { ItemType });
+            Store_fence = F(StoreType, "Store", "fence");
+            Store_getInventory = M(StoreType, "Store", "getInventory");
+            Inventory_getMoney = M(InventoryType, "Inventory", "getMoney");
+            Item_printComparativeStats = M(ItemType, "Item", "printComparativeStats", new[] { CharacterType });
+            Item_getCount = M(ItemType, "Item", "getCount");
+            Item_getValue = M(ItemType, "Item", "getValue");
+            Item_getWeight = M(ItemType, "Item", "getWeight");
+            Item_isNewAddition = M(ItemType, "Item", "isNewAddition");
+            Item_isMagical = M(ItemType, "Item", "isMagical");
+            Item_getDescription = M(ItemType, "Item", "getDescription");
+            Item_isStolen = M(ItemType, "Item", "isStolen");
+            Item_canBeTraded = M(ItemType, "Item", "canBeTraded");
+            Character_isItemLegalToEquip = M(CharacterType, "Character", "isItemLegalToEquip",
+                new[] { ItemType, typeof(bool) });
+            SkaldActionResult_wasSuccess = M(T("SkaldActionResult"), "SkaldActionResult", "wasSuccess");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

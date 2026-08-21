@@ -52,6 +52,11 @@ namespace SkaldAccessibility.Patches
         internal static bool TryEnter(object gui, object sheet)
         {
             if (!Ready) return false;
+            // Gate D: the table owns the worn zone as a section on its
+            // registered states — this patch stands down whole there (the
+            // SheetGridZonePatch precedent). With A/D swallowed its entry
+            // gesture cannot fire; the guard covers the residue.
+            if (TableCursor.OwnsCurrentState()) return false;
             try
             {
                 object worn = Seams.InvSheet_itemInteractionGrid.GetValue(sheet);
@@ -120,6 +125,7 @@ namespace SkaldAccessibility.Patches
             static void Postfix(object __instance, ref System.Collections.Generic.List<UIElement> __result)
             {
                 if (!IsActiveFor(__instance)) return;
+                if (TableCursor.OwnsCurrentState()) return; // gate-D stand-down
                 try
                 {
                     object worn = Seams.InvSheet_itemInteractionGrid.GetValue(__instance);
@@ -186,6 +192,7 @@ namespace SkaldAccessibility.Patches
         private static bool Sideways(object gui, int dir)
         {
             if (_activeSheet == null) return true;
+            if (TableCursor.OwnsCurrentState()) return true; // gate-D stand-down
             try
             {
                 object list = Seams.GUIControl_getControllerScrollableList.Invoke(gui, null);

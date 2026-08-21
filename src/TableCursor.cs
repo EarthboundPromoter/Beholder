@@ -10,7 +10,15 @@ namespace SkaldAccessibility
     /// go-ahead 2026-08-21). Gate A+B: the clean single-list family. Gate C:
     /// the sheet family (character / attributes / abilities / spellbook) —
     /// the engine's first 2D section geometry, row flow, header-skip rule,
-    /// facet layer, and bespoke row composition.
+    /// facet layer, and bespoke row composition. Gate D: the inventory
+    /// family (inventory / container / trade) — grid sections walk the live
+    /// filtered item list by direct seat + park (the native funnel is
+    /// column-major over a row-major list), R11 full-composition rows via
+    /// ItemRowComposer, the game's own scroll window driven with a mod-side
+    /// clamp, worn slots, trade offer facets, gold-riding censuses; speech
+    /// rides the hover join (one voice for table steps and physical mouse);
+    /// InventoryHoverPatch composes through the table, WornZonePatch and
+    /// InventorySegmentPatch stand down while owned.
     ///
     /// Grammar: ARROWS walk rows; W/S walks sections within the current
     /// rendered column; A/D crosses columns (remembered section per column);
@@ -142,6 +150,49 @@ namespace SkaldAccessibility
                 } },
         };
 
+        // Gate D: the inventory family — grid sections walk the live filtered
+        // item list by DIRECT SEAT + park (the native funnel is column-major
+        // over a row-major list, survey 2026-08-21); the table drives the
+        // game's own scroll window with a mod-side clamp. Worn = 12 fixed
+        // slot rows. Buttons/Services ride the redirect + index seat.
+        private enum InvKind { Grid, Worn, Services, Buttons }
+
+        private sealed class InvSectionDef
+        {
+            public string Id;
+            public string Label;
+            public int Column;              // 0 left, 1 right, -1 shared tail
+            public InvKind Kind;
+        }
+
+        private static readonly Dictionary<string, InvSectionDef[]> InvScreens
+            = new Dictionary<string, InvSectionDef[]>
+        {
+            // §6.8: W/S = Items Worn ↔ Party Inventory ↔ Buttons (single column).
+            { "InventoryGridState", new[]
+                {
+                    new InvSectionDef { Id = "worn", Label = "Items Worn", Column = 0, Kind = InvKind.Worn },
+                    new InvSectionDef { Id = "main", Label = "Party Inventory", Column = 0, Kind = InvKind.Grid },
+                    new InvSectionDef { Id = "buttons", Label = ButtonsLabel, Column = -1, Kind = InvKind.Buttons },
+                } },
+            // §6.9: A/D = Party Inventory ↔ Container; Buttons = shared tail.
+            { "ContainerState", new[]
+                {
+                    new InvSectionDef { Id = "main", Label = "Party Inventory", Column = 0, Kind = InvKind.Grid },
+                    new InvSectionDef { Id = "secondary", Label = "Container", Column = 1, Kind = InvKind.Grid },
+                    new InvSectionDef { Id = "buttons", Label = ButtonsLabel, Column = -1, Kind = InvKind.Buttons },
+                } },
+            // §6.10 (corrected geometry, gate-D survey): A/D = Party Inventory
+            // ↔ Merchant; right chain: Merchant ↔ Services ↔ Buttons.
+            { "TradeState", new[]
+                {
+                    new InvSectionDef { Id = "main", Label = "Party Inventory", Column = 0, Kind = InvKind.Grid },
+                    new InvSectionDef { Id = "secondary", Label = "Merchant", Column = 1, Kind = InvKind.Grid },
+                    new InvSectionDef { Id = "services", Label = "Services", Column = 1, Kind = InvKind.Services },
+                    new InvSectionDef { Id = "buttons", Label = ButtonsLabel, Column = -1, Kind = InvKind.Buttons },
+                } },
+        };
+
         // =====================================================================
         // Live screen memo
         // =====================================================================
@@ -151,6 +202,15 @@ namespace SkaldAccessibility
         private static object _gui;
         private static string _simpleLabel;      // gate-B screen
         private static SectionDef[] _sheetDef;   // gate-C screen
+        private static InvSectionDef[] _invDef;  // gate-D screen
+
+        // Gate-D mod-side memory: the current section id (grid sections have
+        // no redirect canvas to infer from), the per-section row anchor (flat
+        // item index / worn slot), and the anchored item for identity
+        // re-anchor across filter changes and re-sorts.
+        private static string _invCurrentId;
+        private static readonly Dictionary<string, int> _invAnchor = new Dictionary<string, int>();
+        private static readonly Dictionary<string, object> _invAnchorItem = new Dictionary<string, object>();
 
         private static object _redirectCanvas;   // current non-native section canvas
         private static bool _resolving;          // re-entrancy guard for NativeScrollableList
@@ -160,9 +220,9 @@ namespace SkaldAccessibility
 
         private static bool Refresh()
         {
-            if (Time.frameCount == _frame) return _simpleLabel != null || _sheetDef != null;
+            if (Time.frameCount == _frame) return _simpleLabel != null || _sheetDef != null || _invDef != null;
             _frame = Time.frameCount;
-            _state = null; _gui = null; _simpleLabel = null; _sheetDef = null;
+            _state = null; _gui = null; _simpleLabel = null; _sheetDef = null; _invDef = null;
             if (_enabled == null || !_enabled.Value) return false;
             try
             {
@@ -171,14 +231,15 @@ namespace SkaldAccessibility
                 string name = s.GetType().Name;
                 bool simple = SimpleScreens.TryGetValue(name, out string label);
                 bool sheet = !simple && SheetScreens.TryGetValue(name, out _sheetDef);
-                if (!simple && !sheet) { _sheetDef = null; return false; }
+                bool inv = !simple && !sheet && InvScreens.TryGetValue(name, out _invDef);
+                if (!simple && !sheet && !inv) { _sheetDef = null; _invDef = null; return false; }
                 object gui = Seams.StateBase_guiControl?.GetValue(s);
-                if (gui == null) { _sheetDef = null; return false; }
+                if (gui == null) { _sheetDef = null; _invDef = null; return false; }
                 _state = s; _gui = gui;
                 if (simple) _simpleLabel = label;
                 return true;
             }
-            catch { _sheetDef = null; return false; }
+            catch { _sheetDef = null; _invDef = null; return false; }
         }
 
         private static bool PopupUp()
@@ -287,6 +348,9 @@ namespace SkaldAccessibility
             _redirectCanvas = null;
             _facet = 0;
             _colRemember[0] = null; _colRemember[1] = null;
+            _invCurrentId = null;
+            _invAnchor.Clear();
+            _invAnchorItem.Clear();
             if (!Refresh()) return;
             if (_armedLogFrame == Time.frameCount) return;
             _armedLogFrame = Time.frameCount;
@@ -308,9 +372,10 @@ namespace SkaldAccessibility
         private sealed class Section
         {
             public SectionDef Def;      // null on gate-B screens
+            public InvSectionDef InvDef; // gate-D only
             public string Id;
             public string Label;
-            public object Canvas;
+            public object Canvas;       // gate-D grid sections: the SEGMENT
             public int Start;           // first walkable row (header skipped)
             public int Count;           // walkable rows
             public int Column;
@@ -325,8 +390,96 @@ namespace SkaldAccessibility
         {
             if (Time.frameCount == _secFrame && _sections != null) return _sections;
             _secFrame = Time.frameCount;
-            _sections = _sheetDef != null ? ResolveSheetSections() : ResolveSimpleSections();
+            _sections = _sheetDef != null ? ResolveSheetSections()
+                : _invDef != null ? ResolveInvSections()
+                : ResolveSimpleSections();
             return _sections;
+        }
+
+        /// <summary>Gate-D sections against the live inventory sheet. Grid
+        /// sections carry the SEGMENT as their canvas and the live filtered
+        /// item count as their row count; the worn section is the fixed 12
+        /// slots; Services/Buttons are index-seated button canvases (the
+        /// funnel is never used here — its edge fallthrough would slide the
+        /// grid window from inside the Buttons section, survey 2026-08-21).</summary>
+        private static List<Section> ResolveInvSections()
+        {
+            var sections = new List<Section>(_invDef.Length);
+            object sheet = NativeScrollableList();
+            if (sheet == null || Seams.UIInventorySheetBaseType == null
+                || !Seams.UIInventorySheetBaseType.IsInstanceOfType(sheet)) return sections;
+
+            foreach (var def in _invDef)
+            {
+                switch (def.Kind)
+                {
+                    case InvKind.Worn:
+                    {
+                        object worn = Seams.InvSheet_itemInteractionGrid?.GetValue(sheet);
+                        if (worn == null || Seams.ItemsWornUIType == null
+                            || !Seams.ItemsWornUIType.IsInstanceOfType(worn)) break;
+                        sections.Add(new Section { InvDef = def, Id = def.Id, Label = def.Label,
+                            Canvas = worn, Start = 0, Count = 12, Column = def.Column });
+                        break;
+                    }
+                    case InvKind.Grid:
+                    {
+                        var field = def.Id == "main"
+                            ? Seams.InvSheet_mainInventoryGrid : Seams.InvSheet_secondaryInventoryGrid;
+                        object segment = field?.GetValue(sheet);
+                        if (segment == null || Seams.InventorySegmentType == null
+                            || !Seams.InventorySegmentType.IsInstanceOfType(segment)) break;
+                        var items = FilteredItemsOf(segment);
+                        sections.Add(new Section { InvDef = def, Id = def.Id, Label = def.Label,
+                            Canvas = segment, Start = 0, Count = items?.Count ?? 0, Column = def.Column });
+                        break;
+                    }
+                    case InvKind.Services:
+                    {
+                        if (Seams.UIInventorySheetMerchantType == null
+                            || !Seams.UIInventorySheetMerchantType.IsInstanceOfType(sheet)) break;
+                        object services = Seams.Merchant_serviceButtons?.GetValue(sheet);
+                        if (services == null) break;
+                        // Always a canvas; zero buttons when the store offers
+                        // none — a zero-row census stop, never dropped (the
+                        // strip exists in the render).
+                        sections.Add(new Section { InvDef = def, Id = def.Id, Label = def.Label,
+                            Canvas = services, Start = 0, Count = ScrollableCount(services),
+                            Column = def.Column, IndexRows = true });
+                        break;
+                    }
+                    case InvKind.Buttons:
+                    {
+                        object numeric = NumericButtons();
+                        if (numeric == null) break;
+                        int n = ScrollableCount(numeric);
+                        if (n == 0) break;
+                        sections.Add(new Section { InvDef = def, Id = def.Id, Label = def.Label,
+                            Canvas = numeric, Start = 0, Count = n, Column = def.Column,
+                            IndexRows = true });
+                        break;
+                    }
+                }
+            }
+            return sections;
+        }
+
+        /// <summary>The live type-filtered list the segment renders and
+        /// resolves clicks from — the game's own row↔item ground truth
+        /// (UIInventorySheetBase.cs:113-159), read fresh every call, never
+        /// cached (re-sorts, filter changes, transfers).</summary>
+        private static IList FilteredItemsOf(object segment)
+        {
+            try
+            {
+                if (Seams.InvSegment_inventory == null || Seams.Inventory_getListByType == null) return null;
+                object inventory = Seams.InvSegment_inventory.GetValue(segment);
+                if (inventory == null) return null;
+                object itemTypes = Seams.InvSegment_itemTypes?.GetValue(segment);
+                return Seams.Inventory_getListByType.Invoke(inventory, new[] { itemTypes, (object)false })
+                    as IList;
+            }
+            catch { return null; }
         }
 
         private static List<Section> ResolveSimpleSections()
@@ -401,6 +554,14 @@ namespace SkaldAccessibility
 
         private static int CurrentSectionIndex(List<Section> sections)
         {
+            // Gate-D screens track the current section by id (grid sections
+            // are park-driven — no redirect canvas to infer from).
+            if (_invDef != null && _invCurrentId != null)
+            {
+                for (int i = 0; i < sections.Count; i++)
+                    if (sections[i].Id == _invCurrentId) return i;
+                _invCurrentId = null;
+            }
             object redirect = _redirectCanvas;
             if (redirect != null)
             {
@@ -421,6 +582,13 @@ namespace SkaldAccessibility
             if (sections.Count == 0) { Scaffold.SpeechService.Say("No sections.", "Nav"); return; }
             int cur = CurrentSectionIndex(sections);
             var sec = sections[cur];
+
+            if (sec.InvDef != null
+                && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
+            {
+                InvRowStep(sections, cur, sec, upward);
+                return;
+            }
 
             if (!sec.IndexRows)
             {
@@ -493,12 +661,457 @@ namespace SkaldAccessibility
         }
 
         /// <summary>Silent section adoption (redirect + column memory) for
-        /// in-section row moves — no census, no label.</summary>
+        /// in-section row moves — no census, no label. Gate-D: grid/worn
+        /// sections adopt through the game's OWN surface field (the
+        /// WornZonePatch precedent — no proxy) and never redirect the
+        /// scrollable list; Services/Buttons redirect it (they are outside
+        /// the sheet's native rotation entirely).</summary>
         private static void AdoptSection(Section sec)
         {
+            if (_invDef != null)
+            {
+                _invCurrentId = sec.Id;
+                bool served = sec.InvDef != null
+                    && (sec.InvDef.Kind == InvKind.Services || sec.InvDef.Kind == InvKind.Buttons);
+                _redirectCanvas = served ? sec.Canvas : null;
+                if (sec.InvDef != null
+                    && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
+                {
+                    try
+                    {
+                        object sheet = NativeScrollableList();
+                        if (sheet != null && Seams.UIInventorySheetBaseType != null
+                            && Seams.UIInventorySheetBaseType.IsInstanceOfType(sheet))
+                            Seams.InvSheet_currentControllerSurface?.SetValue(sheet, sec.Canvas);
+                    }
+                    catch { }
+                }
+                if (sec.Column >= 0) _colRemember[sec.Column] = sec.Id;
+                return;
+            }
             object native = NativeScrollableList();
             _redirectCanvas = ReferenceEquals(sec.Canvas, native) ? null : sec.Canvas;
             if (sec.Column >= 0) _colRemember[sec.Column] = sec.Id;
+        }
+
+        // =====================================================================
+        // Gate D: inventory-family rows (grid = live filtered item walk by
+        // direct seat + window drive; worn = the 12 fixed slots)
+        // =====================================================================
+
+        private static ItemRowComposer.Mode ModeOf(Section sec)
+        {
+            if (_state == null || _state.GetType().Name != "TradeState") return ItemRowComposer.Mode.Plain;
+            if (sec.Id == "main") return ItemRowComposer.Mode.TradeParty;
+            if (sec.Id == "secondary") return ItemRowComposer.Mode.TradeMerchant;
+            return ItemRowComposer.Mode.Plain;
+        }
+
+        private static object ItemAt(Section sec, int flatIdx)
+        {
+            var items = FilteredItemsOf(sec.Canvas);
+            if (items == null || flatIdx < 0 || flatIdx >= items.Count) return null;
+            return items[flatIdx];
+        }
+
+        private static List<string> InvRowParts(Section sec, int flatIdx)
+        {
+            if (sec.InvDef.Kind == InvKind.Worn) return WornRowParts(flatIdx);
+            return ItemRowComposer.RowParts(ItemAt(sec, flatIdx), ModeOf(sec));
+        }
+
+        /// <summary>The full row line with the trailing positional counter
+        /// (counts always trail — standing rule).</summary>
+        private static string InvRowLine(Section sec, int flatIdx)
+        {
+            if (sec.InvDef.Kind == InvKind.Worn)
+            {
+                var wp = WornRowParts(flatIdx);
+                return wp == null ? null : JoinParts(wp);
+            }
+            var parts = InvRowParts(sec, flatIdx);
+            if (parts == null) return "Empty.";
+            string line = JoinParts(parts);
+            return sec.Count > 1 ? $"{line} {flatIdx + 1} of {sec.Count}." : line;
+        }
+
+        /// <summary>Worn slot row: "Melee: Waraxe." / "Ranged: empty." —
+        /// slot labels from the game's own icon files, item from the same
+        /// Character getter the renderer paints (Pump's shipped map). The
+        /// item's R11 parts follow as the row's lateral facets.</summary>
+        private static List<string> WornRowParts(int slot)
+        {
+            string label = Pump.WornSlotLabel(slot);
+            if (label == null) return null;
+            object item = WornItemAt(slot);
+            if (item == null) return new List<string> { $"{label}: empty." };
+            var parts = ItemRowComposer.RowParts(item, ItemRowComposer.Mode.Plain);
+            string identity = parts != null && parts.Count > 0 ? parts[0] : null;
+            var result = new List<string>
+                { identity != null ? $"{label}: {identity}" : $"{label}: equipped." };
+            if (parts != null && parts.Count > 1) result.AddRange(parts.GetRange(1, parts.Count - 1));
+            return result;
+        }
+
+        private static object WornItemAt(int slot)
+        {
+            try
+            {
+                var getters = Seams.Character_wornGetters;
+                object character = Patches.WornZonePatch.WornCharacter ?? ItemRowComposer.CurrentPC();
+                if (getters == null || character == null || slot < 0 || slot >= getters.Length
+                    || getters[slot] == null) return null;
+                return getters[slot].Invoke(character, null);
+            }
+            catch { return null; }
+        }
+
+        private static void InvRowStep(List<Section> sections, int cur, Section sec, bool upward)
+        {
+            if (sec.InvDef.Kind == InvKind.Grid && sec.Count == 0)
+            {
+                Scaffold.SpeechService.Say($"{sec.Label}, none.", "Nav");
+                return;
+            }
+            int idx = _invAnchor.TryGetValue(sec.Id, out int a) ? a : -1;
+            if (idx < 0 || idx >= sec.Count)
+            {
+                // First touch (or the anchor died with a shrink): full landing.
+                LandInvSection(sec);
+                return;
+            }
+            int next = idx + (upward ? -1 : +1);
+            if (next < 0)
+            {
+                // Row flow (§3): cross the seam, announced.
+                if (cur > 0) LandSection(sections[cur - 1], atLastRow: true);
+                else Scaffold.SpeechService.Say("Top of list.", "Nav");
+                return;
+            }
+            if (next >= sec.Count)
+            {
+                if (cur < sections.Count - 1) LandSection(sections[cur + 1], atFirstRow: true);
+                else Scaffold.SpeechService.Say("Bottom of list.", "Nav");
+                return;
+            }
+            AdoptSection(sec);
+            SeatInvRow(sec, next, speak: true, queued: false);
+        }
+
+        /// <summary>Seat the walk on a flat row: drive the game's own window
+        /// if needed, write the segment's column (the hover re-derive syncs
+        /// it anyway — belt and braces), park the virtual mouse on the cell,
+        /// align the hover records (our park must not echo through the hover
+        /// join), and speak. A parked facet >0 speaks "identity, facet"
+        /// instead of the full row (R11's scan-one-facet idiom).</summary>
+        private static void SeatInvRow(Section sec, int flatIdx, bool speak, bool queued,
+            string censusPrefix = null)
+        {
+            Pump.NotePlayerNav();
+            if (sec.InvDef.Kind == InvKind.Worn)
+            {
+                int w = 6;
+                int row = flatIdx / w, col = flatIdx % w;
+                object worn = sec.Canvas;
+                object grid = Seams.ItemsWornUI_grid?.GetValue(worn);
+                ParkGridCell(grid, row, col);
+                _invAnchor[sec.Id] = flatIdx;
+                _invAnchorItem[sec.Id] = WornItemAt(flatIdx);
+            }
+            else
+            {
+                object seg = sec.Canvas;
+                int w = GridWidth(seg);
+                EnsureItemVisible(sec, flatIdx);
+                int offset = OffsetOf(seg);
+                int vis = flatIdx - offset;
+                int row = w > 0 ? vis / w : 0, col = w > 0 ? vis % w : 0;
+                try
+                {
+                    if (Seams.InvSegment_column != null && w > 0)
+                        Seams.InvSegment_column.SetValue(seg, Math.Max(0, Math.Min(w - 1, col)));
+                }
+                catch { }
+                object grid = Seams.InvSegment_grid?.GetValue(seg);
+                ParkGridCell(grid, row, col);
+                Pump.AlignInvHover(seg, row, col);
+                _invAnchor[sec.Id] = flatIdx;
+                _invAnchorItem[sec.Id] = ItemAt(sec, flatIdx);
+            }
+
+            if (!speak) return;
+            string text;
+            var parts = InvRowParts(sec, flatIdx);
+            if (_facet > 0 && parts != null && parts.Count > 0)
+            {
+                // Parked facet (R11): rows speak "identity, facet" — facet f
+                // maps to parts[f-1], matching InvFacetStep.
+                int f = Math.Min(_facet, parts.Count);
+                text = f <= 1 ? parts[0] : $"{parts[0]} {parts[f - 1]}";
+            }
+            else text = InvRowLine(sec, flatIdx) ?? "Empty.";
+            if (censusPrefix != null) text = $"{censusPrefix} {text}";
+            if (queued) Scaffold.SpeechService.SayQueued(text, "Nav");
+            else Scaffold.SpeechService.Say(text, "Nav");
+        }
+
+        /// <summary>Grid/worn section landing: census + the restored row in
+        /// ONE utterance, spoken directly (these sections have no selection
+        /// write to carry a zone label — the label rides the line itself,
+        /// F2-safe by construction).</summary>
+        private static void LandInvSection(Section sec, bool atLastRow = false,
+            bool atFirstRow = false, bool queued = false, int? explicitRow = null)
+        {
+            AdoptSection(sec);
+            _facet = 0;
+
+            string census = InvCensusOf(sec);
+            if (sec.InvDef.Kind == InvKind.Grid && sec.Count == 0)
+            {
+                Pump.NotePlayerNav();
+                if (queued) Scaffold.SpeechService.SayQueued($"{census}.", "Nav");
+                else Scaffold.SpeechService.Say($"{census}.", "Nav");
+                Scaffold.Log.Debug("Gate", $"table section land: {sec.Label} count=0");
+                return;
+            }
+
+            int row;
+            if (explicitRow.HasValue) row = explicitRow.Value;
+            else if (atFirstRow) row = 0;
+            else if (atLastRow) row = sec.Count - 1;
+            else row = _invAnchor.TryGetValue(sec.Id, out int a) && a >= 0 && a < sec.Count ? a : 0;
+            if (row < 0) row = 0;
+            if (row >= sec.Count) row = sec.Count - 1;
+
+            SeatInvRow(sec, row, speak: true, queued: queued, censusPrefix: $"{census}.");
+            Scaffold.Log.Debug("Gate", $"table section land: {sec.Label} count={sec.Count} row={row}");
+        }
+
+        /// <summary>"Party Inventory, 5 items" (+ trade gold riding the
+        /// census per the §6.10 ruling) / "Items Worn, 12" / "…, none".</summary>
+        private static string InvCensusOf(Section sec)
+        {
+            if (sec.InvDef.Kind == InvKind.Worn) return $"{sec.Label}, 12";
+            if (sec.Count == 0) return $"{sec.Label}, none{TradeGoldSuffix(sec)}";
+            string items = sec.Count == 1 ? "1 item" : $"{sec.Count} items";
+            return $"{sec.Label}, {items}{TradeGoldSuffix(sec)}";
+        }
+
+        private static string TradeGoldSuffix(Section sec)
+        {
+            try
+            {
+                if (_state == null || _state.GetType().Name != "TradeState"
+                    || Seams.Inventory_getMoney == null) return "";
+                if (sec.Id == "main")
+                {
+                    object inv = Seams.InvSegment_inventory?.GetValue(sec.Canvas);
+                    if (inv == null) return "";
+                    int gold = (int)Seams.Inventory_getMoney.Invoke(inv, null);
+                    return $", {gold} gold";
+                }
+                if (sec.Id == "secondary")
+                {
+                    object store = ItemRowComposer.CurrentStore();
+                    object inv = store == null ? null : Seams.Store_getInventory?.Invoke(store, null);
+                    if (inv == null) return "";
+                    int gold = (int)Seams.Inventory_getMoney.Invoke(inv, null);
+                    return $", vendor gold {gold}";
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        // ---- window drive (the game's own scrollbar, mod-side clamp) ----
+
+        private static int GridWidth(object segment)
+        {
+            try { return (int)Seams.InvSegment_gridWidth.GetValue(segment); }
+            catch { return 0; }
+        }
+
+        private static int OffsetOf(object segment)
+        {
+            try { return (int)Seams.InvSegment_offsetIndex.GetValue(segment); }
+            catch { return 0; }
+        }
+
+        /// <summary>Slide the game's own window so the flat index is visible.
+        /// The mod owns the clamp: the native increment derives from list
+        /// length, not overflow, so the game itself can scroll a fully-visible
+        /// list to a blank grid (survey 2026-08-21). Never called from inside
+        /// UIScrollbar.updateMouseInteraction (the reclaim backstop's capture
+        /// window) — this runs from the input path.</summary>
+        private static void EnsureItemVisible(Section sec, int flatIdx)
+        {
+            try
+            {
+                object seg = sec.Canvas;
+                int w = GridWidth(seg);
+                if (w <= 0) return;
+                object grid = Seams.InvSegment_grid?.GetValue(seg);
+                int h = 0;
+                if (grid != null && Seams.UIGridBase_height != null)
+                    h = (int)Seams.UIGridBase_height.GetValue(grid);
+                if (h <= 0) return;
+                int offset = OffsetOf(seg);
+                if (flatIdx >= offset && flatIdx < offset + w * h) return;
+
+                int targetRow = flatIdx / w;
+                int newOffRow = flatIdx < offset ? targetRow : targetRow - (h - 1);
+                int maxOffRow = Math.Max(0, (sec.Count + w - 1) / w - h);
+                if (newOffRow < 0) newOffRow = 0;
+                if (newOffRow > maxOffRow) newOffRow = maxOffRow;
+
+                Seams.InvSegment_offsetIndex?.SetValue(seg, newOffRow * w);
+                object bar = Seams.InvSegment_scrollBar?.GetValue(seg);
+                if (bar != null && Seams.UIScrollbar_degree != null && Seams.UIScrollbar_increment != null)
+                {
+                    int inc = System.Convert.ToInt32(Seams.UIScrollbar_increment.GetValue(bar));
+                    float degree = inc <= 0 ? 0f : (float)newOffRow / inc;
+                    if (degree < 0f) degree = 0f;
+                    if (degree > 1f) degree = 1f;
+                    Seams.UIScrollbar_degree.SetValue(bar, degree);
+                }
+            }
+            catch { }
+        }
+
+        private static void ResetWindow(Section sec)
+        {
+            try
+            {
+                object seg = sec.Canvas;
+                Seams.InvSegment_offsetIndex?.SetValue(seg, 0);
+                object bar = Seams.InvSegment_scrollBar?.GetValue(seg);
+                if (bar != null && Seams.UIScrollbar_degree != null)
+                    Seams.UIScrollbar_degree.SetValue(bar, 0f);
+            }
+            catch { }
+        }
+
+        /// <summary>Park the virtual mouse on a grid cell. Cell widgets are
+        /// ctor-created with fixed geometry (UIGridBase.cs:192-202), so the
+        /// park is correct even on the frame the window slides. Offsets =
+        /// the inventory sheet's own snap (GUIControlInventoryBase, (8,-8)).</summary>
+        private static void ParkGridCell(object grid, int row, int col)
+        {
+            try
+            {
+                if (grid == null) return;
+                var rows = Seams.UICanvas_getScrollableElements?.Invoke(grid, null) as IList;
+                if (rows == null || row < 0 || row >= rows.Count) return;
+                var cells = Seams.UICanvas_getScrollableElements?.Invoke(rows[row], null) as IList;
+                if (cells == null || col < 0 || col >= cells.Count) return;
+                Seams.GUIControl_setMouseToUIElement?.Invoke(_gui, new object[] { cells[col], 8, -8 });
+            }
+            catch { }
+        }
+
+        /// <summary>Left/Right on inventory rows: facet 0 = the full row
+        /// line; 1.. = the row's parts (identity, offer, type, stats,
+        /// value/weight, prose). The parked facet persists across rows
+        /// (R11: park on gold → rows speak "name, gold").</summary>
+        private static void InvFacetStep(Section sec, int direction)
+        {
+            int idx = _invAnchor.TryGetValue(sec.Id, out int a) ? a : -1;
+            if (idx < 0 || idx >= sec.Count)
+            {
+                Scaffold.SpeechService.Say(
+                    sec.InvDef.Kind == InvKind.Grid && sec.Count == 0
+                        ? $"{sec.Label}, none." : "No columns.", "Nav");
+                return;
+            }
+            var parts = InvRowParts(sec, idx);
+            if (parts == null || parts.Count == 0)
+            { Scaffold.SpeechService.Say("No columns.", "Nav"); return; }
+
+            int max = parts.Count; // facet 0 = row line, 1..Count = parts
+            _facet += direction;
+            if (_facet < 0) _facet = 0;
+            if (_facet > max) _facet = max;
+            string text = _facet == 0 ? (InvRowLine(sec, idx) ?? "Empty.") : parts[_facet - 1];
+            Scaffold.SpeechService.Say(string.IsNullOrWhiteSpace(text) ? "No columns." : text, "Nav");
+        }
+
+        /// <summary>The hover join's composer while the table owns an
+        /// inventory-family state: physical-mouse hover and any native snap
+        /// speak the same R11 row the table's own steps speak, and the hover
+        /// truth adopts the section + anchor (one voice, one position).</summary>
+        internal static string ComposeInvHoverCell(object segment, int row, int col)
+        {
+            try
+            {
+                if (!Active() || _invDef == null) return null;
+                var sections = ResolveSections();
+                foreach (var sec in sections)
+                {
+                    if (sec.InvDef?.Kind != InvKind.Grid || !ReferenceEquals(sec.Canvas, segment)) continue;
+                    int w = GridWidth(segment);
+                    if (w <= 0) return null;
+                    int flat = OffsetOf(segment) + row * w + col;
+                    if (flat < 0 || flat >= sec.Count) return "Empty.";
+                    _invCurrentId = sec.Id;
+                    _invAnchor[sec.Id] = flat;
+                    _invAnchorItem[sec.Id] = ItemAt(sec, flat);
+                    return InvRowLine(sec, flat);
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>The section label for a hovered segment while owned —
+        /// the physical-mouse grid-crossing announcement (rides the hover
+        /// join's zone prefix, same slot crafting/camp use).</summary>
+        internal static string SectionLabelFor(object segment)
+        {
+            try
+            {
+                if (!Active() || _invDef == null) return null;
+                var sections = ResolveSections();
+                foreach (var sec in sections)
+                    if (ReferenceEquals(sec.Canvas, segment)) return sec.Label;
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>R12 on the filter choke: reset the window (the native
+        /// degree persists while the increment changes — the window would
+        /// silently teleport), re-anchor by item identity, and land with the
+        /// naming census QUEUED behind the game's own filter line.</summary>
+        internal static void OnFilterChanged()
+        {
+            try
+            {
+                if (_invDef == null || !Active()) return;
+                var sections = ResolveSections();
+                if (sections.Count == 0) return;
+                var sec = sections[CurrentSectionIndex(sections)];
+                if (sec.InvDef?.Kind != InvKind.Grid) return;
+                ResetWindow(sec);
+                int target = 0;
+                if (_invAnchorItem.TryGetValue(sec.Id, out object anchored) && anchored != null)
+                {
+                    var items = FilteredItemsOf(sec.Canvas);
+                    if (items != null)
+                        for (int i = 0; i < items.Count; i++)
+                            if (ReferenceEquals(items[i], anchored)) { target = i; break; }
+                }
+                LandInvSection(sec, queued: true, explicitRow: target);
+            }
+            catch { }
+        }
+
+        /// <summary>Capture-not-speak for the sheet panel while the table
+        /// owns an inventory-family state (gate-D ruling: the R11 row already
+        /// carries the comparative block; the panel stays on the reading
+        /// plane).</summary>
+        internal static bool SuppressSheetPanelSpeech()
+        {
+            return _invDef != null && Active();
         }
 
         // =====================================================================
@@ -512,7 +1125,7 @@ namespace SkaldAccessibility
             int cur = CurrentSectionIndex(sections);
             var sec = sections[cur];
 
-            if (_sheetDef == null)
+            if (_sheetDef == null && _invDef == null)
             {
                 // Gate-B linear stack (unchanged).
                 int next = cur + direction;
@@ -545,7 +1158,7 @@ namespace SkaldAccessibility
         /// remembered section (§3a "left column ↔ right column").</summary>
         private static void ColumnStep(int direction)
         {
-            if (_sheetDef == null)
+            if (_sheetDef == null && _invDef == null)
             {
                 Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
                 return;
@@ -584,6 +1197,12 @@ namespace SkaldAccessibility
         /// exists to carry the label).</summary>
         private static void LandSection(Section sec, bool atLastRow = false, bool atFirstRow = false)
         {
+            if (sec.InvDef != null
+                && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
+            {
+                LandInvSection(sec, atLastRow, atFirstRow);
+                return;
+            }
             AdoptSection(sec);
             _facet = 0;
 
@@ -620,6 +1239,13 @@ namespace SkaldAccessibility
             var sections = ResolveSections();
             if (sections.Count == 0) { Scaffold.SpeechService.Say("No columns.", "Nav"); return; }
             var sec = sections[CurrentSectionIndex(sections)];
+
+            if (sec.InvDef != null
+                && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
+            {
+                InvFacetStep(sec, direction);
+                return;
+            }
             int row = sec.IndexRows ? CurrentIndex(sec.Canvas) : -1;
             if (sec.IndexRows && (row < sec.Start || row >= sec.Start + sec.Count))
             {
@@ -722,7 +1348,9 @@ namespace SkaldAccessibility
         {
             try
             {
-                if (!Refresh() || _sheetDef == null) return null;
+                if (!Refresh()) return null;
+                if (_invDef != null) return ComposeInvSelection(control, index);
+                if (_sheetDef == null) return null;
                 var sections = ResolveSections();
 
                 // The sheet canvas's OWN flat index (a native write path —
@@ -770,6 +1398,37 @@ namespace SkaldAccessibility
                 }
             }
             catch { }
+            return null;
+        }
+
+        /// <summary>Gate-D: native selection writes on an owned inventory
+        /// screen (the sheet's funnel index or a segment's own) compose the
+        /// same R11 row the table speaks — the sheet's row index is a ROW at
+        /// the surface's current column (UIInventorySheetBase.cs:586-604).
+        /// Null for the button canvases (generic composition serves them).</summary>
+        private static string ComposeInvSelection(object control, int index)
+        {
+            var sections = ResolveSections();
+            object segment = null;
+            if (Seams.InventorySegmentType != null
+                && Seams.InventorySegmentType.IsInstanceOfType(control))
+                segment = control;
+            else if (Seams.UIInventorySheetBaseType != null
+                && Seams.UIInventorySheetBaseType.IsInstanceOfType(control))
+                segment = Pump.InventorySurfaceOf(control);
+            if (segment == null) return null;
+
+            foreach (var sec in sections)
+            {
+                if (sec.InvDef?.Kind != InvKind.Grid || !ReferenceEquals(sec.Canvas, segment)) continue;
+                int w = GridWidth(segment);
+                if (w <= 0) return null;
+                int col = 0;
+                try { col = (int)Seams.InvSegment_column.GetValue(segment); } catch { }
+                int flat = OffsetOf(segment) + index * w + Math.Max(0, Math.Min(w - 1, col));
+                if (flat < 0 || flat >= sec.Count) return "Empty.";
+                return InvRowLine(sec, flat);
+            }
             return null;
         }
 

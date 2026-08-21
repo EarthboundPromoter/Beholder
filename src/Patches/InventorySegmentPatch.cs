@@ -93,6 +93,11 @@ namespace SkaldAccessibility.Patches
         private static void Diff(object gui, object[] state, string edgeLine, bool leftward = false)
         {
             if (state == null) return;
+            // Gate D: structurally dormant while the table owns the state
+            // (A/D swallowed at the choke never reach the native sideways) —
+            // the guard covers the residue: no edge lines, no worn-zone
+            // entry, no synthetic selection notes from a table-owned screen.
+            if (TableCursor.OwnsCurrentState()) return;
             try
             {
                 object list = state[0];
