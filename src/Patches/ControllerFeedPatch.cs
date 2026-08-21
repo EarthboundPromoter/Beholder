@@ -216,14 +216,20 @@ namespace SkaldAccessibility.Patches
         // wrappers, the Mono-inline lesson). A claimed press acted (walked the
         // text / hopped a topic, with its own player-nav stamp) and returns
         // the read to false so the option funnel never sees it.
+        // Combat Layer 2 (§6.18, gate receipt 7): while the K-table latch is
+        // open, EVERY left-stick read answers false — native axis and
+        // keyboard emulation alike (the force-false half of the ruled patch
+        // shape; the binding-route keys are swallowed at the SkaldIO choke).
         static void Postfix_StickUpPressed(ref bool __result)
         {
+            if (CombatCursor.LatchClaimsStick) { __result = false; return; }
             if (!__result && (Emulate(KeyCode.W) || Time.frameCount == SkaldIOPatches.InjectUpFrame)) __result = true;
             if (__result && DialogueCursor.ClaimStickUp()) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickDownPressed(ref bool __result)
         {
+            if (CombatCursor.LatchClaimsStick) { __result = false; return; }
             if (!__result && (Emulate(KeyCode.S) || Time.frameCount == SkaldIOPatches.InjectDownFrame)) __result = true;
             if (__result && DialogueCursor.ClaimStickDown()) { __result = false; return; }
             if (__result) Pump.NotePlayerNav();
@@ -237,17 +243,19 @@ namespace SkaldAccessibility.Patches
         // not an accessor postfix.
         static void Postfix_StickLeftPressed(ref bool __result)
         {
+            if (CombatCursor.LatchClaimsStick) { __result = false; return; }
             if (!__result && (Emulate(KeyCode.A) || Time.frameCount == SkaldIOPatches.InjectLeftFrame)) __result = true;
             if (__result) Pump.NotePlayerNav();
         }
         static void Postfix_StickRightPressed(ref bool __result)
         {
+            if (CombatCursor.LatchClaimsStick) { __result = false; return; }
             if (!__result && (Emulate(KeyCode.D) || Time.frameCount == SkaldIOPatches.InjectRightFrame)) __result = true;
             if (__result) Pump.NotePlayerNav();
         }
-        static void Postfix_StickUpHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.W)) __result = true; if (__result) Pump.NotePlayerNav(); }
-        static void Postfix_StickDownHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.S)) __result = true; if (__result) Pump.NotePlayerNav(); }
-        static void Postfix_StickLeftHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.A)) __result = true; if (__result) Pump.NotePlayerNav(); }
-        static void Postfix_StickRightHeld(ref bool __result) { if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.D)) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickUpHeld(ref bool __result) { if (CombatCursor.LatchClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.W)) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickDownHeld(ref bool __result) { if (CombatCursor.LatchClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.S)) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickLeftHeld(ref bool __result) { if (CombatCursor.LatchClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.A)) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickRightHeld(ref bool __result) { if (CombatCursor.LatchClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && Input.GetKey(KeyCode.D)) __result = true; if (__result) Pump.NotePlayerNav(); }
     }
 }

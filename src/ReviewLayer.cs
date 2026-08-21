@@ -257,6 +257,10 @@ namespace SkaldAccessibility
 
         // ---- Stepping (both doorways share cursors and composition) ----
 
+        /// <summary>Combat Layer 2: the K-table latch's Left/Right facet walk
+        /// rides the same section cursor over the staged document.</summary>
+        internal static void FacetStep(int direction) => StepSection(direction);
+
         private static void StepSection(int direction)
         {
             var sections = Parse();

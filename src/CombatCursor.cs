@@ -57,8 +57,8 @@ namespace SkaldAccessibility
                 "Speak the number of valid deployment tiles when the deploy screen opens.");
         }
 
-        private enum Ring { Hostiles, Friendlies }
-        private static readonly string[] RingNames = { "hostiles", "friendlies" };
+        private enum Ring { Hostiles, Friendlies, NeutralsFriendlies, Party }
+        private static readonly string[] RingNames = { "hostiles", "friendlies", "neutrals and friendlies", "party" };
 
         private struct Entry
         {
@@ -86,12 +86,28 @@ namespace SkaldAccessibility
         private static string _pendingTail;      // ring counter (", 2 of 4.") or null
         private static string _pendingPrefix;    // initiative ordinal ("3, ") or null
 
-        // ---- Scan/list state ----
+        // ---- The K tables (Layer 2, table-ui-design §6.18): the latched
+        //      four-tab instrument. _listOpen = the latch. Tabs are LIVE —
+        //      rows rebuild from game truth on every keypress (the mutation
+        //      clock is the player's own hand); only the per-tab row cursor
+        //      persists. The latch owns WASD while open (tab swap): the
+        //      binding route is swallowed at the SkaldIO choke
+        //      (ShouldSwallowKey) AND the stick-read booleans are forced
+        //      false at the feed layer (LatchClaimsStick) — the ruled
+        //      patch shape, gate receipt 7. ----
         private static bool _listOpen;
-        private static List<Entry>[] _rings;
-        private static int _listCat;
-        private static int _listIdx = -1;
+        private static int _tabIdx;                    // 0 TurnOrder · 1 Hostiles · 2 Neutrals/Friendlies · 3 Party
+        private static readonly int[] _tabRow = { -1, -1, -1, -1 };
         private static int _swallowTailFrame = -1;
+        private static bool _latchGateLogged;
+
+        private static readonly string[] TabNames =
+            { "Turn Order", "Hostiles", "Neutrals and friendlies", "Party" };
+
+        /// <summary>Consulted by the feed layer's stick postfixes: while the
+        /// latch is open, every left-stick read answers false — native axis
+        /// and keyboard emulation alike (the force-false half of receipt 7).</summary>
+        internal static bool LatchClaimsStick => _listOpen && InCombat();
 
         // ---- Placement boundary state ----
         private static bool _lastValidKnown;
@@ -135,6 +151,13 @@ namespace SkaldAccessibility
                 case KeyCode.Escape:
                 case KeyCode.Backspace:
                 case KeyCode.K:
+                // The latch owns WASD (§6.18 Layer 2): the binding-route
+                // half of receipt 7 — the game goes blind to the movement
+                // keys at the choke while the tables are open.
+                case KeyCode.W:
+                case KeyCode.A:
+                case KeyCode.S:
+                case KeyCode.D:
                     return true;
                 default:
                     return false;
@@ -1039,7 +1062,15 @@ namespace SkaldAccessibility
                         continue;
                     }
                     bool hostile = B(Seams.Character_isHostile, ch);
-                    if ((cat == Ring.Hostiles) != hostile) continue;
+                    bool wanted;
+                    switch (cat)
+                    {
+                        case Ring.Hostiles: wanted = hostile; break;
+                        case Ring.NeutralsFriendlies: wanted = !hostile && !isPC; break;
+                        case Ring.Party: wanted = isPC; break;
+                        default: wanted = !hostile; break;   // Friendlies (the N scan): all non-hostile
+                    }
+                    if (!wanted) continue;
                     string name = CombatSpine.DisplayNameOf(ch)
                         ?? Patches.TextCleaner.CleanText(S(Seams.SkaldBaseObject_getName, ch) ?? "Someone");
                     ring.Add(new Entry { X = tx, Y = ty, Label = name, Dist = dist });
@@ -1084,26 +1115,32 @@ namespace SkaldAccessibility
             QueueLanding($" {idx + 1} of {count}.");
         }
 
-        // ---- K catalog: frozen two-ring census + browse ----
+        // ---- The K tables (Layer 2): the latched four-tab instrument ----
 
         private static void OpenList(object map)
         {
             ClearTooltip();
             if (!AnchorPos(out int ax, out int ay)) return;
-            var rings = new[] { BuildRing(map, Ring.Hostiles, ax, ay), BuildRing(map, Ring.Friendlies, ax, ay) };
-            if (rings[0].Count == 0 && rings[1].Count == 0)
+            var hostiles = BuildRing(map, Ring.Hostiles, ax, ay);
+            var friendlies = BuildRing(map, Ring.Friendlies, ax, ay);
+            if (hostiles.Count == 0 && friendlies.Count == 0 && InitiativeOrder().Count == 0)
             {
-                // Nothing to browse: never enter list mode (review find 5 —
+                // Nothing to browse: never enter the latch (review find 5 —
                 // an empty modal just eats an extra escape press).
                 Scaffold.SpeechService.Say("No combatants in view.", "Nav");
                 return;
             }
-            _rings = rings;
             _listOpen = true;
-            _listCat = _rings[0].Count > 0 ? 0 : 1;
-            _listIdx = -1;
+            _tabIdx = 1;   // Hostiles first (threat-first; wording/tab at calibration)
+            for (int i = 0; i < _tabRow.Length; i++) _tabRow[i] = -1;
+            if (!_latchGateLogged)
+            {
+                _latchGateLogged = true;
+                Scaffold.Log.Debug("Gate",
+                    "combat WASD latch armed — binding swallow + stick force-false (receipt 7)");
+            }
             Scaffold.SpeechService.Say(
-                $"{CountPhrase(_rings[0].Count, "hostile")}, {CountPhrase(_rings[1].Count, "friendly", "friendlies")}. Browse with arrows.",
+                $"{CountPhrase(hostiles.Count, "hostile")}, {CountPhrase(friendlies.Count, "friendly", "friendlies")}. {TabNames[_tabIdx]} tab.",
                 "Nav");
         }
 
@@ -1112,10 +1149,10 @@ namespace SkaldAccessibility
 
         private static bool ProcessListInput(object map)
         {
-            // Z = the native click on the landed tile: the list closes
-            // SILENTLY and the press falls through (review find 2 — the
-            // ride-verified overland discipline; a frozen census must never
-            // survive the action it just launched).
+            // Z = the native click on the landed tile: the latch closes
+            // SILENTLY and the press falls through (the ride-verified
+            // discipline; the tables must never survive the action they
+            // just launched).
             if (Input.GetKeyDown(KeyCode.Z))
             {
                 ClearTooltip();
@@ -1128,11 +1165,8 @@ namespace SkaldAccessibility
                 CloseList();
                 return true;
             }
-            // Cursor-navigation keys supersede the frozen census (Sonnet
-            // find 3, 2026-08-21 — covers the pre-existing H/N class too):
-            // the list closes silently and the press falls through to its
-            // normal handler, so a stale _listIdx can never teleport the
-            // cursor back after an I/U/H/N/P jump the player just heard.
+            // Cursor-navigation keys supersede the latch (Sonnet find 3
+            // class): close silently, fall through to the normal handler.
             if (Input.GetKeyDown(KeyCode.H) || Input.GetKeyDown(KeyCode.N)
                 || Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.U)
                 || Input.GetKeyDown(KeyCode.P))
@@ -1140,31 +1174,123 @@ namespace SkaldAccessibility
                 CloseListSilent();
                 return false;
             }
-            if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
-            {
-                _listCat = 1 - _listCat;
-                _listIdx = -1;
-                Scaffold.SpeechService.Say(
-                    $"{RingNames[_listCat]}, {_rings[_listCat].Count}.", "Nav");
-                return true;
-            }
-            if (Input.GetKeyDown(KeyCode.DownArrow)) { ListStep(map, 1); return true; }
-            if (Input.GetKeyDown(KeyCode.UpArrow)) { ListStep(map, -1); return true; }
+            // WASD = tab swap (the latch owns the stick — receipt 7 keeps
+            // the character still; these are raw reads, the game is blind).
+            if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.W))
+            { StepTab(-1); return true; }
+            if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.S))
+            { StepTab(+1); return true; }
+            // Left/Right = the row's facet walk: the staged document's
+            // sections, spoken in place (arrows = rows/facets, §6.18).
+            if (Input.GetKeyDown(KeyCode.LeftArrow)) { ReviewLayer.FacetStep(-1); return true; }
+            if (Input.GetKeyDown(KeyCode.RightArrow)) { ReviewLayer.FacetStep(+1); return true; }
+            if (Input.GetKeyDown(KeyCode.DownArrow)) { TabRowStep(map, +1); return true; }
+            if (Input.GetKeyDown(KeyCode.UpArrow)) { TabRowStep(map, -1); return true; }
             return false;
         }
 
-        private static void ListStep(object map, int dir)
+        private static void StepTab(int dir)
         {
-            var ring = _rings[_listCat];
-            if (ring.Count == 0)
+            _tabIdx = ((_tabIdx + dir) % TabNames.Length + TabNames.Length) % TabNames.Length;
+            int count = _tabIdx == 0 ? InitiativeOrder().Count : TabRing()?.Count ?? 0;
+            Scaffold.SpeechService.Say($"{TabNames[_tabIdx]}, {count}.", "Nav");
+        }
+
+        private static List<Entry> TabRing()
+        {
+            object map = CurrentMap();
+            if (map == null || !AnchorPos(out int ax, out int ay)) return null;
+            Ring cat = _tabIdx == 1 ? Ring.Hostiles
+                : _tabIdx == 2 ? Ring.NeutralsFriendlies : Ring.Party;
+            return BuildRing(map, cat, ax, ay);
+        }
+
+        /// <summary>Up/Down inside the latch: rows rebuilt live per press;
+        /// the per-tab cursor clamps at the edges. Turn Order rows carry
+        /// ordinal + turn-econ status with geography suppressed (owner
+        /// ruling); spatial rows are the standard landing with the trailing
+        /// counter.</summary>
+        private static void TabRowStep(object map, int dir)
+        {
+            if (_tabIdx == 0)
             {
-                Scaffold.SpeechService.Say($"No {RingNames[_listCat]}.", "Nav");
+                var order = InitiativeOrder();
+                if (order.Count == 0)
+                {
+                    Scaffold.SpeechService.Say("No initiative order.", "Nav");
+                    return;
+                }
+                _tabRow[0] = _tabRow[0] < 0
+                    ? (dir > 0 ? 0 : order.Count - 1)
+                    : Mathf.Clamp(_tabRow[0] + dir, 0, order.Count - 1);
+                TurnOrderRow(map, order[_tabRow[0]], _tabRow[0] + 1);
                 return;
             }
-            _listIdx = _listIdx < 0
+            var ring = TabRing();
+            if (ring == null || ring.Count == 0)
+            {
+                Scaffold.SpeechService.Say($"{TabNames[_tabIdx]}, none.", "Nav");
+                return;
+            }
+            _tabRow[_tabIdx] = _tabRow[_tabIdx] < 0
                 ? (dir > 0 ? 0 : ring.Count - 1)
-                : Mathf.Clamp(_listIdx + dir, 0, ring.Count - 1);
-            LandOn(map, ring[_listIdx], _listIdx, ring.Count);
+                : Mathf.Clamp(_tabRow[_tabIdx] + dir, 0, ring.Count - 1);
+            LandOn(map, ring[_tabRow[_tabIdx]], _tabRow[_tabIdx], ring.Count);
+        }
+
+        /// <summary>The Turn Order row: ordinal + name + the game's own
+        /// initiative-status word, then the slim payload — geography
+        /// suppressed (turn-econ replaces it, owner ruling). The park still
+        /// happens (Z acts on the row); no deferral — the row carries no
+        /// path fact, and the payload reads the character directly.</summary>
+        private static void TurnOrderRow(object map, object ch, int ordinal)
+        {
+            ClearTooltip();
+            object tile = TileOf(ch);
+            if (tile == null) return;
+            int tx, ty;
+            try
+            {
+                tx = (int)Seams.MapTile_getTileX.Invoke(tile, null);
+                ty = (int)Seams.MapTile_getTileY.Invoke(tile, null);
+            }
+            catch { return; }
+            string name = CombatSpine.DisplayNameOf(ch) ?? "Someone";
+            string status = "";
+            try
+            {
+                string raw = Seams.Character_printInitiativeStatus?.Invoke(ch, null) as string;
+                if (!string.IsNullOrWhiteSpace(raw))
+                    status = ", " + Patches.TextCleaner.CleanText(raw).Trim().ToLowerInvariant();
+            }
+            catch { }
+
+            bool identifiable = B(Seams.Character_isPC, ch) || B(Seams.Character_isSpotted, ch);
+            string payload = "";
+            if (identifiable)
+            {
+                payload = CombatantDocument.LandingPayload(ch);
+                var doc = CombatantDocument.Compose(ch);
+                if (doc != null) ReviewLayer.NoteStagedDocument("Combatant", doc);
+                else ReviewLayer.ClearStaged();
+            }
+            else ReviewLayer.ClearStaged();
+
+            if (InParkWindow(map, tx, ty))
+            {
+                _tileX = tx;
+                _tileY = ty;
+                _held = true;
+                _pendingSpeak = false;   // this row speaks itself, no deferral
+                AssertMouse(map);
+                Scaffold.SpeechService.Say($"{ordinal}, {name}{status}.{payload}", "Nav");
+            }
+            else
+            {
+                // Off-viewport actor: honest row without a park (the phantom
+                // landing hazard, receipt-fixed in Layer 1).
+                Scaffold.SpeechService.Say($"{ordinal}, {name}{status}, out of view.{payload}", "Nav");
+            }
         }
 
         private static void CloseList()
@@ -1177,8 +1303,6 @@ namespace SkaldAccessibility
         private static void CloseListSilent()
         {
             _listOpen = false;
-            _rings = null;
-            _listIdx = -1;
         }
     }
 }
