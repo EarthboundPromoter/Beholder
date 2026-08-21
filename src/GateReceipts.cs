@@ -94,12 +94,20 @@ namespace SkaldAccessibility
 
         // ---- Gate 3: park observation (fed by MouseGuardPatch) ----
 
+        private static int _lastParkX = int.MinValue, _lastParkY = int.MinValue;
+
         /// <summary>Every non-reassert virtual-mouse park flows through here.
-        /// First park and every 50th are logged; hover products correlate via
-        /// the existing speech/panel logs at these frames.</summary>
+        /// The cursor latches re-assert the SAME coordinates every held frame —
+        /// consecutive identical parks collapse to one census entry, so the
+        /// count stays a census of distinct placements. First park and every
+        /// 50th are logged; hover products correlate via the existing
+        /// speech/panel logs at these frames.</summary>
         internal static void NotePark(int x, int y)
         {
             if (!Enabled) return;
+            if (x == _lastParkX && y == _lastParkY) return;
+            _lastParkX = x;
+            _lastParkY = y;
             _parkCount++;
             if (_parkCount == 1 || _parkCount % 50 == 0)
                 Scaffold.Log.Debug("Gate", $"vmouse park #{_parkCount} at ({x},{y}) f{Time.frameCount} (receipt 3)");
