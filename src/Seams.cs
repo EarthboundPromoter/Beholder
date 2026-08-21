@@ -677,6 +677,17 @@ namespace SkaldAccessibility
         internal static FieldInfo GUIControl_sheetComplexField;  // the rendered sheet header's home
         internal static FieldInfo SheetComplex_header;           // UITextBlock (nested protected class)
 
+        // ---- Table gate F: party management + creation screens (2026-08-21) ----
+        internal static Type PartyManagementStateType;
+        internal static FieldInfo PartyMgmt_ui;                  // the screen's own portrait tree (the sheet complex serves a phantom)
+        internal static FieldInfo PartyUI_partyBlock;
+        internal static FieldInfo PartyUI_sideBenchBlock;
+        internal static MethodInfo DataControl_getParty;
+        internal static MethodInfo DataControl_getSideBench;
+        internal static MethodInfo DataControl_sendCharacterToBench;
+        internal static MethodInfo DataControl_getCharacterFromBench;
+        internal static FieldInfo GUIControl_listButtonsField;   // the REAL list on the difficulty screen
+
         /// <summary>Resolve the whole manifest. Called once from Plugin.Awake,
         /// before any patching. Metadata reads only — safe at frame 0.</summary>
         internal static void ResolveAll()
@@ -1313,6 +1324,22 @@ namespace SkaldAccessibility
             SheetComplex_header = GUIControl_sheetComplexField == null ? null
                 : AccessTools.Field(GUIControl_sheetComplexField.FieldType, "header");
             Row("SheetComplex.header", SheetComplex_header != null);
+
+            // Table gate F: party management (the one RESCUE — the state has
+            // no funnel driver and its native scrollable list is a phantom
+            // empty ListButtonControl) + the creation-family registrations.
+            PartyManagementStateType = T("PartyManagementState");
+            PartyMgmt_ui = F(PartyManagementStateType, "PartyManagementState", "partyManagementUI");
+            var partyUIType = AccessTools.TypeByName("UIPartyManagement");
+            PartyUI_partyBlock = F(partyUIType, "UIPartyManagement", "partyBlock");
+            PartyUI_sideBenchBlock = F(partyUIType, "UIPartyManagement", "sideBenchBlock");
+            DataControl_getParty = M(DataControlType, "DataControl", "getParty");
+            DataControl_getSideBench = M(DataControlType, "DataControl", "getSideBench");
+            DataControl_sendCharacterToBench = M(DataControlType, "DataControl", "sendCharacterToBench",
+                new[] { typeof(string) });
+            DataControl_getCharacterFromBench = M(DataControlType, "DataControl", "getCharacterFromBench",
+                new[] { typeof(string) });
+            GUIControl_listButtonsField = F(typeof(GUIControl), "GUIControl", "listButtons");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

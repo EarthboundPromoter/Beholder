@@ -79,7 +79,20 @@ namespace SkaldAccessibility
             { "JournalState",    "Entries" },
             { "QuestState",      "Entries" },
             { "FactionsState",   "Entries" },
+            // Gate F (§6.16): the two clean creation lists — real paged
+            // ListButtonControls on the gate-B shape.
+            { "CharacterCreationClassState",      "Classes" },
+            { "CharacterCreationBackgroundState", "Backgrounds" },
         };
+
+        // Gate F: party management (§6.13 — the one RESCUE: no funnel driver
+        // exists on the state and its native scrollable list is a phantom
+        // empty ListButtonControl; the table supplies 100% of the
+        // navigation) and the difficulty selector (§6.16 — the native funnel
+        // serves only the horizontal difficulty row; the settings list below
+        // has NO native cursor).
+        private const string PartyStateName = "PartyManagementState";
+        private const string DifficultyStateName = "DifficultySelectorState";
         private const string ButtonsLabel = "Buttons";
 
         // Gate E: the settings family — gate-B funnel screens with four
@@ -96,6 +109,12 @@ namespace SkaldAccessibility
         {
             "SettingsGameplayState", "SettingsDifficulty", "SettingsVideo",
             "SettingsAudioState", "SettingsFontSelectionState", "SettingsKeyBindingState",
+            // Gate F (§6.16): the appearance editor is architecturally a
+            // settings screen — the same UITextSliderControl surface, the
+            // same A/D-stays-the-chooser rule (the game renders labelled
+            // ordinals "Portrait 3"; spoken verbatim, hidden names stay
+            // unspoken). Note the game's own misspelling.
+            "CharacterCreationApperanceState",
         };
 
         // Gate C: sheet family — explicit section geometry.
@@ -220,6 +239,9 @@ namespace SkaldAccessibility
         private static SectionDef[] _sheetDef;   // gate-C screen
         private static InvSectionDef[] _invDef;  // gate-D screen
         private static bool _settingsScreen;     // gate-E screen (simple + settings rules)
+        private static bool _partyScreen;        // gate-F: party management (bespoke portraits)
+        private static bool _difficultyScreen;   // gate-F: difficulty selector (bespoke)
+        private static bool _registered;         // any registry matched this frame
 
         // Gate-D mod-side memory: the current section id (grid sections have
         // no redirect canvas to infer from), the per-section row anchor (flat
@@ -237,10 +259,11 @@ namespace SkaldAccessibility
 
         private static bool Refresh()
         {
-            if (Time.frameCount == _frame) return _simpleLabel != null || _sheetDef != null || _invDef != null;
+            if (Time.frameCount == _frame) return _registered;
             _frame = Time.frameCount;
             _state = null; _gui = null; _simpleLabel = null; _sheetDef = null; _invDef = null;
-            _settingsScreen = false;
+            _settingsScreen = false; _partyScreen = false; _difficultyScreen = false;
+            _registered = false;
             if (_enabled == null || !_enabled.Value) return false;
             try
             {
@@ -256,11 +279,17 @@ namespace SkaldAccessibility
                 }
                 bool sheet = !simple && SheetScreens.TryGetValue(name, out _sheetDef);
                 bool inv = !simple && !sheet && InvScreens.TryGetValue(name, out _invDef);
-                if (!simple && !sheet && !inv) { _sheetDef = null; _invDef = null; return false; }
+                bool party = !simple && !sheet && !inv && name == PartyStateName;
+                bool difficulty = !simple && !sheet && !inv && !party && name == DifficultyStateName;
+                if (!simple && !sheet && !inv && !party && !difficulty)
+                { _sheetDef = null; _invDef = null; return false; }
                 object gui = Seams.StateBase_guiControl?.GetValue(s);
                 if (gui == null) { _sheetDef = null; _invDef = null; return false; }
                 _state = s; _gui = gui;
                 if (simple) _simpleLabel = label;
+                _partyScreen = party;
+                _difficultyScreen = difficulty;
+                _registered = true;
                 return true;
             }
             catch { _sheetDef = null; _invDef = null; return false; }
@@ -458,6 +487,7 @@ namespace SkaldAccessibility
             public int Column;
             public bool IndexRows;
             public bool IsGrid;
+            public bool PortraitRows;   // gate-F party management: park-driven portrait cells
         }
 
         private static int _secFrame = -1;
@@ -469,8 +499,87 @@ namespace SkaldAccessibility
             _secFrame = Time.frameCount;
             _sections = _sheetDef != null ? ResolveSheetSections()
                 : _invDef != null ? ResolveInvSections()
+                : _partyScreen ? ResolvePartySections()
+                : _difficultyScreen ? ResolveDifficultySections()
                 : ResolveSimpleSections();
             return _sections;
+        }
+
+        /// <summary>Gate F §6.13: the two portrait blocks off the state's own
+        /// UI field (the sheet complex serves a phantom empty list — this
+        /// screen has no native navigation at all; the table supplies it).
+        /// Row counts are the LIVE party/bench lists — empty portrait slots
+        /// render as background frames, never rows.</summary>
+        private static List<Section> ResolvePartySections()
+        {
+            var sections = new List<Section>(3);
+            try
+            {
+                object ui = Seams.PartyMgmt_ui?.GetValue(_state);
+                if (ui == null) return sections;
+                object dc = ItemRowComposer.DC();
+                object party = dc == null ? null : Seams.DataControl_getParty?.Invoke(dc, null);
+                object bench = dc == null ? null : Seams.DataControl_getSideBench?.Invoke(dc, null);
+                int partyCount = MemberCount(party);
+                int benchCount = MemberCount(bench);
+
+                object partyBlock = Seams.PartyUI_partyBlock?.GetValue(ui);
+                if (partyBlock != null)
+                    sections.Add(new Section { Id = "party", Label = "Main Party", Canvas = partyBlock,
+                        Start = 0, Count = partyCount, Column = 0, PortraitRows = true });
+                object benchBlock = Seams.PartyUI_sideBenchBlock?.GetValue(ui);
+                if (benchBlock != null)
+                    sections.Add(new Section { Id = "bench", Label = "Camp Followers", Canvas = benchBlock,
+                        Start = 0, Count = benchCount, Column = 0, PortraitRows = true });
+                object numeric = NumericButtons();
+                int n = ScrollableCount(numeric);
+                if (n > 0)
+                    sections.Add(new Section { Id = "buttons", Label = ButtonsLabel, Canvas = numeric,
+                        Start = 0, Count = n, Column = 0, IndexRows = true });
+            }
+            catch { }
+            return sections;
+        }
+
+        private static int MemberCount(object skaldList)
+        {
+            try
+            {
+                var objects = skaldList == null ? null
+                    : Seams.SkaldObjectList_getObjectList?.Invoke(skaldList, null) as IList;
+                return objects?.Count ?? 0;
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>Gate F §6.16: the difficulty selector — the native
+        /// scrollable list is the HORIZONTAL difficulty row (all four native
+        /// directions alias onto it); the sub-settings list below is a real,
+        /// fed ListButtonControl with no native cursor — the table gives it
+        /// index-seat rows.</summary>
+        private static List<Section> ResolveDifficultySections()
+        {
+            var sections = new List<Section>(3);
+            object row = NativeScrollableList();
+            int rowCount = ScrollableCount(row);
+            if (row != null && rowCount > 0)
+                sections.Add(new Section { Id = "primary", Label = "Difficulty", Canvas = row,
+                    Start = 0, Count = rowCount, Column = 0, IndexRows = false });
+            try
+            {
+                object list = Seams.GUIControl_listButtonsField?.GetValue(_gui);
+                int n = ScrollableCount(list);
+                if (list != null && n > 0)
+                    sections.Add(new Section { Id = "settings", Label = "Settings", Canvas = list,
+                        Start = 0, Count = n, Column = 0, IndexRows = true });
+            }
+            catch { }
+            object numeric = NumericButtons();
+            int bn = ScrollableCount(numeric);
+            if (numeric != null && bn > 0)
+                sections.Add(new Section { Id = "buttons", Label = ButtonsLabel, Canvas = numeric,
+                    Start = 0, Count = bn, Column = 0, IndexRows = true });
+            return sections;
         }
 
         /// <summary>Gate-D sections against the live inventory sheet. Grid
@@ -667,6 +776,12 @@ namespace SkaldAccessibility
                 && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
             {
                 InvRowStep(sections, cur, sec, upward);
+                return;
+            }
+
+            if (sec.PortraitRows)
+            {
+                PartyRowStep(sections, cur, sec, upward);
                 return;
             }
 
@@ -1064,6 +1179,119 @@ namespace SkaldAccessibility
             catch { }
         }
 
+        // =====================================================================
+        // Gate F §6.13: party-management portrait rows (park-driven — this
+        // screen has NO native navigation; rows are the LIVE member lists,
+        // empty slots skipped by construction)
+        // =====================================================================
+
+        private static void PartyRowStep(List<Section> sections, int cur, Section sec, bool upward)
+        {
+            if (sec.Count == 0)
+            {
+                Scaffold.SpeechService.Say($"{sec.Label}, none.", "Nav");
+                return;
+            }
+            int idx = _invAnchor.TryGetValue(sec.Id, out int a) ? a : -1;
+            if (idx < 0 || idx >= sec.Count) { LandPartySection(sec); return; }
+            int next = idx + (upward ? -1 : +1);
+            if (next < 0)
+            {
+                if (cur > 0) LandSection(sections[cur - 1], atLastRow: true);
+                else Scaffold.SpeechService.Say("Top of list.", "Nav");
+                return;
+            }
+            if (next >= sec.Count)
+            {
+                if (cur < sections.Count - 1) LandSection(sections[cur + 1], atFirstRow: true);
+                else Scaffold.SpeechService.Say("Bottom of list.", "Nav");
+                return;
+            }
+            AdoptSection(sec);
+            SeatPartyRow(sec, next, speak: true, censusPrefix: null);
+        }
+
+        private static void LandPartySection(Section sec, bool atLastRow = false, bool atFirstRow = false)
+        {
+            AdoptSection(sec);
+            _facet = 0;
+            string census = sec.Count == 0 ? $"{sec.Label}, none" : $"{sec.Label}, {sec.Count}";
+            if (sec.Count == 0)
+            {
+                Pump.NotePlayerNav();
+                Scaffold.SpeechService.Say($"{census}.", "Nav");
+                Scaffold.Log.Debug("Gate", $"table section land: {sec.Label} count=0");
+                return;
+            }
+            int row = atFirstRow ? 0
+                : atLastRow ? sec.Count - 1
+                : _invAnchor.TryGetValue(sec.Id, out int a) && a >= 0 && a < sec.Count ? a : 0;
+            SeatPartyRow(sec, row, speak: true, censusPrefix: $"{census}.");
+            Scaffold.Log.Debug("Gate", $"table section land: {sec.Label} count={sec.Count} row={row}");
+        }
+
+        /// <summary>Park on the portrait cell (6 per row) + speak the ruled
+        /// vitals row: "Kat, 17 vitality, 2 wounds. 2 of 5." The click stays
+        /// native (Z = the immediate move; refusals are game popups).</summary>
+        private static void SeatPartyRow(Section sec, int slot, bool speak, string censusPrefix)
+        {
+            Pump.NotePlayerNav();
+            ParkGridCell(sec.Canvas, slot / 6, slot % 6);
+            _invAnchor[sec.Id] = slot;
+            if (!speak) return;
+            string text = ComposePartyRow(sec, slot) ?? "Empty.";
+            if (censusPrefix != null) text = $"{censusPrefix} {text}";
+            Scaffold.SpeechService.Say(text, "Nav");
+        }
+
+        private static object PartyMemberAt(Section sec, int slot)
+        {
+            try
+            {
+                object dc = ItemRowComposer.DC();
+                if (dc == null) return null;
+                object list = sec.Id == "party"
+                    ? Seams.DataControl_getParty?.Invoke(dc, null)
+                    : Seams.DataControl_getSideBench?.Invoke(dc, null);
+                var objects = list == null ? null
+                    : Seams.SkaldObjectList_getObjectList?.Invoke(list, null) as IList;
+                if (objects == null || slot < 0 || slot >= objects.Count) return null;
+                return objects[slot];
+            }
+            catch { return null; }
+        }
+
+        private static string ComposePartyRow(Section sec, int slot)
+        {
+            try
+            {
+                object member = PartyMemberAt(sec, slot);
+                if (member == null) return null;
+                string name = Seams.SkaldBaseObject_getName?.Invoke(member, null) as string;
+                if (string.IsNullOrWhiteSpace(name)) return null;
+                name = Patches.TextCleaner.CleanText(name).Trim();
+                var bits = new List<string> { name };
+                try
+                {
+                    if (Seams.Character_getVitality != null)
+                        bits.Add($"{(int)Seams.Character_getVitality.Invoke(member, null)} vitality");
+                }
+                catch { }
+                try
+                {
+                    if (Seams.Character_getWounds != null)
+                    {
+                        int w = (int)Seams.Character_getWounds.Invoke(member, null);
+                        if (w > 0) bits.Add(w == 1 ? "1 wound" : $"{w} wounds");
+                    }
+                }
+                catch { }
+                string line = string.Join(", ", bits) + ".";
+                return sec.Count > 1 ? $"{line} {slot + 1} of {sec.Count}." : line;
+            }
+            catch { return null; }
+        }
+
         /// <summary>Gate E: true (and spoken) when a funnel step on a
         /// settings list would fall off a non-pageable list's edge — the
         /// native scroll would slide a fully-visible list off screen.</summary>
@@ -1298,6 +1526,29 @@ namespace SkaldAccessibility
                     return;
                 }
             }
+            // Gate F: the difficulty selector's horizontal row — A/D steps
+            // its options through the native sideways (the game aliases all
+            // four directions onto this row; the alias is the affordance).
+            if (_difficultyScreen)
+            {
+                var dSections = ResolveSections();
+                var dSec = dSections.Count > 0 ? dSections[CurrentSectionIndex(dSections)] : null;
+                if (dSec != null && dSec.Id == "primary")
+                {
+                    var sideways = direction < 0
+                        ? Seams.GUIControl_controllerScrollSidewaysLeft
+                        : Seams.GUIControl_controllerScrollSidewaysRight;
+                    if (sideways != null)
+                    {
+                        Pump.NotePlayerNav();
+                        try { sideways.Invoke(_gui, null); } catch { }
+                        return;
+                    }
+                }
+                Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
+                return;
+            }
+
             if (_sheetDef == null && _invDef == null)
             {
                 Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
@@ -1343,6 +1594,11 @@ namespace SkaldAccessibility
                 LandInvSection(sec, atLastRow, atFirstRow);
                 return;
             }
+            if (sec.PortraitRows)
+            {
+                LandPartySection(sec, atLastRow, atFirstRow);
+                return;
+            }
             AdoptSection(sec);
             _facet = 0;
 
@@ -1384,6 +1640,17 @@ namespace SkaldAccessibility
                 && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
             {
                 InvFacetStep(sec, direction);
+                return;
+            }
+
+            // Gate F: portrait rows have no lateral facets — Left/Right
+            // re-speaks the row (the inspect block stays the reading-cursor
+            // payload via the native X tooltip).
+            if (sec.PortraitRows)
+            {
+                int slot = _invAnchor.TryGetValue(sec.Id, out int pa) ? pa : -1;
+                string line = slot >= 0 && slot < sec.Count ? ComposePartyRow(sec, slot) : null;
+                Scaffold.SpeechService.Say(line ?? "No columns.", "Nav");
                 return;
             }
 
