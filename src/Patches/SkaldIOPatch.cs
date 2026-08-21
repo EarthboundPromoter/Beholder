@@ -166,6 +166,10 @@ namespace SkaldAccessibility.Patches
                 // (10) Scrollbar arrow reclaim (table-UI foundation, gate
                 // item 1) — SkaldIO + UIScrollbar detours, so deferred.
                 ScrollbarReclaimPatch.Apply(harmony);
+
+                // (11) Table-engine section redirect (table-ui gate A) —
+                // game-type detour on SheetClass, so deferred like the rest.
+                TableRedirectPatch.Apply(harmony);
             }
             catch (Exception ex)
             {
@@ -182,7 +186,7 @@ namespace SkaldAccessibility.Patches
         static void Postfix_SwallowKey(UnityEngine.KeyCode __0, ref bool __result)
         {
             if (__result && (ReviewLayer.ShouldSwallowKey(__0) || OverlandCursor.ShouldSwallowKey(__0)
-                || CombatCursor.ShouldSwallowKey(__0) || ArrowClaimed(__0)))
+                || CombatCursor.ShouldSwallowKey(__0) || TableCursor.ShouldSwallowKey(__0) || ArrowClaimed(__0)))
                 __result = false;
         }
 

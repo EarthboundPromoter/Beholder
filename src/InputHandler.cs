@@ -46,6 +46,12 @@ namespace SkaldAccessibility
             // funnel calls. No-op when no grid is live.
             Patches.GridNavigationPatch.Tick();
 
+            // Table cursor (table-ui gate A): on registered UI screens the
+            // arrows walk rows through the game's own funnel calls and W/S
+            // walks sections (R15). Suspends itself under popups/grids/text
+            // entry. Consumed presses stop here.
+            if (TableCursor.ProcessInput()) return;
+
             // Overland cursor (WP11): arrows nudge, scan keys jump, K opens
             // the catalog list. Consumed presses stop here. The latch tick
             // runs regardless (re-asserts the virtual mouse each frame).

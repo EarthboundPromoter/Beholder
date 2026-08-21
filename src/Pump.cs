@@ -1236,7 +1236,11 @@ namespace SkaldAccessibility
                         {
                             string cleaned = Patches.TextCleaner.CleanText(raw);
                             if (!string.IsNullOrWhiteSpace(cleaned))
-                                text = (cleaned == "..." || cleaned == "…") ? "dot dot dot" : cleaned;
+                                text = (cleaned == "..." || cleaned == "…") ? "dot dot dot"
+                                    // Load/save pad rows (§6.2 transcode): the
+                                    // game's own empty-slot tag, spoken plainly.
+                                    : cleaned == "--empty--" ? "Empty slot"
+                                    : cleaned;
                         }
                         // Slider rows render header and value in separate text
                         // blocks, not button content — describe as "Header: Value"
@@ -1958,6 +1962,7 @@ namespace SkaldAccessibility
             OverlandCursor.OnStateTransition(); // cursor hold drops; the POI list
                                                 // suspends (combat force-closes it)
             CombatCursor.OnStateTransition();   // survives intra-combat churn, dies on leaving the family
+            TableCursor.OnStateTransition();    // section redirect dies with its screen
             Patches.SheetGridZonePatch.OnStateTransition(); // nor a sheet-grid zone
             Patches.MouseGuardPatch.OnStateTransition();    // nor a snap latch
                                                             // (entry snaps re-latch)

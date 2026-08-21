@@ -57,6 +57,9 @@ namespace SkaldAccessibility
                 // item 1) + the verification-gate instrumentation (items 2-4).
                 Patches.ScrollbarReclaimPatch.BindConfig(Config);
                 GateReceipts.BindConfig(Config);
+                // Table engine (gate A): the R15 arrows-as-rows / WASD-as-
+                // sections grammar on registered UI screens.
+                TableCursor.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own
