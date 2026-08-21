@@ -137,7 +137,7 @@ namespace SkaldAccessibility
         {
             // Panel mode: Escape is an exit, never the menu. (W/S/A/D are
             // covered by the movement suppression; I never reaches the game —
-            // its controller-Y feed is combat-gated.)
+            // the Y feed retired mod-wide, R16.)
             if (_panelOpen && key == KeyCode.Escape && InCombat()) return true;
             if (!_listOpen && Time.frameCount > _swallowTailFrame) return false;
             switch (key)
@@ -155,16 +155,9 @@ namespace SkaldAccessibility
             }
         }
 
-        public static bool SuppressButtonB()
-            => _listOpen || Time.frameCount <= _swallowTailFrame;
-
-        /// <summary>Combat-scoped Y unbind (owner ruling): I is the initiative
-        /// door in combat; the controller-Y feed suppresses there so the
-        /// CHARACTER SHEET quick-button (Y's combat consumer — native C covers
-        /// it) never fires from I. Popups keep Y — they read it as an option
-        /// scheme slot (survey §4c).</summary>
-        internal static bool SuppressButtonY()
-            => InCombat() && !PopupUp();
+        // (SuppressButtonB / SuppressButtonY retired 2026-08-21: R16 unbound
+        // the face-button keyboard feeds mod-wide — there is no B or Y feed
+        // left to suppress.)
 
         // ---- Gates and reads ----
 

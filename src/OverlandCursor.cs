@@ -139,12 +139,8 @@ namespace SkaldAccessibility
             }
         }
 
-        /// <summary>Backspace must not fire the emulated B button while the
-        /// list is ACTIVE (consulted by ControllerFeedPatch). Z and X stay
-        /// LIVE — native click semantics are the point. A suspended list
-        /// yields B back to the popup over it.</summary>
-        public static bool SuppressButtonB()
-            => (_listOpen && ActiveNow()) || Time.frameCount <= _swallowTailFrame;
+        // (SuppressButtonB retired 2026-08-21: R16 unbound the face-button
+        // keyboard feeds mod-wide — Backspace no longer fires B anywhere.)
 
         // ---- Game-truth reads ----
 

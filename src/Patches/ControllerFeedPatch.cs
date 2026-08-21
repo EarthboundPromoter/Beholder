@@ -17,8 +17,19 @@ namespace SkaldAccessibility.Patches
     /// it to Enter double-fired scheme slots, e.g. Reset on the rebind screen.
     /// Enter is native-only now; A's slots stay reachable via number keys):
     ///   WASD  → left stick (the option funnel reads only the stick)
-    ///   Backspace → B      U / I → X / Y
     ///   Q / E → LB / RB    Z / X → LT / RT
+    ///
+    /// R16 (owner ruling 2026-08-21, table-ui-design ledger): ALL face-button
+    /// keyboard feeds unbound mod-wide — Backspace→B, U→X, I→Y retired. The
+    /// 2026-08-21 consumer sweep proved every face-button function has a
+    /// native keyboard twin: B is the Escape getter's controller twin
+    /// (SkaldIO.cs:891-898), X/Y are the inventory/char-sheet quick-button
+    /// aliases ("," and C cover), and option-scheme slots are triple-pathed
+    /// (mouse/numbers/controller) except the single AXBYButNoNumbers row
+    /// (Craft/Clear), covered by the crafting chain's mouse delegation.
+    /// Backspace, U, and I return to the free pool everywhere. The B accessor
+    /// stays patched for the dev bridge's synthetic cancel ONLY (no keyboard
+    /// emulation).
     ///
     /// Not emulated, per the session's rulings: Start and Back (their only
     /// consumers — quest log, quick save — keep native J / F5); the D-pad
@@ -103,9 +114,10 @@ namespace SkaldAccessibility.Patches
             }
 
             int applied = 0;
+            // R16: buttonXPressed / buttonYPressed deliberately NOT patched
+            // (face-button feeds retired); buttonBPressed carries only the
+            // bridge's synthetic cancel.
             applied += Patch(harmony, "buttonBPressed", nameof(Postfix_ButtonB));
-            applied += Patch(harmony, "buttonXPressed", nameof(Postfix_ButtonX));
-            applied += Patch(harmony, "buttonYPressed", nameof(Postfix_ButtonY));
             applied += Patch(harmony, "leftBumperPressed", nameof(Postfix_LeftBumper));
             applied += Patch(harmony, "rightBumperPressed", nameof(Postfix_RightBumper));
             applied += Patch(harmony, "leftTriggerPressed", nameof(Postfix_LeftTriggerPressed));
@@ -122,7 +134,7 @@ namespace SkaldAccessibility.Patches
             applied += Patch(harmony, "isLeftStickLeftHeld", nameof(Postfix_StickLeftHeld));
             applied += Patch(harmony, "isLeftStickRightPressed", nameof(Postfix_StickRightPressed));
             applied += Patch(harmony, "isLeftStickRightHeld", nameof(Postfix_StickRightHeld));
-            Plugin.Logger?.LogInfo($"[Feed] Keyboard→controller feed live: {applied}/19 accessors");
+            Plugin.Logger?.LogInfo($"[Feed] Keyboard→controller feed live: {applied}/17 accessors (X/Y retired, R16)");
         }
 
         private static int Patch(Harmony harmony, string methodName, string postfixName)
@@ -153,24 +165,14 @@ namespace SkaldAccessibility.Patches
         private static bool EmulateActivation(KeyCode key)
             => !ReviewLayer.EatingActivations() && Emulate(key);
 
+        /// <summary>R16: no keyboard emulation — only the dev bridge's
+        /// synthetic cancel rides B now.</summary>
         static void Postfix_ButtonB(ref bool __result)
         {
             if (__result) return;
-            // Backspace closes the WP11 catalog list; it must not also fire B.
-            if (OverlandCursor.SuppressButtonB() || CombatCursor.SuppressButtonB()) return;
-            if (EmulateActivation(KeyCode.Backspace) || Time.frameCount == SkaldIOPatches.InjectCancelFrame) __result = true;
+            if (Time.frameCount == SkaldIOPatches.InjectCancelFrame) __result = true;
         }
 
-        static void Postfix_ButtonX(ref bool __result) { if (!__result && EmulateActivation(KeyCode.U)) __result = true; }
-        static void Postfix_ButtonY(ref bool __result)
-        {
-            if (__result) return;
-            // CP4: I is the initiative-panel door in combat — the Y feed
-            // suppresses there (Y's combat consumer is the character-sheet
-            // quick-button, natively covered by C); popups keep Y.
-            if (CombatCursor.SuppressButtonY()) return;
-            if (EmulateActivation(KeyCode.I)) __result = true;
-        }
         static void Postfix_LeftBumper(ref bool __result) { if (!__result && Emulate(KeyCode.Q)) __result = true; }
         static void Postfix_RightBumper(ref bool __result) { if (!__result && Emulate(KeyCode.E)) __result = true; }
 
