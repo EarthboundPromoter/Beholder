@@ -13,9 +13,12 @@ namespace SkaldAccessibility.Patches
     /// multi-section screen runs a GUIControlSheet, and GUIControlSheet does
     /// not re-override (a Harmony patch on the GUIControl base would never
     /// see these calls — virtual dispatch lands on the SheetClass override).
-    /// Coexists with SheetGridZonePatch.ZoneWireHook on the same method:
-    /// the two are state-disjoint (grimoire/abilities vs the menu/journal
-    /// family), so at most one ever writes the result.
+    /// Coexists with SheetGridZonePatch.ZoneWireHook on the same method.
+    /// Since gate C the two are NOT state-disjoint (both target the
+    /// grimoire/abilities pages) — safety instead rests on the zone layer
+    /// standing down while TableCursor.OwnsCurrentState(): its Sideways
+    /// entry gesture is guarded (and choke-swallowed), so _zoneGrid stays
+    /// null and ZoneWireHook always defers.
     ///
     /// Applied in the deferred SkaldIO batch (game-type detour).
     /// </summary>

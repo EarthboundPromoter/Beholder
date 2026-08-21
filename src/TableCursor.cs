@@ -239,8 +239,18 @@ namespace SkaldAccessibility
             if (canvas == null) return null;
             if (!Active()) return null;
             if (!ReferenceEquals(guiInstance, _gui)) return null;
-            if (ScrollableCount(canvas) == 0) return null;
-            return canvas;
+            // Live-membership revalidation (adversarial review gate C
+            // MUST-FIX): the abilities/spellbook sheets reallocate their
+            // grids and entries on an in-place PC-cycle — same state class,
+            // no transition event — and the orphaned canvas keeps its last
+            // rendered rows, so a count check alone keeps serving the
+            // PREVIOUS character's detached canvas to every native caller.
+            var sections = ResolveSections();
+            for (int i = 0; i < sections.Count; i++)
+                if (ReferenceEquals(sections[i].Canvas, canvas))
+                    return sections[i].Count > 0 ? canvas : null;
+            _redirectCanvas = null;
+            return null;
         }
 
         // =====================================================================
@@ -434,9 +444,11 @@ namespace SkaldAccessibility
             int idx = CurrentIndex(sec.Canvas);
             if (idx < sec.Start || idx >= sec.Start + sec.Count)
             {
-                // First touch of this section: adopt it at its first row.
-                AdoptSection(sec);
-                Seat(sec, sec.Start);
+                // First touch of this section: a full landing (label + census
+                // ride the zone label, which also punches through the
+                // selection dedup — review SHOULD-FIX: the bare seat could
+                // land silent when native clamping had already spoken 0).
+                LandSection(sec);
                 return;
             }
 
@@ -798,8 +810,8 @@ namespace SkaldAccessibility
 
             string block = null;
             try { block = Seams.SkaldBaseObject_getFullDescription?.Invoke(backing, null) as string; } catch { }
-            string cost = null, time = null, cascade = null, targets = null, prose = null;
-            ParseComponentBlock(block, out cost, out time, out cascade, out targets, out prose);
+            string cost, time, cascade, targets, aoe, prose;
+            ParseComponentBlock(block, out cost, out time, out cascade, out targets, out aoe, out prose);
 
             if (sec.Id == "spells")
             {
@@ -808,11 +820,13 @@ namespace SkaldAccessibility
                 if (cost != null) parts.Add(cost);
                 if (cascade != null) parts.Add(cascade);
                 if (targets != null) parts.Add(targets);
+                if (aoe != null) parts.Add(aoe);
             }
             else if (sec.Id == "maneuvers")
             {
                 if (cost != null) parts.Add(cost);
                 if (time != null) parts.Add(time);
+                if (aoe != null) parts.Add(aoe);
             }
             if (!string.IsNullOrWhiteSpace(prose)) parts.Add(prose);
             return parts;
@@ -870,30 +884,50 @@ namespace SkaldAccessibility
 
         /// <summary>Line-parse the game's own composed block: [type] line
         /// skipped (the section already attributes it), the labeled lines
-        /// harvested, everything after the first blank = prose.</summary>
+        /// harvested, everything after them = prose. The game joins label
+        /// and value with a TAB (TextTools.formateNameValuePair — never a
+        /// colon; adversarial review gate C MUST-FIX: the colon match was
+        /// dead code), so the split happens on the RAW line before cleaning
+        /// collapses the tab to a space.</summary>
         private static void ParseComponentBlock(string block, out string cost, out string time,
-            out string cascade, out string targets, out string prose)
+            out string cascade, out string targets, out string aoe, out string prose)
         {
-            cost = null; time = null; cascade = null; targets = null; prose = null;
+            cost = null; time = null; cascade = null; targets = null; aoe = null; prose = null;
             if (string.IsNullOrWhiteSpace(block)) return;
             var proseLines = new List<string>();
             bool inProse = false;
             foreach (var rawLine in block.Split('\n'))
             {
                 string line = Patches.TextCleaner.CleanText(rawLine).Trim();
-                if (line.Length == 0) { if (cost != null || time != null || cascade != null || targets != null || proseLines.Count > 0) inProse = true; continue; }
+                if (line.Length == 0)
+                {
+                    if (cost != null || time != null || cascade != null || targets != null
+                        || aoe != null || proseLines.Count > 0) inProse = true;
+                    continue;
+                }
                 if (!inProse)
                 {
                     if (line.StartsWith("[") && line.EndsWith("]")) continue; // the type line — section attributes it
-                    if (line.StartsWith("Cost:", StringComparison.OrdinalIgnoreCase))
-                    { cost = ExpandResource(line.Replace("Cost:", "Cost").Trim()); continue; }
-                    if (line.StartsWith("Cascade:", StringComparison.OrdinalIgnoreCase))
-                    { cascade = EnsureDot(line.Replace("Cascade:", "Cascade").Trim()); continue; }
-                    if (line.StartsWith("Time Use:", StringComparison.OrdinalIgnoreCase))
-                    { time = EnsureDot(line.Replace("Time Use:", "Time use").Trim()); continue; }
-                    if (line.StartsWith("Targets:", StringComparison.OrdinalIgnoreCase)
-                        || line.StartsWith("Target:", StringComparison.OrdinalIgnoreCase))
-                    { targets = EnsureDot(line); continue; }
+                    int tab = rawLine.IndexOf('\t');
+                    if (tab >= 0)
+                    {
+                        string label = Patches.TextCleaner.CleanText(rawLine.Substring(0, tab)).Trim().TrimEnd('.', ':');
+                        string value = Patches.TextCleaner.CleanText(rawLine.Substring(tab + 1)).Trim();
+                        if (value.Length > 0)
+                        {
+                            if (label.Equals("Cost", StringComparison.OrdinalIgnoreCase))
+                            { cost = ExpandResource($"Cost {value}"); continue; }
+                            if (label.Equals("Cascade", StringComparison.OrdinalIgnoreCase))
+                            { cascade = EnsureDot($"Cascade {value}"); continue; }
+                            if (label.Equals("Time Use", StringComparison.OrdinalIgnoreCase))
+                            { time = EnsureDot($"Time use {value}"); continue; }
+                            if (label.Equals("Targets", StringComparison.OrdinalIgnoreCase)
+                                || label.Equals("Target", StringComparison.OrdinalIgnoreCase))
+                            { targets = EnsureDot($"Targets {value}"); continue; }
+                            if (label.Equals("AoE", StringComparison.OrdinalIgnoreCase))
+                            { aoe = EnsureDot($"Area of effect {value}"); continue; }
+                        }
+                    }
                 }
                 inProse = true;
                 proseLines.Add(line);
