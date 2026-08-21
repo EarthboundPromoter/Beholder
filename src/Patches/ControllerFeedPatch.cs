@@ -24,7 +24,8 @@ namespace SkaldAccessibility.Patches
     /// 2026-08-21 consumer sweep proved every face-button function has a
     /// native keyboard twin: B is the Escape getter's controller twin
     /// (SkaldIO.cs:891-898), X/Y are the inventory/char-sheet quick-button
-    /// aliases ("," and C cover), and option-scheme slots are triple-pathed
+    /// aliases (covered by the live Inventory binding — default E, the
+    /// owner's rebind "," — and C), and option-scheme slots are triple-pathed
     /// (mouse/numbers/controller) except the single AXBYButNoNumbers row
     /// (Craft/Clear), covered by the crafting chain's mouse delegation.
     /// Backspace, U, and I return to the free pool everywhere. The B accessor

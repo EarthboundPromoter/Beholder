@@ -70,9 +70,18 @@ namespace SkaldAccessibility.Patches
                 Plugin.Logger?.LogError($"[Tables] Scrollbar reclaim incomplete ({applied}/3 targets) — see seam report");
         }
 
+        /// <summary>Credits exemption (Sonnet SHOULD-FIX 2026-08-21):
+        /// UIScrollbarCredits.canMouseWheelScroll is always-true — the credits
+        /// screen was never hover-gated, so the reclaim's rationale does not
+        /// apply and held arrows are its only keyboard scroll. The flag is set
+        /// by the owning updateMouseInteraction prefix before the getters run
+        /// within that same call (their single call site, sweep-verified), so
+        /// it is always fresh.</summary>
+        private static bool _exemptScrollbar;
+
         static bool Prefix_ButtonScroll(ref bool __result)
         {
-            if (!Active) return true;
+            if (!Active || _exemptScrollbar) return true;
             if (!_consultLogged)
             {
                 _consultLogged = true;
@@ -86,6 +95,11 @@ namespace SkaldAccessibility.Patches
         {
             __state = float.NaN;
             if (!Active) return;
+            _exemptScrollbar = __instance != null && __instance.GetType().Name == "UIScrollbarCredits";
+            if (_exemptScrollbar) return;
+            // Perf gate (Sonnet note): capture only when an arrow is actually
+            // held — the revert can only be owed then.
+            if (!Input.GetKey(KeyCode.UpArrow) && !Input.GetKey(KeyCode.DownArrow)) return;
             try { __state = (float)Seams.UIScrollbar_degree.GetValue(__instance); }
             catch { }
         }

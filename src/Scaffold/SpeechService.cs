@@ -396,7 +396,9 @@ namespace SkaldAccessibility.Scaffold
             // "+2" is bare by now), before whitespace collapse absorbs the
             // introduced spacing.
             text = SignPlusPattern.Replace(text, " plus ");
-            text = SignMinusPattern.Replace(text, "minus ");
+            // Leading space for symmetry with plus ("Total:-5" → "Total: minus
+            // 5"); SpacePattern collapses any double, Trim eats a leading one.
+            text = SignMinusPattern.Replace(text, " minus ");
             text = StutterPattern.Replace(text, StutterEvaluator);
             text = SpacePattern.Replace(text, " ").Trim();
             // Leading slash-run decoration is visual styling, not content — the

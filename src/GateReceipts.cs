@@ -46,6 +46,13 @@ namespace SkaldAccessibility
         internal static void Tick()
         {
             if (!Enabled) return;
+            // The frame-0 cctor fence (the 2026-08-16 black-screen class,
+            // Sonnet MUST-FIX 2026-08-21): nothing here may touch SkaldIO
+            // statics before the game's first state classification — a Z
+            // press during the boot window would force SkaldIO's cctor onto
+            // unloaded game data and poison the type. Same gate the feed's
+            // text-entry check uses.
+            if (GameStateTracker.CurrentMode == GameMode.Unknown) return;
 
             if (!_armed)
             {
