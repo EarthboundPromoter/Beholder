@@ -1056,7 +1056,17 @@ namespace SkaldAccessibility
             int index = (int)Seams.UICanvas_currentSelectedButton.GetValue(control);
             object element = FocusedElementOf(control, index);
 
-            if (ReferenceEquals(control, _selControl) && index == _selIndex)
+            // Consume the zone label FIRST (adversarial review 2026-08-21,
+            // table gate): a pending label marks a deliberate zone crossing,
+            // which is an arrival event even when (control,index) never moved
+            // (a physical-mouse hover can pre-set the dedup records to the
+            // exact landing) — it forces the speak path past the dedup, and
+            // a failed composition still can't leak it onto a later line
+            // (F2: a lost label beats a leaked one).
+            string zoneLabel = _pendingZoneLabel;
+            _pendingZoneLabel = null;
+
+            if (zoneLabel == null && ReferenceEquals(control, _selControl) && index == _selIndex)
             {
                 // Same-(control,index) writes that land on a DIFFERENT element:
                 // feat-tree laterals (a column/tree cursor moves, then index is
@@ -1088,7 +1098,7 @@ namespace SkaldAccessibility
             if (_pendingInvHoverSegment != null && Seams.UIInventorySheetBaseType != null
                 && Seams.UIInventorySheetBaseType.IsInstanceOfType(control))
             {
-                if (_pendingZoneLabel == null)
+                if (zoneLabel == null)
                 {
                     _selControl = control;
                     _selIndex = index;
@@ -1108,11 +1118,6 @@ namespace SkaldAccessibility
             ReviewLayer.OnFocusChanged(); // review cursors reset with focus
             if (index < 0) return;
 
-            // Consume the zone label before the null check — a failed
-            // composition must never leave it to prefix an unrelated later
-            // line (adversarial review F2; a lost label beats a leaked one).
-            string zoneLabel = _pendingZoneLabel;
-            _pendingZoneLabel = null;
             string text = ComposeSelection(control, index);
             if (text == null) return; // non-conforming control — graceful silence
             if (zoneLabel != null) text = $"{zoneLabel}. {text}";

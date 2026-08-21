@@ -330,8 +330,13 @@ namespace SkaldAccessibility
 
         /// <summary>The section walk, resolved live: [native scrollable list,
         /// numeric row] with null/empty/duplicate entries dropped. On
-        /// single-list screens (menu, journal — its numeric row is set empty)
-        /// this collapses to one section and W/S becomes pure refusals.</summary>
+        /// MenuState the numeric row IS the native list (same object — plain
+        /// GUIControl serves numericButtons) and the walk collapses to one
+        /// section. The journal family keeps a real one-row Buttons section:
+        /// the game always renders Exit there (InfoBaseState.setButtons
+        /// prepends it; the state's own empty list only empties slots 1+) —
+        /// §3a's list ↔ buttons, redundant with native Escape but faithful
+        /// to the render (adversarial review 2026-08-21).</summary>
         private static List<Section> ResolveSections()
         {
             var sections = new List<Section>(2);
