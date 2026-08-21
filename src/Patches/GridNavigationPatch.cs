@@ -142,8 +142,9 @@ namespace SkaldAccessibility.Patches
 
         static void Postfix_SuppressMovement(ref bool __result)
         {
-            // Grid-modal (WP9) and initiative-panel-modal (CP4): W/S walk the
-            // surface, A/D exit it — none may move the character.
+            // Grid-modal (WP9): W/S walk the selector surface — they must not
+            // move the character. (The CP4 initiative-panel clause retired
+            // with the panel, 2026-08-21 — combat Layer 1.)
             if (__result && GridActive()) __result = false;
         }
 

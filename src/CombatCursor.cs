@@ -380,18 +380,47 @@ namespace SkaldAccessibility
             LandOnCharacter(map, order[next], next + 1);
         }
 
+        /// <summary>True when (tx,ty) lies inside the viewport window
+        /// AssertMouse can actually park on (its own clamp, extracted —
+        /// Sonnet MUST-FIX 2026-08-21: an off-viewport park silently no-ops,
+        /// and announcing a landing that never happened desyncs the spoken
+        /// position from Z's real click target).</summary>
+        private static bool InParkWindow(object map, int tx, int ty)
+        {
+            try
+            {
+                int vx = (int)Seams.Map_getViewportX.Invoke(map, null);
+                int vy = (int)Seams.Map_getViewportY.Invoke(map, null);
+                int c = tx - vx + 12;
+                int r = ty - vy + 9;
+                return c >= 1 && c <= 23 && r >= 1 && r <= 17;
+            }
+            catch { return false; }
+        }
+
         /// <summary>Park on the actor's tile; the standard landing line speaks
-        /// with the initiative ordinal as its leading fact.</summary>
+        /// with the initiative ordinal as its leading fact. An off-viewport
+        /// actor gets an honest refusal receipt instead of a phantom landing —
+        /// the cursor does not move.</summary>
         private static void LandOnCharacter(object map, object ch, int ordinal)
         {
             object tile = TileOf(ch);
             if (tile == null) return;
+            int tx, ty;
             try
             {
-                _tileX = (int)Seams.MapTile_getTileX.Invoke(tile, null);
-                _tileY = (int)Seams.MapTile_getTileY.Invoke(tile, null);
+                tx = (int)Seams.MapTile_getTileX.Invoke(tile, null);
+                ty = (int)Seams.MapTile_getTileY.Invoke(tile, null);
             }
             catch { return; }
+            if (!InParkWindow(map, tx, ty))
+            {
+                string name = CombatSpine.DisplayNameOf(ch) ?? "Someone";
+                Scaffold.SpeechService.Say($"{ordinal}, {name}, out of view.", "Nav");
+                return;
+            }
+            _tileX = tx;
+            _tileY = ty;
             _held = true;
             AssertMouse(map);
             QueueLanding(null, $"{ordinal}, ");
@@ -410,12 +439,20 @@ namespace SkaldAccessibility
                 Scaffold.SpeechService.Say("No active unit.", "Nav");
                 return;
             }
+            int tx, ty;
             try
             {
-                _tileX = (int)Seams.MapTile_getTileX.Invoke(tile, null);
-                _tileY = (int)Seams.MapTile_getTileY.Invoke(tile, null);
+                tx = (int)Seams.MapTile_getTileX.Invoke(tile, null);
+                ty = (int)Seams.MapTile_getTileY.Invoke(tile, null);
             }
             catch { return; }
+            if (!InParkWindow(map, tx, ty))
+            {
+                Scaffold.SpeechService.Say("Active unit out of view.", "Nav");
+                return;
+            }
+            _tileX = tx;
+            _tileY = ty;
             _held = true;
             AssertMouse(map);
             QueueLanding(null);
@@ -589,12 +626,14 @@ namespace SkaldAccessibility
             object tile = TileAt(map, tx, ty);
             if (tile == null)
             {
+                ReviewLayer.ClearStaged();   // no combatant here (Sonnet find 2)
                 Scaffold.SpeechService.Say(lead0 + "Nothing." + Offset(tx - ax, ty - ay), "Nav");
                 return;
             }
 
             if (!B(Seams.MapTile_isSpotted, tile))
             {
+                ReviewLayer.ClearStaged();   // no combatant here (Sonnet find 2)
                 Scaffold.SpeechService.Say(lead0 + "Unexplored." + Offset(tx - ax, ty - ay) + (countTail ?? ""), "Nav");
                 return;
             }
@@ -1088,6 +1127,18 @@ namespace SkaldAccessibility
             {
                 CloseList();
                 return true;
+            }
+            // Cursor-navigation keys supersede the frozen census (Sonnet
+            // find 3, 2026-08-21 — covers the pre-existing H/N class too):
+            // the list closes silently and the press falls through to its
+            // normal handler, so a stale _listIdx can never teleport the
+            // cursor back after an I/U/H/N/P jump the player just heard.
+            if (Input.GetKeyDown(KeyCode.H) || Input.GetKeyDown(KeyCode.N)
+                || Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.U)
+                || Input.GetKeyDown(KeyCode.P))
+            {
+                CloseListSilent();
+                return false;
             }
             if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
             {

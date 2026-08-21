@@ -29,8 +29,9 @@ namespace SkaldAccessibility
     ///    compose a sheet keyword click would render). Facts the block
     ///    doesn't render don't appear.
     ///
-    /// Hazards honored (survey §e): getComponentList is called ONCE per
-    /// landing (every call rebuilds + re-resolves); the catalog builds on
+    /// Hazards honored (survey §e): getComponentList runs once in the payload
+    /// (the inspect compose calls it again internally — twice per landing
+    /// keypress total, never per frame); the catalog builds on
     /// first use (warmed at the first landing, a deliberate keypress);
     /// getToolTip logs a game-side error on a miss, so keywords are probed
     /// first; isSpotted mutates for PCs, so isPC short-circuits ahead of it
