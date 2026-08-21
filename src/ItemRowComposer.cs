@@ -240,10 +240,19 @@ namespace SkaldAccessibility
         /// choke.</summary>
         private static string StatFacet(string label, string rawValue, string green, string red)
         {
+            // The verdict tag is NEVER first in the value: the game's
+            // formateNameValuePair wraps every value in the white
+            // ATTRIBUTE_VALUE_TAG before the caller's own green/red tag
+            // (TextTools.cs:36-39) — an anchored StartsWith never matches
+            // (adversarial review gate D MUST-FIX, the gate-C dead-code
+            // class again). Search for the earliest verdict tag instead;
+            // the versus tail is plain text, so no false positive exists.
             string verdict = null;
             string trimmed = rawValue.TrimStart();
-            if (!string.IsNullOrEmpty(green) && trimmed.StartsWith(green)) verdict = "better";
-            else if (!string.IsNullOrEmpty(red) && trimmed.StartsWith(red)) verdict = "worse";
+            int gi = string.IsNullOrEmpty(green) ? -1 : trimmed.IndexOf(green, StringComparison.Ordinal);
+            int ri = string.IsNullOrEmpty(red) ? -1 : trimmed.IndexOf(red, StringComparison.Ordinal);
+            if (gi >= 0 && (ri < 0 || gi < ri)) verdict = "better";
+            else if (ri >= 0 && (gi < 0 || ri < gi)) verdict = "worse";
 
             string cleaned = Patches.TextCleaner.CleanText(rawValue).Trim();
             if (cleaned.Length == 0) return null;
