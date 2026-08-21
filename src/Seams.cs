@@ -687,6 +687,7 @@ namespace SkaldAccessibility
         internal static MethodInfo DataControl_sendCharacterToBench;
         internal static MethodInfo DataControl_getCharacterFromBench;
         internal static FieldInfo GUIControl_listButtonsField;   // the REAL list on the difficulty screen
+        internal static MethodInfo Character_getDevelopmentPoints; // feat-screen exit receipt (gate G)
 
         /// <summary>Resolve the whole manifest. Called once from Plugin.Awake,
         /// before any patching. Metadata reads only — safe at frame 0.</summary>
@@ -1340,6 +1341,7 @@ namespace SkaldAccessibility
             DataControl_getCharacterFromBench = M(DataControlType, "DataControl", "getCharacterFromBench",
                 new[] { typeof(string) });
             GUIControl_listButtonsField = F(typeof(GUIControl), "GUIControl", "listButtons");
+            Character_getDevelopmentPoints = M(CharacterType, "Character", "getDevelopmentPoints");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");

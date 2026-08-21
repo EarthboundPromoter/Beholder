@@ -1,5 +1,7 @@
 using HarmonyLib;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace SkaldAccessibility.Patches
 {
@@ -221,16 +223,17 @@ namespace SkaldAccessibility.Patches
             }
         }
 
-        /// <summary>The pressed feat and its pre-handler rank (the pressed
-        /// statics are set by updateMouseInteraction earlier this frame; null
-        /// on the overwhelmingly common no-press frames).</summary>
+        /// <summary>The pressed feat, its pre-handler rank, and its
+        /// pre-handler achieved-tier snapshot (the pressed statics are set by
+        /// updateMouseInteraction earlier this frame; null on the
+        /// overwhelmingly common no-press frames).</summary>
         private static object[] CaptureRank(FieldInfo pressedField)
         {
             try
             {
                 object feat = pressedField.GetValue(null);
                 if (feat == null) return null;
-                return new[] { feat, Seams.Feat_getRank.Invoke(feat, null) };
+                return new object[] { feat, Seams.Feat_getRank.Invoke(feat, null), TierSnapshot(feat) };
             }
             catch { return null; }
         }
@@ -243,9 +246,76 @@ namespace SkaldAccessibility.Patches
                 object feat = state[0];
                 int before = (int)state[1];
                 int after = (int)Seams.Feat_getRank.Invoke(feat, null);
-                if (after != before) Pump.NoteFeatRank(feat);
+                if (after == before) return;
+                Pump.NoteFeatRank(feat);
+                // Tier crossings (owner ruling 2026-08-21): the game's own
+                // achieved marker is the GREEN TAG it wraps around a tier
+                // block once rank >= threshold (FeatContainer.cs:227-235) —
+                // diff which blocks are green across the press and speak the
+                // grants: "Unlocked Cleave." / "Lost Cleave." Queued behind
+                // the rank line; the pool line trails after.
+                var beforeTiers = state[2] as Dictionary<int, TierInfo>;
+                var afterTiers = TierSnapshot(feat);
+                if (beforeTiers == null || afterTiers == null) return;
+                var lines = new List<string>();
+                foreach (var kv in afterTiers)
+                    if (kv.Value.Achieved
+                        && (!beforeTiers.TryGetValue(kv.Key, out var was) || !was.Achieved))
+                        lines.Add($"Unlocked {kv.Value.Grants ?? $"tier at {kv.Key} ranks"}.");
+                foreach (var kv in beforeTiers)
+                    if (kv.Value.Achieved
+                        && (!afterTiers.TryGetValue(kv.Key, out var now) || !now.Achieved))
+                        lines.Add($"Lost {kv.Value.Grants ?? $"tier at {kv.Key} ranks"}.");
+                if (lines.Count > 0) Pump.NoteFeatTierLine(string.Join(" ", lines));
             }
             catch { }
+        }
+
+        private sealed class TierInfo
+        {
+            public bool Achieved;
+            public string Grants;
+        }
+
+        /// <summary>Parse the feat's own rendered description into its tier
+        /// blocks: "\n\n"-separated, each opening "N RANKS" with "~ <grant>"
+        /// lines, the whole block green-wrapped when achieved
+        /// (FeatContainer.cs:51-71, :213-238). The spell-list tail a tier may
+        /// embed splits into its own fragment, which matches nothing here.
+        /// (The description pane re-renders this same composed string every
+        /// frame natively — the extra press-frame read is native-equivalent.)</summary>
+        private static Dictionary<int, TierInfo> TierSnapshot(object feat)
+        {
+            try
+            {
+                string desc = Seams.SkaldBaseObject_getFullDescription?.Invoke(feat, null) as string;
+                if (string.IsNullOrEmpty(desc)) return null;
+                string green = Seams.TagValue(Seams.C64_GreenLightTag);
+                var tiers = new Dictionary<int, TierInfo>();
+                foreach (string rawBlock in desc.Split(new[] { "\n\n" }, System.StringSplitOptions.None))
+                {
+                    string block = rawBlock.TrimStart();
+                    bool achieved = !string.IsNullOrEmpty(green)
+                        && block.StartsWith(green, System.StringComparison.Ordinal);
+                    string cleaned = TextCleaner.CleanText(block).TrimStart();
+                    var m = Regex.Match(cleaned, @"^(\d+) RANKS\b");
+                    if (!m.Success) continue;
+                    int threshold = int.Parse(m.Groups[1].Value);
+                    var names = new List<string>();
+                    foreach (string line in cleaned.Split('\n'))
+                    {
+                        string t = line.Trim();
+                        if (t.StartsWith("~ ")) names.Add(t.Substring(2).TrimEnd(':').Trim());
+                    }
+                    tiers[threshold] = new TierInfo
+                    {
+                        Achieved = achieved,
+                        Grants = names.Count > 0 ? string.Join(", ", names) : null,
+                    };
+                }
+                return tiers.Count > 0 ? tiers : null;
+            }
+            catch { return null; }
         }
     }
 }

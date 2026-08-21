@@ -241,6 +241,11 @@ namespace SkaldAccessibility
         /// press (rank diffed pre/post by the hook).</summary>
         public static void NoteFeatRank(object feat) => _pendingFeatRank = feat;
 
+        /// <summary>Tier-crossing line ("Unlocked Cleave." / "Lost Cleave."),
+        /// queued behind the rank line (owner ruling 2026-08-21).</summary>
+        public static void NoteFeatTierLine(string line) => _pendingFeatTierLine = line;
+        private static string _pendingFeatTierLine;
+
         /// <summary>Note-only: a staged rank was silently drained by the
         /// legality cascade (batch — one press can refund several feats).</summary>
         public static void NoteFeatRefund(object feat)
@@ -1824,6 +1829,16 @@ namespace SkaldAccessibility
                 }
                 catch { }
             }
+            // The tier-crossing line rides directly behind its rank line
+            // (owner ruling 2026-08-21: "unlocked X" / "lost X" — redundant
+            // with the description on purpose; allocations must be heard
+            // buying something). The pool line trails after via FeatPoints.
+            if (_pendingFeatTierLine != null)
+            {
+                string tierLine = _pendingFeatTierLine;
+                _pendingFeatTierLine = null;
+                Scaffold.SpeechService.SayQueued(tierLine, "Points");
+            }
 
             // Cascade refunds (owner phrasing 2026-08-17): state the diff,
             // remaining points trail via the FeatPoints line once the tally
@@ -1975,6 +1990,7 @@ namespace SkaldAccessibility
             if (state == null) return;
             string name = state.GetType().Name;
             if (name == _lastStateName) return;
+            string prevStateName = _lastStateName;
             _lastStateName = name;
             Scaffold.Log.ClockNow();        // wall time on every transition (L3)
             Scaffold.Log.HealthRollup();    // seam failures since last rollup (L5)
@@ -2021,6 +2037,32 @@ namespace SkaldAccessibility
             Patches.WornZonePatch.OnStateTransition();      // zone dies with its screen
             Patches.CampZonePatch.OnStateTransition();      // camp entry facts re-arm
             _pendingZoneLabel = null;
+            _pendingFeatTierLine = null;
+            // Feat-screen exit (owner ruling 2026-08-21): the game RETAINS
+            // unspent ranks on every exit path (save commits staged ranks;
+            // Escape refunds staged back into the pool — the silent discard
+            // is accepted as ruled) — say what's left on the table so
+            // silence never reads as loss. Level-up screen only: creation's
+            // Continue is gated on zero points, and its Abort discards the
+            // whole character. Queued — the save path can raise spell-learn
+            // popups first.
+            if (prevStateName == "FeatBuyState")
+            {
+                try
+                {
+                    object dcExit = Seams.MainControl_getDataControl?.Invoke(null, null);
+                    object pcExit = dcExit == null ? null
+                        : Seams.DataControl_getCurrentPC?.Invoke(dcExit, null);
+                    if (pcExit != null && Seams.Character_getDevelopmentPoints != null)
+                    {
+                        int unspent = (int)Seams.Character_getDevelopmentPoints.Invoke(pcExit, null);
+                        if (unspent > 0)
+                            Scaffold.SpeechService.SayQueued(unspent == 1
+                                ? "1 point unspent." : $"{unspent} points unspent.", "Points");
+                    }
+                }
+                catch { }
+            }
             // Point-pool records reset per state so re-entering an editor
             // screen re-announces its pools (the diff records otherwise
             // outlive the screen and dedup the entry lines to silence).
