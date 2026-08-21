@@ -308,12 +308,28 @@ namespace SkaldAccessibility
             catch { return false; }
         }
 
-        /// <summary>"Gameplay Settings" / "Key Bindings" — the game's own
-        /// list name as the section label (game-sanctioned harvest).</summary>
+        /// <summary>"Gameplay Settings" / "Key Bindings" — harvested from the
+        /// RENDERED sheet header, not the backing list (gate-E review
+        /// MUST-FIX: the key-bindings list never names itself, so
+        /// getListName() returns the "Components" ctor default while the game
+        /// renders its own "Key Bindings" override on top). List-name
+        /// fallback covers a not-yet-rendered first frame.</summary>
         private static string SettingsLabelOf(object state)
         {
             try
             {
+                object gui = Seams.StateBase_guiControl?.GetValue(state);
+                object complex = gui == null ? null
+                    : Seams.GUIControl_sheetComplexField?.GetValue(gui);
+                object header = complex == null ? null
+                    : Seams.SheetComplex_header?.GetValue(complex);
+                string rendered = header == null ? null
+                    : Seams.UITextBlock_content?.GetValue(header) as string;
+                if (!string.IsNullOrWhiteSpace(rendered))
+                {
+                    string cleaned = Patches.TextCleaner.CleanText(rendered).Trim();
+                    if (cleaned.Length > 0) return cleaned;
+                }
                 object list = Seams.SettingsBase_list?.GetValue(state);
                 string name = list == null ? null
                     : Seams.SkaldObjectList_getListName?.Invoke(list, null) as string;
@@ -1259,7 +1275,15 @@ namespace SkaldAccessibility
             if (_settingsScreen)
             {
                 var sections0 = ResolveSections();
-                if (sections0.Count > 0 && sections0[CurrentSectionIndex(sections0)].Id == "buttons")
+                var secNow = sections0.Count > 0 ? sections0[CurrentSectionIndex(sections0)] : null;
+                // The flip exists only where the canvas IS a slider control —
+                // on the key-bindings tab the sideways chain dead-ends in
+                // UICanvas's no-op (gate-E review MUST-FIX: silence, not a
+                // refusal). Buttons refuse likewise.
+                bool sliderCanvas = secNow != null && secNow.Id != "buttons"
+                    && Seams.UITextSliderControlType != null
+                    && Seams.UITextSliderControlType.IsInstanceOfType(secNow.Canvas);
+                if (!sliderCanvas)
                 {
                     Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
                     return;

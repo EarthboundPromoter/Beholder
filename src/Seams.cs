@@ -674,6 +674,8 @@ namespace SkaldAccessibility
         internal static MethodInfo SkaldObjectList_getListName;
         internal static MethodInfo SkaldObjectList_getCount;
         internal static MethodInfo SkaldObjectList_getMaxPageSize;
+        internal static FieldInfo GUIControl_sheetComplexField;  // the rendered sheet header's home
+        internal static FieldInfo SheetComplex_header;           // UITextBlock (nested protected class)
 
         /// <summary>Resolve the whole manifest. Called once from Plugin.Awake,
         /// before any patching. Metadata reads only — safe at frame 0.</summary>
@@ -1303,6 +1305,14 @@ namespace SkaldAccessibility
             SkaldObjectList_getListName = M(SkaldObjectListType, "SkaldObjectList", "getListName");
             SkaldObjectList_getCount = M(SkaldObjectListType, "SkaldObjectList", "getCount");
             SkaldObjectList_getMaxPageSize = M(SkaldObjectListType, "SkaldObjectList", "getMaxPageSize");
+            // The RENDERED sheet header (gate-E review MUST-FIX: the Controls
+            // tab's backing list name is the unset "Components" default — the
+            // game overrides the render with "Key Bindings"; harvest the
+            // render, not the model).
+            GUIControl_sheetComplexField = F(typeof(GUIControl), "GUIControl", "sheetComplex");
+            SheetComplex_header = GUIControl_sheetComplexField == null ? null
+                : AccessTools.Field(GUIControl_sheetComplexField.FieldType, "header");
+            Row("SheetComplex.header", SheetComplex_header != null);
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");
