@@ -604,6 +604,29 @@ namespace SkaldAccessibility
             string fact = "";
             string valid = "";
 
+            // Layer 1 (§6.18): an identifiable combatant landing carries the
+            // ruled top-level payload and stages the drilldown document; any
+            // other landing clears the staged document so the plain tile
+            // inspect resumes on the reading plane. isPC short-circuits ahead
+            // of isSpotted (which mutates for PCs — survey hazard).
+            object occupant = null;
+            try { occupant = Seams.MapTile_getLiveCharacter?.Invoke(tile, null); } catch { }
+            bool identifiable = occupant != null
+                && (B(Seams.Character_isPC, occupant) || B(Seams.MapTile_isIlluminated, tile)
+                    || B(Seams.Character_isSpotted, occupant));
+            string payload = "";
+            if (identifiable)
+            {
+                payload = CombatantDocument.LandingPayload(occupant);
+                var doc = CombatantDocument.Compose(occupant);
+                if (doc != null) ReviewLayer.NoteStagedDocument("Combatant", doc);
+                else ReviewLayer.ClearStaged();
+            }
+            else
+            {
+                ReviewLayer.ClearStaged();
+            }
+
             if (InPlacement())
             {
                 bool isValid = IsValidPlacement(map, tile);
@@ -616,13 +639,13 @@ namespace SkaldAccessibility
                 bool lead = _cfgValidPrepend == null || _cfgValidPrepend.Value;
                 string body = lead ? valid + ", " + label : label + ", " + valid.ToLowerInvariant();
                 Scaffold.SpeechService.Say(
-                    lead0 + crossing + body + offset + LightTail(tile) + (countTail ?? ""), "Nav");
+                    lead0 + crossing + body + offset + payload + LightTail(tile) + (countTail ?? ""), "Nav");
                 NoteInspect(tile);
                 return;
             }
 
             fact = PathFact(map, tile, tx, ty, ax, ay);
-            Scaffold.SpeechService.Say(lead0 + label + offset + fact + LightTail(tile) + (countTail ?? ""), "Nav");
+            Scaffold.SpeechService.Say(lead0 + label + offset + fact + payload + LightTail(tile) + (countTail ?? ""), "Nav");
             NoteInspect(tile);
         }
 

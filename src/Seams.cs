@@ -551,6 +551,19 @@ namespace SkaldAccessibility
         //      the buffer is never consumed (it gates turn pacing, §4c.11). ----
         internal static MethodInfo Character_getVitality;
         internal static MethodInfo Character_getWounds;
+        // Combat Layer 1 (§6.18): landing payload + drilldown document.
+        internal static MethodInfo Character_getMaxVitality;
+        internal static MethodInfo Character_getAttunement;
+        internal static MethodInfo Character_getMaxAttunement;
+        internal static MethodInfo Character_getConditionContainer;
+        internal static MethodInfo ConditionContainer_getComponentList;
+        internal static MethodInfo Character_getInspectDescription;
+        internal static Type ToolTipControlType;
+        internal static Type ToolTipType;                  // ToolTipControl+ToolTipCategory+ToolTip
+        internal static MethodInfo ToolTipControl_getRulesToolTips;
+        internal static MethodInfo ToolTipCategory_getToolTip;
+        internal static MethodInfo ToolTipCategory_getKeywords;
+        internal static MethodInfo ToolTip_getDescription;
         internal static MethodInfo Character_getTargetOpponent;
         internal static MethodInfo Character_isWeaponRanged;
         internal static FieldInfo Character_barkControl;        // the FIELD, never the lazy getter —
@@ -1108,6 +1121,21 @@ namespace SkaldAccessibility
             // Combat narration (CP2)
             Character_getVitality = M(CharacterType, "Character", "getVitality");
             Character_getWounds = M(CharacterType, "Character", "getWounds");
+            // Combat Layer 1 (§6.18): landing payload + drilldown document.
+            Character_getMaxVitality = M(CharacterType, "Character", "getMaxVitality");
+            Character_getAttunement = M(CharacterType, "Character", "getAttunement");
+            Character_getMaxAttunement = M(CharacterType, "Character", "getMaxAttunement");
+            Character_getConditionContainer = M(CharacterType, "Character", "getConditionContainer");
+            ConditionContainer_getComponentList = M(T("ConditionContainer"), "ConditionContainer", "getComponentList");
+            Character_getInspectDescription = M(CharacterType, "Character", "getInspectDescription");
+            ToolTipControlType = T("ToolTipControl");
+            ToolTipType = ToolTipCategoryType?.GetNestedType("ToolTip",
+                BindingFlags.NonPublic | BindingFlags.Public);
+            Row("ToolTipControl+ToolTipCategory+ToolTip", ToolTipType != null);
+            ToolTipControl_getRulesToolTips = M(ToolTipControlType, "ToolTipControl", "getRulesToolTips");
+            ToolTipCategory_getToolTip = M(ToolTipCategoryType, "ToolTipCategory", "getToolTip", new[] { typeof(string) });
+            ToolTipCategory_getKeywords = M(ToolTipCategoryType, "ToolTipCategory", "getKeywords");
+            ToolTip_getDescription = M(ToolTipType, "ToolTip", "getDescription");
             Character_getTargetOpponent = M(CharacterType, "Character", "getTargetOpponent");
             Character_isWeaponRanged = M(CharacterType, "Character", "isWeaponRanged");
             Character_barkControl = F(CharacterType, "Character", "barkControl");
