@@ -82,6 +82,22 @@ namespace SkaldAccessibility
         };
         private const string ButtonsLabel = "Buttons";
 
+        // Gate E: the settings family — gate-B funnel screens with four
+        // settings-specific rules (survey 2026-08-21): the section label
+        // harvests the game's own list name ("Gameplay Settings"…); A/D
+        // stays the game's plus/minus chooser (driven through the native
+        // sideways so the shipped "Plus."/"Minus." join speaks); the funnel
+        // edge is refused mod-side on non-pageable lists (the native
+        // increment over-runs any list shorter than its page); the whole
+        // table goes INERT while the key-binding capture is live (the
+        // capture reads SkaldIO's raw poll — the swallow choke never sees
+        // it). Exact class names — two lack the State suffix.
+        private static readonly HashSet<string> SettingsScreens = new HashSet<string>
+        {
+            "SettingsGameplayState", "SettingsDifficulty", "SettingsVideo",
+            "SettingsAudioState", "SettingsFontSelectionState", "SettingsKeyBindingState",
+        };
+
         // Gate C: sheet family — explicit section geometry.
         private sealed class SectionDef
         {
@@ -203,6 +219,7 @@ namespace SkaldAccessibility
         private static string _simpleLabel;      // gate-B screen
         private static SectionDef[] _sheetDef;   // gate-C screen
         private static InvSectionDef[] _invDef;  // gate-D screen
+        private static bool _settingsScreen;     // gate-E screen (simple + settings rules)
 
         // Gate-D mod-side memory: the current section id (grid sections have
         // no redirect canvas to infer from), the per-section row anchor (flat
@@ -223,6 +240,7 @@ namespace SkaldAccessibility
             if (Time.frameCount == _frame) return _simpleLabel != null || _sheetDef != null || _invDef != null;
             _frame = Time.frameCount;
             _state = null; _gui = null; _simpleLabel = null; _sheetDef = null; _invDef = null;
+            _settingsScreen = false;
             if (_enabled == null || !_enabled.Value) return false;
             try
             {
@@ -230,6 +248,12 @@ namespace SkaldAccessibility
                 if (s == null) return false;
                 string name = s.GetType().Name;
                 bool simple = SimpleScreens.TryGetValue(name, out string label);
+                if (!simple && SettingsScreens.Contains(name))
+                {
+                    simple = true;
+                    _settingsScreen = true;
+                    label = SettingsLabelOf(s);
+                }
                 bool sheet = !simple && SheetScreens.TryGetValue(name, out _sheetDef);
                 bool inv = !simple && !sheet && InvScreens.TryGetValue(name, out _invDef);
                 if (!simple && !sheet && !inv) { _sheetDef = null; _invDef = null; return false; }
@@ -263,7 +287,44 @@ namespace SkaldAccessibility
             if (!Refresh()) return false;
             if (Patches.ControllerFeedPatch.TextEntryActive()) return false;
             if (PopupUp() || Patches.GridNavigationPatch.GridActive()) return false;
+            if (_settingsScreen && RebindCaptureActive()) return false;
             return true;
+        }
+
+        /// <summary>The key-binding capture (gate E): while `assigning` is
+        /// true the game turns ANY key into a rebind by reading SkaldIO's
+        /// raw poll — the swallow choke never sees it, so the table must go
+        /// whole-inert on the game's own flag (no proxy; every table key
+        /// would otherwise both move the cursor AND become the binding).</summary>
+        private static bool RebindCaptureActive()
+        {
+            try
+            {
+                return Seams.SettingsKeyBindingStateType != null
+                    && Seams.SettingsKeyBindingStateType.IsInstanceOfType(_state)
+                    && Seams.SettingsKeyBinding_assigning != null
+                    && (bool)Seams.SettingsKeyBinding_assigning.GetValue(_state);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>"Gameplay Settings" / "Key Bindings" — the game's own
+        /// list name as the section label (game-sanctioned harvest).</summary>
+        private static string SettingsLabelOf(object state)
+        {
+            try
+            {
+                object list = Seams.SettingsBase_list?.GetValue(state);
+                string name = list == null ? null
+                    : Seams.SkaldObjectList_getListName?.Invoke(list, null) as string;
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    string cleaned = Patches.TextCleaner.CleanText(name).Trim();
+                    if (cleaned.Length > 0) return cleaned;
+                }
+            }
+            catch { }
+            return "Settings";
         }
 
         /// <summary>Force-false half of the claim (first guard in every
@@ -496,8 +557,11 @@ namespace SkaldAccessibility
             {
                 int numericCount = ScrollableCount(numeric);
                 if (numericCount > 0)
+                    // Settings (gate E): index-seat the Buttons section — the
+                    // funnel's edge fallthrough would slide the settings list
+                    // window from inside Buttons (the gate-D hazard again).
                     sections.Add(new Section { Id = "buttons", Label = ButtonsLabel, Canvas = numeric,
-                        Start = 0, Count = numericCount, Column = 0, IndexRows = false });
+                        Start = 0, Count = numericCount, Column = 0, IndexRows = _settingsScreen });
             }
             return sections;
         }
@@ -592,6 +656,12 @@ namespace SkaldAccessibility
 
             if (!sec.IndexRows)
             {
+                // Gate E: refuse the funnel edge on non-pageable settings
+                // lists — the native increment is the LIST length, not the
+                // overflow, so the game happily scrolls a 2-row list to show
+                // 1 row (survey 2026-08-21). Genuinely pageable lists
+                // (count > page) keep the native slide.
+                if (_settingsScreen && SettingsFunnelEdgeRefused(sec, upward)) return;
                 // Gate-B funnel path: native selection, native window slide,
                 // edge observer + hover join speak. Unchanged since gate B.
                 Pump.NotePlayerNav();
@@ -978,6 +1048,30 @@ namespace SkaldAccessibility
             catch { }
         }
 
+        /// <summary>Gate E: true (and spoken) when a funnel step on a
+        /// settings list would fall off a non-pageable list's edge — the
+        /// native scroll would slide a fully-visible list off screen.</summary>
+        private static bool SettingsFunnelEdgeRefused(Section sec, bool upward)
+        {
+            try
+            {
+                object list = Seams.SettingsBase_list?.GetValue(_state);
+                if (list == null || Seams.SkaldObjectList_getCount == null
+                    || Seams.SkaldObjectList_getMaxPageSize == null) return false;
+                int count = (int)Seams.SkaldObjectList_getCount.Invoke(list, null);
+                int page = (int)Seams.SkaldObjectList_getMaxPageSize.Invoke(list, null);
+                if (count > page) return false; // genuinely pageable — native slide is correct
+                int idx = CurrentIndex(sec.Canvas);
+                int visible = ScrollableCount(sec.Canvas);
+                if (!upward && idx >= visible - 1)
+                { Scaffold.SpeechService.Say("Bottom of list.", "Nav"); return true; }
+                if (upward && idx <= 0)
+                { Scaffold.SpeechService.Say("Top of list.", "Nav"); return true; }
+            }
+            catch { }
+            return false;
+        }
+
         private static void ResetWindow(Section sec)
         {
             try
@@ -1158,6 +1252,28 @@ namespace SkaldAccessibility
         /// remembered section (§3a "left column ↔ right column").</summary>
         private static void ColumnStep(int direction)
         {
+            // Gate E (ruling R1a): A/D on settings stays the game's own
+            // plus/minus chooser — the table drives the native sideways so
+            // the shipped ArrowFlipJoin speaks "Plus."/"Minus." unchanged.
+            // (Settings are single-column; the section axis is empty here.)
+            if (_settingsScreen)
+            {
+                var sections0 = ResolveSections();
+                if (sections0.Count > 0 && sections0[CurrentSectionIndex(sections0)].Id == "buttons")
+                {
+                    Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
+                    return;
+                }
+                var sideways = direction < 0
+                    ? Seams.GUIControl_controllerScrollSidewaysLeft
+                    : Seams.GUIControl_controllerScrollSidewaysRight;
+                if (sideways != null)
+                {
+                    Pump.NotePlayerNav();
+                    try { sideways.Invoke(_gui, null); } catch { }
+                    return;
+                }
+            }
             if (_sheetDef == null && _invDef == null)
             {
                 Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
@@ -1244,6 +1360,26 @@ namespace SkaldAccessibility
                 && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
             {
                 InvFacetStep(sec, direction);
+                return;
+            }
+
+            // Gate E (ruling R2): the settings row's one lateral facet is the
+            // setting's full description, queued through the shipped
+            // name-dedup path (SliderArrowPatch.QueueDescription).
+            if (_settingsScreen && sec.Id == "primary")
+            {
+                try
+                {
+                    object element = null;
+                    int idx = CurrentIndex(sec.Canvas);
+                    var elements = Seams.UICanvas_getScrollableElements?.Invoke(sec.Canvas, null) as IList;
+                    if (elements != null && idx >= 0 && idx < elements.Count) element = elements[idx];
+                    object sliderRow = element == null ? null
+                        : Patches.SliderArrowPatch.RowForScrollableElement(sec.Canvas, element);
+                    if (sliderRow != null) { Patches.SliderArrowPatch.QueueDescription(sliderRow); return; }
+                }
+                catch { }
+                Scaffold.SpeechService.Say("No columns.", "Nav");
                 return;
             }
             int row = sec.IndexRows ? CurrentIndex(sec.Canvas) : -1;

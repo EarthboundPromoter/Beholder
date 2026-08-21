@@ -667,6 +667,14 @@ namespace SkaldAccessibility
         internal static MethodInfo Character_isItemLegalToEquip;
         internal static MethodInfo SkaldActionResult_wasSuccess;
 
+        // ---- Table gate E: settings family (2026-08-21) ----
+        internal static Type SettingsKeyBindingStateType;
+        internal static FieldInfo SettingsKeyBinding_assigning;   // raw-poll rebind capture — table inert while true
+        internal static FieldInfo SettingsBase_list;
+        internal static MethodInfo SkaldObjectList_getListName;
+        internal static MethodInfo SkaldObjectList_getCount;
+        internal static MethodInfo SkaldObjectList_getMaxPageSize;
+
         /// <summary>Resolve the whole manifest. Called once from Plugin.Awake,
         /// before any patching. Metadata reads only — safe at frame 0.</summary>
         internal static void ResolveAll()
@@ -1283,6 +1291,18 @@ namespace SkaldAccessibility
             Character_isItemLegalToEquip = M(CharacterType, "Character", "isItemLegalToEquip",
                 new[] { ItemType, typeof(bool) });
             SkaldActionResult_wasSuccess = M(T("SkaldActionResult"), "SkaldActionResult", "wasSuccess");
+
+            // Table gate E: settings family (2026-08-21). The assigning flag
+            // is read per-frame while a settings screen is owned — the rebind
+            // capture reads SkaldIO's raw poll (getLastKeyPressed), which the
+            // key-swallow choke never sees, so the table must go inert on the
+            // game's own flag (no proxy).
+            SettingsKeyBindingStateType = T("SettingsKeyBindingState");
+            SettingsKeyBinding_assigning = F(SettingsKeyBindingStateType, "SettingsKeyBindingState", "assigning");
+            SettingsBase_list = F(AccessTools.TypeByName("SettingsBaseState"), "SettingsBaseState", "list");
+            SkaldObjectList_getListName = M(SkaldObjectListType, "SkaldObjectList", "getListName");
+            SkaldObjectList_getCount = M(SkaldObjectListType, "SkaldObjectList", "getCount");
+            SkaldObjectList_getMaxPageSize = M(SkaldObjectListType, "SkaldObjectList", "getMaxPageSize");
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");
