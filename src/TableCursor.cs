@@ -523,14 +523,17 @@ namespace SkaldAccessibility
                 int partyCount = MemberCount(party);
                 int benchCount = MemberCount(bench);
 
+                // Counts clamp to the RENDERED slots (6 / 2×6) — the bench
+                // list has no native size cap, and a member past slot 12
+                // would speak without a parkable cell (review SHOULD-FIX).
                 object partyBlock = Seams.PartyUI_partyBlock?.GetValue(ui);
                 if (partyBlock != null)
                     sections.Add(new Section { Id = "party", Label = "Main Party", Canvas = partyBlock,
-                        Start = 0, Count = partyCount, Column = 0, PortraitRows = true });
+                        Start = 0, Count = Math.Min(partyCount, 6), Column = 0, PortraitRows = true });
                 object benchBlock = Seams.PartyUI_sideBenchBlock?.GetValue(ui);
                 if (benchBlock != null)
                     sections.Add(new Section { Id = "bench", Label = "Camp Followers", Canvas = benchBlock,
-                        Start = 0, Count = benchCount, Column = 0, PortraitRows = true });
+                        Start = 0, Count = Math.Min(benchCount, 12), Column = 0, PortraitRows = true });
                 object numeric = NumericButtons();
                 int n = ScrollableCount(numeric);
                 if (n > 0)
@@ -1332,7 +1335,16 @@ namespace SkaldAccessibility
         /// <summary>Park the virtual mouse on a grid cell. Cell widgets are
         /// ctor-created with fixed geometry (UIGridBase.cs:192-202), so the
         /// park is correct even on the frame the window slides. Offsets =
-        /// the inventory sheet's own snap (GUIControlInventoryBase, (8,-8)).</summary>
+        /// the inventory sheet's own snap (GUIControlInventoryBase, (8,-8)).
+        ///
+        /// MECHANISM (gate-F review MUST-FIX, retroactively repairing the
+        /// gate-D parks too): setMouseToUIElement parks at the passed
+        /// CANVAS's own currently-selected CHILD (GUIControl.cs:1849-1858) —
+        /// never at a passed leaf. A leaf UIPortrait isn't even a UICanvas
+        /// (invoke threw); a leaf grid button no-opped (no child elements).
+        /// The native contract, used by every game call site: seat the row
+        /// canvas's own index, park the row canvas — the drill lands on the
+        /// cell.</summary>
         private static void ParkGridCell(object grid, int row, int col)
         {
             try
@@ -1340,9 +1352,12 @@ namespace SkaldAccessibility
                 if (grid == null) return;
                 var rows = Seams.UICanvas_getScrollableElements?.Invoke(grid, null) as IList;
                 if (rows == null || row < 0 || row >= rows.Count) return;
-                var cells = Seams.UICanvas_getScrollableElements?.Invoke(rows[row], null) as IList;
+                object rowCanvas = rows[row];
+                var cells = Seams.UICanvas_getScrollableElements?.Invoke(rowCanvas, null) as IList;
                 if (cells == null || col < 0 || col >= cells.Count) return;
-                Seams.GUIControl_setMouseToUIElement?.Invoke(_gui, new object[] { cells[col], 8, -8 });
+                try { Seams.UICanvas_setCurrentSelectedButton?.Invoke(rowCanvas, new object[] { col }); }
+                catch { }
+                Seams.GUIControl_setMouseToUIElement?.Invoke(_gui, new object[] { rowCanvas, 8, -8 });
             }
             catch { }
         }
