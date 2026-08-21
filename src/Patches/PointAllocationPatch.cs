@@ -301,10 +301,15 @@ namespace SkaldAccessibility.Patches
                     var m = Regex.Match(cleaned, @"^(\d+) RANKS\b");
                     if (!m.Success) continue;
                     int threshold = int.Parse(m.Groups[1].Value);
+                    // Split the RAW block into lines BEFORE cleaning —
+                    // CleanText collapses \n to spaces, which flattened the
+                    // whole block into one line and left the "~" harvest
+                    // dead (adversarial review MUST-FIX; every other caller
+                    // already pre-flattens deliberately).
                     var names = new List<string>();
-                    foreach (string line in cleaned.Split('\n'))
+                    foreach (string rawLine in block.Split('\n'))
                     {
-                        string t = line.Trim();
+                        string t = TextCleaner.CleanText(rawLine).Trim();
                         if (t.StartsWith("~ ")) names.Add(t.Substring(2).TrimEnd(':').Trim());
                     }
                     tiers[threshold] = new TierInfo
