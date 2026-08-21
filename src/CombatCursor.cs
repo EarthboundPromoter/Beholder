@@ -106,8 +106,14 @@ namespace SkaldAccessibility
 
         /// <summary>Consulted by the feed layer's stick postfixes: while the
         /// latch is open, every left-stick read answers false — native axis
-        /// and keyboard emulation alike (the force-false half of receipt 7).</summary>
-        internal static bool LatchClaimsStick => _listOpen && InCombat();
+        /// and keyboard emulation alike (the force-false half of receipt 7).
+        /// The latch SUSPENDS under the game's own modal surfaces (Sonnet
+        /// MUST-FIX 2026-08-21: popups and selector grids drive their
+        /// navigation through the same stick accessors — an unguarded claim
+        /// left a grid opened over the latch unnavigable and Escape-proof;
+        /// the POI list learned this exact lesson in R10).</summary>
+        internal static bool LatchClaimsStick
+            => _listOpen && InCombat() && !PopupUp() && !Patches.GridNavigationPatch.GridActive();
 
         // ---- Placement boundary state ----
         private static bool _lastValidKnown;
@@ -142,6 +148,10 @@ namespace SkaldAccessibility
         public static bool ShouldSwallowKey(KeyCode key)
         {
             if (!_listOpen && Time.frameCount > _swallowTailFrame) return false;
+            // The latch suspends under the game's own modal surfaces (Sonnet
+            // MUST-FIX): a popup or selector grid over the latch keeps full
+            // native input — Escape must reach the grid, options must fire.
+            if (_listOpen && (PopupUp() || Patches.GridNavigationPatch.GridActive())) return false;
             switch (key)
             {
                 case KeyCode.UpArrow:
@@ -158,6 +168,14 @@ namespace SkaldAccessibility
                 case KeyCode.A:
                 case KeyCode.S:
                 case KeyCode.D:
+                // Protective mandate (Sonnet note, adopted): option-row
+                // numbers and Space (the MainInteract alias — the contextual
+                // ATTACK button) must not spend the turn from inside a
+                // browse. Z remains the one deliberate act.
+                case KeyCode.Alpha1: case KeyCode.Alpha2: case KeyCode.Alpha3:
+                case KeyCode.Alpha4: case KeyCode.Alpha5: case KeyCode.Alpha6:
+                case KeyCode.Alpha7: case KeyCode.Alpha8: case KeyCode.Alpha9:
+                case KeyCode.Space:
                     return true;
                 default:
                     return false;
@@ -1139,8 +1157,13 @@ namespace SkaldAccessibility
                 Scaffold.Log.Debug("Gate",
                     "combat WASD latch armed — binding swallow + stick force-false (receipt 7)");
             }
+            // The census names the ACTUAL tabs (Sonnet find 4 — the old
+            // two-way split counted "friendlies" PC-inclusive, matching no
+            // tab). Wording at calibration.
+            var neutrals = BuildRing(map, Ring.NeutralsFriendlies, ax, ay);
+            var party = BuildRing(map, Ring.Party, ax, ay);
             Scaffold.SpeechService.Say(
-                $"{CountPhrase(hostiles.Count, "hostile")}, {CountPhrase(friendlies.Count, "friendly", "friendlies")}. {TabNames[_tabIdx]} tab.",
+                $"Hostiles, {hostiles.Count}. Neutrals and friendlies, {neutrals.Count}. Party, {party.Count}. {TabNames[_tabIdx]} tab.",
                 "Nav");
         }
 
@@ -1217,7 +1240,7 @@ namespace SkaldAccessibility
                 var order = InitiativeOrder();
                 if (order.Count == 0)
                 {
-                    Scaffold.SpeechService.Say("No initiative order.", "Nav");
+                    Scaffold.SpeechService.Say("Turn Order, none.", "Nav");
                     return;
                 }
                 _tabRow[0] = _tabRow[0] < 0
@@ -1276,12 +1299,16 @@ namespace SkaldAccessibility
             }
             else ReviewLayer.ClearStaged();
 
+            // This row speaks itself — cancel any armed deferred landing in
+            // BOTH branches (Sonnet find 3: the off-viewport path left a
+            // stale spatial landing to fire right after the refusal).
+            _pendingSpeak = false;
+
             if (InParkWindow(map, tx, ty))
             {
                 _tileX = tx;
                 _tileY = ty;
                 _held = true;
-                _pendingSpeak = false;   // this row speaks itself, no deferral
                 AssertMouse(map);
                 Scaffold.SpeechService.Say($"{ordinal}, {name}{status}.{payload}", "Nav");
             }
