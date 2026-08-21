@@ -49,6 +49,20 @@ namespace SkaldAccessibility.Scaffold
 
         private static readonly Regex TagPattern = new Regex("<[^>]{1,64}?>", RegexOptions.Compiled);
         private static readonly Regex SpacePattern = new Regex("[ \t]{2,}", RegexOptions.Compiled);
+
+        /// <summary>R17 (owner ruling 2026-08-21, table-ui-design ledger):
+        /// stat signs speak as words, mod-wide — "+2" → "plus 2", "-1" →
+        /// "minus 1" — so no screen reader's punctuation settings can swallow
+        /// a sign. ONE central transcode at this choke (every speech path
+        /// routes through Clean; History stores post-Clean text, so repeats
+        /// inherit it). Plus binds any following number ("2d6+4",
+        /// "roll 2d6 + 4"); minus only when hugging its number with no word
+        /// character before it — "2-7" ranges and prose dashes ("go - 3
+        /// miles") stay untouched. U+2212 (real minus) included.</summary>
+        private static readonly Regex SignPlusPattern =
+            new Regex(@"\s*\+\s*(?=\d)", RegexOptions.Compiled);
+        private static readonly Regex SignMinusPattern =
+            new Regex(@"(?<!\w)[-−](?=\d)", RegexOptions.Compiled);
         /// <summary>Punctuation stutters — sprite-boundary seams ("action,. select")
         /// and authored double periods — collapse to the run's first mark. EXCEPT the
         /// authored ELLIPSIS (CS2 ride 2026-08-04: the rule was eating the game's own
@@ -378,6 +392,11 @@ namespace SkaldAccessibility.Scaffold
             text = text.Replace('�', '\'');
             text = TagPattern.Replace(text, " ");
             text = text.Replace('\n', ' ').Replace('\r', ' ').Replace('\t', ' ');
+            // R17 sign transcode — after markup stripping (so a color-tagged
+            // "+2" is bare by now), before whitespace collapse absorbs the
+            // introduced spacing.
+            text = SignPlusPattern.Replace(text, " plus ");
+            text = SignMinusPattern.Replace(text, "minus ");
             text = StutterPattern.Replace(text, StutterEvaluator);
             text = SpacePattern.Replace(text, " ").Trim();
             // Leading slash-run decoration is visual styling, not content — the
