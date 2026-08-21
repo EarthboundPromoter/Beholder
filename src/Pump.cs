@@ -1179,6 +1179,13 @@ namespace SkaldAccessibility
         /// (positional counts trail — RW3 standing rule).</summary>
         private static string ComposeSelection(object control, int index)
         {
+            // Table gate C: registered sheet sections (entry canvases,
+            // ability/spell grids, and the sheet's own flat index) compose
+            // through the table's row composer — the cells render icon art
+            // or tabbed composites the generic paths mis-serve.
+            string tableRow = TableCursor.ComposeSheetCell(control, index);
+            if (tableRow != null) return tableRow;
+
             // Selector grids (WP9): cells are image buttons with no rendered
             // text — names resolve from the game's own button-data list.
             if (Seams.UIAbilitySelectorGridType != null && Seams.UIAbilitySelectorGridType.IsInstanceOfType(control))

@@ -177,6 +177,12 @@ namespace SkaldAccessibility.Patches
         /// <summary>Returns true when the press was handled (skip native).</summary>
         private static bool Sideways(object gui, bool right)
         {
+            // Table gate C (2026-08-21): while the table engine owns this
+            // state, the zone layer stands down whole — the table's A/D claim
+            // means this path shouldn't be reachable at all (the choke
+            // swallows the keys), so this guard is the belt to that brace.
+            // With Tables.Engine off, the zone layer works exactly as before.
+            if (TableCursor.OwnsCurrentState()) return false;
             try
             {
                 // What the funnel currently walks (virtual, wire-aware).

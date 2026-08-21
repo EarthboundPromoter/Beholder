@@ -426,6 +426,25 @@ namespace SkaldAccessibility
         internal static FieldInfo AbilitySheet_passiveList;
         internal static FieldInfo BaseCharacterSheet_leftColumn;
 
+        // ---- Table gate C (sheet family, 2026-08-21): entry canvases,
+        //      facet-data getters, spell-row composition ----
+        internal static FieldInfo CharSheet_entrySlot1;
+        internal static FieldInfo CharSheet_entrySlot2;
+        internal static FieldInfo CharSheet_entrySlot3;
+        internal static FieldInfo CharSheet_entrySlot4;
+        internal static FieldInfo CharSheet_entrySlot5;
+        internal static FieldInfo CharSheet_currentCharacter;
+        internal static MethodInfo Character_getListOfConditions;
+        internal static MethodInfo Character_getListOfPrimaryAttributes;
+        internal static MethodInfo Character_getListOfSkills;
+        internal static MethodInfo Character_getListOfSecondaryAttributes;
+        internal static MethodInfo Character_getListOfCombatStats;
+        internal static MethodInfo Character_getListOfDefences;
+        internal static MethodInfo Character_getListOfMagicAttributes;
+        internal static MethodInfo Character_getListOfSpellSchools;
+        internal static MethodInfo AbilitySpell_getSchoolList; // AbilitySpellType/getTier live in the spell-selector block above
+        internal static MethodInfo GameData_getAttributeName;
+
         // ---- Character-inventory grid segments (owner ride 2026-08-17:
         //      cells navigated but composed blank; columns moved silently) ----
         internal static Type InventorySegmentType;   // UIInventorySheetBase+UIGridCharacterInventorySegment
@@ -1180,6 +1199,29 @@ namespace SkaldAccessibility
             CombatPlanning_setMousePosition = M(CombatPlanningStateType, "CombatPlanningState", "setMousePosition");
             CombatPlacement_setMousePosition = M(CombatPlacementStateType, "CombatPlacementState", "setMousePosition");
             CombatTargeting_setMousePosition = M(CombatTargetingBaseType, "CombatTargetingBase", "setMousePosition");
+
+            // Table gate C: sheet family (2026-08-21). The entry fields are
+            // the per-list canvases (each its own UICanvas with its own
+            // remembered row); the Character list getters feed the lateral
+            // description facets; the spell getters feed the ruled §6.6 row
+            // composition (school display name via the game's own
+            // GameData.getAttributeName).
+            CharSheet_entrySlot1 = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "entry1");
+            CharSheet_entrySlot2 = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "entry2");
+            CharSheet_entrySlot3 = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "entry3");
+            CharSheet_entrySlot4 = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "entry4");
+            CharSheet_entrySlot5 = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "entry5");
+            CharSheet_currentCharacter = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "currentCharacter");
+            Character_getListOfConditions = M(CharacterType, "Character", "getListOfConditions");
+            Character_getListOfPrimaryAttributes = M(CharacterType, "Character", "getListOfPrimaryAttributes");
+            Character_getListOfSkills = M(CharacterType, "Character", "getListOfSkills");
+            Character_getListOfSecondaryAttributes = M(CharacterType, "Character", "getListOfSecondaryAttributes");
+            Character_getListOfCombatStats = M(CharacterType, "Character", "getListOfCombatStats");
+            Character_getListOfDefences = M(CharacterType, "Character", "getListOfDefences");
+            Character_getListOfMagicAttributes = M(CharacterType, "Character", "getListOfMagicAttributes");
+            Character_getListOfSpellSchools = M(CharacterType, "Character", "getListOfSpellSchools");
+            AbilitySpell_getSchoolList = M(AbilitySpellType, "AbilitySpell", "getSchoolList");
+            GameData_getAttributeName = M(T("GameData"), "GameData", "getAttributeName", new[] { typeof(string) });
 
             // C64Color tags
             C64_YellowTag = PF(C64ColorType, "C64Color", "YELLOW_TAG");
