@@ -84,9 +84,9 @@ namespace SkaldAccessibility
         private static int _pendingFrame = -1;
         private static int _pendingX, _pendingY;
         private static string _pendingTail;      // ring counter (", 2 of 4.") or null
+        private static string _pendingPrefix;    // initiative ordinal ("3, ") or null
 
         // ---- Scan/list state ----
-        private static int _lastRing = -1;
         private static bool _listOpen;
         private static List<Entry>[] _rings;
         private static int _listCat;
@@ -98,21 +98,11 @@ namespace SkaldAccessibility
         private static bool _lastValid;
         private static bool _censusSpoken;
 
-        // ---- Initiative panel mode (CP4, owner design 2026-08-18): I snaps
-        //      onto the acting character's row; the panel's NATIVE hover
-        //      machinery does the rest (slide-out, current-initiative static,
-        //      map highlight). W/S re-snap rows; A/D/I/Escape exit with the
-        //      cursor rerouted onto the hovered combatant's tile. Rows are
-        //      rebuilt per frame — the mode holds an INDEX and re-snaps to
-        //      the fresh element each frame. Clicks pass through untouched
-        //      (ride test). ----
-        private static bool _panelOpen;
-        private static int _panelIdx = -1;
-        private static object _panelSpokenChar;   // hover-line dedup (reference identity)
-
-        /// <summary>Consulted by the movement suppression (WP9 modal
-        /// precedent): W/S walk rows, A/D exit — none may move the character.</summary>
-        public static bool PanelActive => _panelOpen && InCombat();
+        // (The CP4 initiative panel mode retired 2026-08-21 — combat Layer 1,
+        // table-ui-design §6.18: the I/U initiative walk parks the cursor on
+        // actors' battlefield tiles through the normal hover path, so the
+        // native list's fences — per-frame rebuild, sustained hover, static
+        // map-highlight mutation — no longer apply to anything.)
 
         // Our own virtual-mouse writes (latch assert, panel snap) must not
         // count as external takeovers.
@@ -135,10 +125,6 @@ namespace SkaldAccessibility
         /// cursor's): keys the game must not see while the K list is open.</summary>
         public static bool ShouldSwallowKey(KeyCode key)
         {
-            // Panel mode: Escape is an exit, never the menu. (W/S/A/D are
-            // covered by the movement suppression; I never reaches the game —
-            // the Y feed retired mod-wide, R16.)
-            if (_panelOpen && key == KeyCode.Escape && InCombat()) return true;
             if (!_listOpen && Time.frameCount > _swallowTailFrame) return false;
             switch (key)
             {
@@ -295,15 +281,6 @@ namespace SkaldAccessibility
 
                 if (PopupUp() || Patches.GridNavigationPatch.GridActive()) return;
 
-                // Panel mode: the per-frame re-snap onto the focused row
-                // (rows are rebuilt each frame; the game's own snap helper
-                // reads live coordinates, so the slide-out stays hovered).
-                if (_panelOpen)
-                {
-                    PanelResnap();
-                    return;
-                }
-
                 if (!_held) return;
                 AssertMouse(map);
             }
@@ -313,177 +290,135 @@ namespace SkaldAccessibility
             }
         }
 
-        // ---- Initiative panel mode ----
+        // ---- The initiative walk (combat Layer 1, table-ui-design §6.18):
+        //      I/U step the encounter's own initiative order forward/backward,
+        //      parking the cursor on each actor's tile through the normal
+        //      hover path; the landing line leads with the actor's ordinal —
+        //      "3, Goblin B, …" — the temporal walk's leading fact (rank is
+        //      conveyed by list order in the game's own UI). The order is
+        //      read FRESH per press: InitiativeList.getInitiativeList() via
+        //      the one private hop (CombatEncounter.initiativeList) — the
+        //      list instance is swapped wholesale on every sort (survey
+        //      2026-08-21), so nothing is cached; dead entries are filtered
+        //      here (the game's sort drops them only lazily). ----
 
-        private static object PanelRowElement(int idx, out object character, out int count)
+        /// <summary>The live initiative order: dead-filtered, tile-bearing
+        /// actors only (a deploying PC with no tile yet cannot host the
+        /// cursor). Fresh snapshot per call.</summary>
+        private static List<object> InitiativeOrder()
         {
-            character = null; count = 0;
+            var order = new List<object>();
             try
             {
-                object state = Pump.CurrentStateObject();
-                if (state == null || Seams.StateBase_guiControl == null
-                    || Seams.GUIControl_initiativeList == null || Seams.UICanvas_getElements == null)
-                    return null;
-                object gui = Seams.StateBase_guiControl.GetValue(state);
-                object list = gui == null ? null : Seams.GUIControl_initiativeList.GetValue(gui);
-                if (list == null) return null;
-                var elements = Seams.UICanvas_getElements.Invoke(list, null) as System.Collections.IList;
-                if (elements == null || elements.Count == 0) return null;
-                count = elements.Count;
-                if (idx < 0 || idx >= elements.Count) return null;
-                object row = elements[idx];
-                if (row != null && Seams.InitiativeButton_getCharacter != null
-                    && Seams.InitiativeButtonType != null
-                    && Seams.InitiativeButtonType.IsInstanceOfType(row))
-                    character = Seams.InitiativeButton_getCharacter.Invoke(row, null);
-                return row;
+                object dc = Seams.MainControl_getDataControl?.Invoke(null, null);
+                object enc = dc == null ? null : Seams.DataControl_getCombatEncounter?.Invoke(dc, null);
+                if (enc == null || Seams.CombatEncounter_initiativeList == null
+                    || Seams.InitiativeList_getInitiativeList == null) return order;
+                object il = Seams.CombatEncounter_initiativeList.GetValue(enc);
+                var list = il == null ? null
+                    : Seams.InitiativeList_getInitiativeList.Invoke(il, null) as System.Collections.IList;
+                if (list == null) return order;
+                foreach (object ch in list)
+                {
+                    if (ch == null || B(Seams.Character_isDead, ch)) continue;
+                    if (TileOf(ch) == null) continue;
+                    order.Add(ch);
+                }
             }
+            catch { }
+            return order;
+        }
+
+        private static object TileOf(object ch)
+        {
+            try { return Seams.Character_getMapTile?.Invoke(ch, null); }
             catch { return null; }
         }
 
-        private static void PanelResnap()
+        private static int IndexOfRef(List<object> list, object item)
         {
-            object row = PanelRowElement(_panelIdx, out object ch, out int count);
-            if (row == null)
-            {
-                // Roster shrank under us (death re-sort): clamp or close.
-                if (count == 0) { ClosePanel(rerouteTo: null); return; }
-                _panelIdx = Math.Min(_panelIdx, count - 1);
-                row = PanelRowElement(_panelIdx, out ch, out count);
-                if (row == null) { ClosePanel(rerouteTo: null); return; }
-            }
-            SnapToRow(row);
-            // The hover line speaks when the focused COMBATANT changes
-            // (reference identity — rows are rebuilt per frame, characters
-            // are stable).
-            if (!ReferenceEquals(ch, _panelSpokenChar) && ch != null)
-            {
-                _panelSpokenChar = ch;
-                SpeakPanelRow(ch, _panelIdx, count);
-            }
+            for (int i = 0; i < list.Count; i++)
+                if (ReferenceEquals(list[i], item)) return i;
+            return -1;
         }
 
-        private static void SnapToRow(object rowElement)
+        /// <summary>I (+1) / U (−1). Scan-family grammar: anchored on the
+        /// combatant under the cursor, a press steps (wrapping); unanchored,
+        /// the first press LANDS on the acting character without stepping
+        /// (top/tail of order when no one is acting, e.g. placement).</summary>
+        private static void StepInitiative(object map, int dir)
         {
-            try
+            ClearTooltip();
+            var order = InitiativeOrder();
+            if (order.Count == 0)
             {
-                object state = Pump.CurrentStateObject();
-                object gui = state == null ? null : Seams.StateBase_guiControl?.GetValue(state);
-                if (gui == null || Seams.GUIControl_setMouseToUIElement == null) return;
-                _selfAsserting = true;
-                try
-                {
-                    // The popup-grid family's own hover offset (+8, -8).
-                    Seams.GUIControl_setMouseToUIElement.Invoke(gui, new object[] { rowElement, 8, -8 });
-                }
-                finally { _selfAsserting = false; }
-            }
-            catch { }
-        }
-
-        private static void SpeakPanelRow(object ch, int idx, int count)
-        {
-            string name = CombatSpine.DisplayNameOf(ch) ?? "Someone";
-            string status = null;
-            try
-            {
-                string raw = Seams.Character_printInitiativeStatus?.Invoke(ch, null) as string;
-                if (!string.IsNullOrWhiteSpace(raw))
-                    status = Patches.TextCleaner.CleanText(raw).Trim().TrimStart('(').TrimEnd(')').ToLowerInvariant();
-            }
-            catch { }
-            int vit = -1, wounds = -1;
-            try
-            {
-                if (Seams.Character_getVitality != null && Seams.Character_getWounds != null)
-                {
-                    vit = (int)Seams.Character_getVitality.Invoke(ch, null);
-                    wounds = (int)Seams.Character_getWounds.Invoke(ch, null);
-                }
-            }
-            catch { }
-            string vitals = vit >= 0 ? $", {vit} vitality, {wounds} wounds" : "";
-            string statusPart = string.IsNullOrWhiteSpace(status) ? "" : $", {status}";
-            Scaffold.SpeechService.Say($"{name}{statusPart}{vitals}, {idx + 1} of {count}.", "Nav");
-        }
-
-        private static void OpenPanel()
-        {
-            // Land on the acting character's row; top of order as fallback.
-            object actor = ActingCharacter();
-            int startIdx = 0;
-            PanelRowElement(0, out _, out int count);
-            if (count == 0)
-            {
-                Scaffold.SpeechService.Say("No initiative panel.", "Nav");
+                Scaffold.SpeechService.Say("No initiative order.", "Nav");
                 return;
             }
-            if (actor != null)
-            {
-                for (int i = 0; i < count; i++)
-                {
-                    PanelRowElement(i, out object ch, out _);
-                    if (ReferenceEquals(ch, actor)) { startIdx = i; break; }
-                }
-            }
-            _held = false;              // the panel owns the mouse; the tile hold yields
-            _pendingSpeak = false;
-            CloseListSilent();
-            _panelOpen = true;
-            _panelIdx = startIdx;
-            _panelSpokenChar = null;
-            PanelResnap();
-        }
 
-        /// <summary>Exit reroutes the battlefield cursor onto the hovered
-        /// combatant's tile (the row points at them by construction) — the
-        /// standard landing line speaks there (owner design).</summary>
-        private static void ClosePanel(object rerouteTo)
-        {
-            _panelOpen = false;
-            _panelSpokenChar = null;
-            if (rerouteTo != null)
+            int at = -1;
+            if (_held)
             {
-                try
-                {
-                    object tile = Seams.Character_getMapTile?.Invoke(rerouteTo, null);
-                    if (tile != null)
-                    {
-                        _tileX = (int)Seams.MapTile_getTileX.Invoke(tile, null);
-                        _tileY = (int)Seams.MapTile_getTileY.Invoke(tile, null);
-                        _held = true;
-                        object map = CurrentMap();
-                        if (map != null) { AssertMouse(map); QueueLanding(null); }
-                        return;
-                    }
-                }
+                object tile = TileAt(map, _tileX, _tileY);
+                object occ = null;
+                try { occ = tile == null ? null : Seams.MapTile_getLiveCharacter?.Invoke(tile, null); }
                 catch { }
+                if (occ != null) at = IndexOfRef(order, occ);
             }
+
+            int next;
+            if (at >= 0)
+            {
+                next = ((at + dir) % order.Count + order.Count) % order.Count;
+            }
+            else
+            {
+                object actor = ActingCharacter();
+                int cur = actor == null ? -1 : IndexOfRef(order, actor);
+                next = cur >= 0 ? cur : (dir > 0 ? 0 : order.Count - 1);
+            }
+            LandOnCharacter(map, order[next], next + 1);
         }
 
-        private static bool ProcessPanelInput()
+        /// <summary>Park on the actor's tile; the standard landing line speaks
+        /// with the initiative ordinal as its leading fact.</summary>
+        private static void LandOnCharacter(object map, object ch, int ordinal)
         {
-            if (Input.GetKeyDown(KeyCode.W))
+            object tile = TileOf(ch);
+            if (tile == null) return;
+            try
             {
-                if (_panelIdx > 0) { _panelIdx--; _panelSpokenChar = null; }
-                else Scaffold.SpeechService.Say("Top.", "Nav");
-                return true;
+                _tileX = (int)Seams.MapTile_getTileX.Invoke(tile, null);
+                _tileY = (int)Seams.MapTile_getTileY.Invoke(tile, null);
             }
-            if (Input.GetKeyDown(KeyCode.S))
+            catch { return; }
+            _held = true;
+            AssertMouse(map);
+            QueueLanding(null, $"{ordinal}, ");
+        }
+
+        /// <summary>P: center on the active unit — the same meaning P has
+        /// overland (recenter on who matters right now). The acting character
+        /// during rounds; the PC being placed during deployment.</summary>
+        private static void RecenterOnActor(object map)
+        {
+            ClearTooltip();
+            object actor = ActingCharacter();
+            object tile = actor == null ? null : TileOf(actor);
+            if (tile == null)
             {
-                PanelRowElement(_panelIdx, out _, out int count);
-                if (_panelIdx < count - 1) { _panelIdx++; _panelSpokenChar = null; }
-                else Scaffold.SpeechService.Say("Bottom.", "Nav");
-                return true;
+                Scaffold.SpeechService.Say("No active unit.", "Nav");
+                return;
             }
-            if (Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.Escape)
-                || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.D))
+            try
             {
-                PanelRowElement(_panelIdx, out object ch, out _);
-                ClosePanel(ch);
-                return true;
+                _tileX = (int)Seams.MapTile_getTileX.Invoke(tile, null);
+                _tileY = (int)Seams.MapTile_getTileY.Invoke(tile, null);
             }
-            return false;
+            catch { return; }
+            _held = true;
+            AssertMouse(map);
+            QueueLanding(null);
         }
 
         /// <summary>Same viewport→virtual-screen geometry as the overland
@@ -532,8 +467,6 @@ namespace SkaldAccessibility
         {
             _held = false;
             _pendingSpeak = false;
-            _panelOpen = false;
-            _panelSpokenChar = null;
             CloseListSilent();
         }
 
@@ -553,12 +486,6 @@ namespace SkaldAccessibility
             object map = CurrentMap();
             if (map == null || PopupUp() || Patches.GridNavigationPatch.GridActive()) return false;
 
-            // Panel mode owns W/S (rows) and A/D/I/Escape (exits) while open.
-            if (_panelOpen && ProcessPanelInput()) return true;
-            if (_panelOpen) return false;   // clicks and other keys pass through untouched
-
-            if (Input.GetKeyDown(KeyCode.I)) { OpenPanel(); return true; }
-
             if (_listOpen && ProcessListInput(map)) return true;
 
             if (Input.GetKeyDown(KeyCode.K)) { OpenList(map); return true; }
@@ -573,7 +500,12 @@ namespace SkaldAccessibility
 
             if (Input.GetKeyDown(KeyCode.H)) { Scan(map, Ring.Hostiles); return true; }
             if (Input.GetKeyDown(KeyCode.N)) { Scan(map, Ring.Friendlies); return true; }
-            if (Input.GetKeyDown(KeyCode.P)) { ScanReverse(map); return true; }
+            // Layer 1 (§6.18): I/U = the initiative walk, P = center on the
+            // active unit (replaces reverse-scan — the rings wrap forward,
+            // matching the overland precedent).
+            if (Input.GetKeyDown(KeyCode.I)) { StepInitiative(map, +1); return true; }
+            if (Input.GetKeyDown(KeyCode.U)) { StepInitiative(map, -1); return true; }
+            if (Input.GetKeyDown(KeyCode.P)) { RecenterOnActor(map); return true; }
 
             return false;
         }
@@ -614,20 +546,21 @@ namespace SkaldAccessibility
         /// mouse move hasn't been seen by a game update yet), so fast key
         /// repeats never drop a landing (review find 6). Same-frame re-arms
         /// are genuine last-wins.</summary>
-        private static void QueueLanding(string tail)
+        private static void QueueLanding(string tail, string prefix = null)
         {
             if (_pendingSpeak && Time.frameCount > _pendingFrame)
             {
                 _pendingSpeak = false;
                 object map = CurrentMap();
                 if (map != null && InCombat())
-                    SpeakTile(map, _pendingX, _pendingY, _pendingTail);
+                    SpeakTile(map, _pendingX, _pendingY, _pendingTail, _pendingPrefix);
             }
             _pendingSpeak = true;
             _pendingFrame = Time.frameCount;
             _pendingX = _tileX;
             _pendingY = _tileY;
             _pendingTail = tail;
+            _pendingPrefix = prefix;
         }
 
         /// <summary>Called from Pump.Drain each frame. Speaks the armed
@@ -644,24 +577,25 @@ namespace SkaldAccessibility
             _pendingSpeak = false;
             object map = CurrentMap();
             if (map == null) return;
-            SpeakTile(map, _pendingX, _pendingY, _pendingTail);
+            SpeakTile(map, _pendingX, _pendingY, _pendingTail, _pendingPrefix);
         }
 
         // ---- The unified landing readout ----
 
-        private static void SpeakTile(object map, int tx, int ty, string countTail)
+        private static void SpeakTile(object map, int tx, int ty, string countTail, string prefix = null)
         {
+            string lead0 = prefix ?? "";
             if (!AnchorPos(out int ax, out int ay)) { ax = tx; ay = ty; }
             object tile = TileAt(map, tx, ty);
             if (tile == null)
             {
-                Scaffold.SpeechService.Say("Nothing." + Offset(tx - ax, ty - ay), "Nav");
+                Scaffold.SpeechService.Say(lead0 + "Nothing." + Offset(tx - ax, ty - ay), "Nav");
                 return;
             }
 
             if (!B(Seams.MapTile_isSpotted, tile))
             {
-                Scaffold.SpeechService.Say("Unexplored." + Offset(tx - ax, ty - ay) + (countTail ?? ""), "Nav");
+                Scaffold.SpeechService.Say(lead0 + "Unexplored." + Offset(tx - ax, ty - ay) + (countTail ?? ""), "Nav");
                 return;
             }
 
@@ -682,13 +616,13 @@ namespace SkaldAccessibility
                 bool lead = _cfgValidPrepend == null || _cfgValidPrepend.Value;
                 string body = lead ? valid + ", " + label : label + ", " + valid.ToLowerInvariant();
                 Scaffold.SpeechService.Say(
-                    crossing + body + offset + LightTail(tile) + (countTail ?? ""), "Nav");
+                    lead0 + crossing + body + offset + LightTail(tile) + (countTail ?? ""), "Nav");
                 NoteInspect(tile);
                 return;
             }
 
             fact = PathFact(map, tile, tx, ty, ax, ay);
-            Scaffold.SpeechService.Say(label + offset + fact + LightTail(tile) + (countTail ?? ""), "Nav");
+            Scaffold.SpeechService.Say(lead0 + label + offset + fact + LightTail(tile) + (countTail ?? ""), "Nav");
             NoteInspect(tile);
         }
 
@@ -1058,7 +992,6 @@ namespace SkaldAccessibility
         private static void Scan(object map, Ring cat)
         {
             ClearTooltip();
-            _lastRing = (int)cat;
             if (!AnchorPos(out int ax, out int ay)) return;
             var ring = BuildRing(map, cat, ax, ay);
             if (ring.Count == 0)
@@ -1071,21 +1004,8 @@ namespace SkaldAccessibility
             LandOn(map, ring[next], next, ring.Count);
         }
 
-        private static void ScanReverse(object map)
-        {
-            ClearTooltip();
-            if (_lastRing < 0) { Scaffold.SpeechService.Say("No scan yet.", "Nav"); return; }
-            if (!AnchorPos(out int ax, out int ay)) return;
-            var ring = BuildRing(map, (Ring)_lastRing, ax, ay);
-            if (ring.Count == 0)
-            {
-                Scaffold.SpeechService.Say($"No {RingNames[_lastRing]}.", "Nav");
-                return;
-            }
-            int at = _held ? ring.FindIndex(e => e.X == _tileX && e.Y == _tileY) : -1;
-            int prev = at < 0 ? ring.Count - 1 : (at - 1 + ring.Count) % ring.Count;
-            LandOn(map, ring[prev], prev, ring.Count);
-        }
+        // (ScanReverse retired 2026-08-21, combat Layer 1: P is now
+        // center-on-active-unit, matching overland P; the rings wrap forward.)
 
         /// <summary>Ring/list landings use the IDENTICAL standard readout
         /// (owner ruling) plus the trailing counter.</summary>

@@ -57,6 +57,29 @@ namespace SkaldAccessibility
 
         public static void ClearPanel() { _panelRaw = null; _panelSource = null; }
 
+        // ---- Staged document (combat Layer 1, table-ui-design §6.18): a
+        // pre-composed, pre-sectioned document staged by a cursor landing —
+        // the combatant drilldown. Unlike the lazy panel capture, this is a
+        // deliberate snapshot at landing time (capture-at-write); it WINS over
+        // the panel capture until the next landing replaces or clears it, or
+        // a state transition drops everything. The reading plane's grammar
+        // (Home/End sections, PgUp/PgDn elements) is unchanged. ----
+        private static List<Composer.PanelSection> _staged;
+        private static string _stagedSource;
+
+        internal static void NoteStagedDocument(string source, List<Composer.PanelSection> sections)
+        {
+            if (sections == null || sections.Count == 0) { ClearStaged(); return; }
+            // Every stage is a fresh snapshot of a (possibly different)
+            // object — a genuinely new document, so always re-anchor.
+            _section = 0;
+            _element = -1;
+            _staged = sections;
+            _stagedSource = source;
+        }
+
+        public static void ClearStaged() { _staged = null; _stagedSource = null; }
+
         // ---- Toggle state ----
         private static bool _active;
         private static int _eatUntilFrame = -1; // swallow tail after an eat-close
@@ -176,6 +199,7 @@ namespace SkaldAccessibility
         {
             CloseSilent();
             ClearPanel();
+            ClearStaged();
         }
 
         /// <summary>Silent close — used when navigation/focus movement is the
@@ -264,6 +288,11 @@ namespace SkaldAccessibility
 
         private static List<Composer.PanelSection> Parse()
         {
+            // A staged document (combatant drilldown) wins over the lazy panel
+            // capture while present; it carries no trailing Status section —
+            // it is a snapshot of one object, not the world.
+            if (_staged != null && _staged.Count > 0)
+                return new List<Composer.PanelSection>(_staged);
             PanelPolicy.EnsureTags();
             var sections = Composer.SectionPanel(_panelSource, _panelRaw);
             AppendStatusSection(sections);

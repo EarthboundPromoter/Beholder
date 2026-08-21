@@ -144,7 +144,7 @@ namespace SkaldAccessibility.Patches
         {
             // Grid-modal (WP9) and initiative-panel-modal (CP4): W/S walk the
             // surface, A/D exit it — none may move the character.
-            if (__result && (GridActive() || CombatCursor.PanelActive)) __result = false;
+            if (__result && GridActive()) __result = false;
         }
 
         // ---- (2) The driver ----
