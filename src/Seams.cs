@@ -116,6 +116,16 @@ namespace SkaldAccessibility
         internal static MethodInfo SkaldIO_getKeyUp;
         internal static MethodInfo SkaldIO_getPressedEscapeKey;
         internal static MethodInfo SkaldIO_getMouseUp;
+        internal static MethodInfo SkaldIO_getMousePressed;
+        // Table-UI foundation (gate item 1): the scrollbar arrow reclaim.
+        internal static MethodInfo SkaldIO_getButtonScrollUp;
+        internal static MethodInfo SkaldIO_getButtonScrollDown;
+        internal static MethodInfo SkaldIO_getMouseWheelScrollUp;
+        internal static MethodInfo SkaldIO_getMouseWheelScrollDown;
+        internal static Type UIScrollbarType;
+        internal static MethodInfo UIScrollbar_updateMouseInteraction;
+        internal static FieldInfo UIScrollbar_degree;
+        internal static FieldInfo UIScrollbar_increment;
         internal static MethodInfo GUIControl_setMouseToClosestOptionAbove;
         internal static MethodInfo GUIControl_setMouseToClosestOptionBelow;
         internal static MethodInfo GUIControl_getControllerScrollableList;
@@ -644,6 +654,18 @@ namespace SkaldAccessibility
             SkaldIO_getKeyUp = M(SkaldIOType, "SkaldIO", "getKeyUp", new[] { typeof(UnityEngine.KeyCode) });
             SkaldIO_getPressedEscapeKey = M(SkaldIOType, "SkaldIO", "getPressedEscapeKey");
             SkaldIO_getMouseUp = M(SkaldIOType, "SkaldIO", "getMouseUp", new[] { typeof(int) });
+            SkaldIO_getMousePressed = M(SkaldIOType, "SkaldIO", "getMousePressed", new[] { typeof(int) });
+            // Table-UI foundation (gate item 1): the scrollbar arrow reclaim —
+            // held-arrow getters, the wheel getters (path exclusion in the
+            // backstop), and the scrollbar internals for the revert.
+            SkaldIO_getButtonScrollUp = M(SkaldIOType, "SkaldIO", "getButtonScrollUp");
+            SkaldIO_getButtonScrollDown = M(SkaldIOType, "SkaldIO", "getButtonScrollDown");
+            SkaldIO_getMouseWheelScrollUp = M(SkaldIOType, "SkaldIO", "getMouseWheelScrollUp");
+            SkaldIO_getMouseWheelScrollDown = M(SkaldIOType, "SkaldIO", "getMouseWheelScrollDown");
+            UIScrollbarType = T("UIScrollbar");
+            UIScrollbar_updateMouseInteraction = M(UIScrollbarType, "UIScrollbar", "updateMouseInteraction");
+            UIScrollbar_degree = F(UIScrollbarType, "UIScrollbar", "degree");
+            UIScrollbar_increment = F(UIScrollbarType, "UIScrollbar", "increment");
             GUIControl_setMouseToClosestOptionAbove = M(typeof(GUIControl), "GUIControl", "setMouseToClosestOptionAbove");
             GUIControl_setMouseToClosestOptionBelow = M(typeof(GUIControl), "GUIControl", "setMouseToClosestOptionBelow");
             GUIControl_getControllerScrollableList = M(typeof(GUIControl), "GUIControl", "getControllerScrollableList");

@@ -53,6 +53,10 @@ namespace SkaldAccessibility
                 // Diagnosability scaffold: per-channel debug gating (owner
                 // directive 2026-08-19).
                 Scaffold.Log.BindConfig(Config);
+                // Table-UI foundation: the scrollbar arrow reclaim (gate
+                // item 1) + the verification-gate instrumentation (items 2-4).
+                Patches.ScrollbarReclaimPatch.BindConfig(Config);
+                GateReceipts.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own
@@ -111,6 +115,9 @@ namespace SkaldAccessibility
 
             // Hotkey processing
             InputHandler.ProcessInput();
+
+            // Verification-gate instrumentation (table-UI foundation; log-only)
+            GateReceipts.Tick();
         }
 
         private void LateUpdate()

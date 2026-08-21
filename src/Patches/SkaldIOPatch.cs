@@ -162,6 +162,10 @@ namespace SkaldAccessibility.Patches
                 // (9) Combat cursor prefixes (CP3) — game-type detours on the
                 // combat states' mouse branches, so deferred like the rest.
                 CombatCursorPatches.Apply(harmony);
+
+                // (10) Scrollbar arrow reclaim (table-UI foundation, gate
+                // item 1) — SkaldIO + UIScrollbar detours, so deferred.
+                ScrollbarReclaimPatch.Apply(harmony);
             }
             catch (Exception ex)
             {
