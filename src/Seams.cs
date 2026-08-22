@@ -328,7 +328,13 @@ namespace SkaldAccessibility
         internal static MethodInfo Prop_shouldBeRemovedFromGame;   // the renderer's third gate (MapIllustrator drawProps)
         internal static MethodInfo PropLockable_isLocked;          // "empty" tag suppressed behind locks (owner ruling 2026-08-19)
         internal static MethodInfo SkaldIO_setVirtualMousePosition;
-        internal static MethodInfo SkaldIO_getMousePosition;   // park receipt readback
+        // Direct-coordinate cell parks (2026-08-21 rewrite): the cell element
+        // resolved through the game's own accessors, its position written
+        // straight to the virtual-mouse setter.
+        internal static Type UIGridBaseType;
+        internal static MethodInfo UIElement_getPosition;
+        internal static MethodInfo SkaldPoint2D_getX;
+        internal static MethodInfo SkaldPoint2D_getY;
         internal static MethodInfo ToolTipPrinter_clearToolTip;
         internal static MethodInfo ToolTipPrinter_hasToolTip;
         internal static MethodInfo OverlandState_setMouseInput;
@@ -955,7 +961,9 @@ namespace SkaldAccessibility
             SkaldIO_setVirtualMousePosition = M(SkaldIOType, "SkaldIO", "setVirtualMousePosition",
                 new[] { typeof(int), typeof(int) });
             SkaldIO_updateMousePosition = M(SkaldIOType, "SkaldIO", "updateMousePosition");
-            SkaldIO_getMousePosition = M(SkaldIOType, "SkaldIO", "getMousePosition");
+            UIElement_getPosition = M(T("UIElement"), "UIElement", "getPosition");
+            SkaldPoint2D_getX = M(T("SkaldPoint2D"), "SkaldPoint2D", "get_X");
+            SkaldPoint2D_getY = M(T("SkaldPoint2D"), "SkaldPoint2D", "get_Y");
             AttributeEditor_scrollSidewaysLeft = M(T("UIAttributeEditorSheet"), "UIAttributeEditorSheet", "controllerScrollSidewaysLeft");
             AttributeEditor_scrollSidewaysRight = M(T("UIAttributeEditorSheet"), "UIAttributeEditorSheet", "controllerScrollSidewaysRight");
             var baseCharacterSheet = T("UIBaseCharacterSheet");
@@ -1111,6 +1119,7 @@ namespace SkaldAccessibility
             InvSegment_grid = F(InventorySegmentType, "UIGridCharacterInventorySegment", "grid");
             InvSegment_update = M(InventorySegmentType, "UIGridCharacterInventorySegment", "update");
             var uiGridBase = T("UIGridBase");
+            UIGridBaseType = uiGridBase;
             UIGridBase_getScrollableElementColumn = M(uiGridBase, "UIGridBase", "getScrollableElementColumn");
             UIGridBase_getScrollableElementsAtColumn = M(uiGridBase, "UIGridBase", "getScrollableElements", new[] { typeof(int) });
             UIGridBase_width = F(uiGridBase, "UIGridBase", "width");

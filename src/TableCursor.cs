@@ -1038,18 +1038,7 @@ namespace SkaldAccessibility
                 catch { }
                 object grid = Seams.InvSegment_grid?.GetValue(seg);
                 ParkGridCell(grid, row, col);
-                // The native contract, end-to-end (first-boot fix 2026-08-21:
-                // the owner's combat-inventory ride proved item-cell clicks
-                // landing off-cell — row speech was selection-driven and
-                // correct while the virtual mouse never reached the cell, so
-                // Z hit whatever last held the mouse, closing the state from
-                // the Buttons row. Belt: the drill park above, now receipted.
-                // Braces: seat the game's OWN selection state — focus surface,
-                // column (written above), and the SHEET canvas's row index —
-                // then invoke the game's own snap, the exact call that parks
-                // for native controller players; whatever link the drill gets
-                // wrong, the native path parks from its own truth.)
-                NativeSeatAndSnap(seg, row);
+                NativeSeat(seg, row);
                 Pump.AlignInvHover(seg, row, col);
                 _invAnchor[sec.Id] = flatIdx;
                 _invAnchorItem[sec.Id] = ItemAt(sec, flatIdx);
@@ -1359,68 +1348,82 @@ namespace SkaldAccessibility
         /// cell.</summary>
         private static void ParkGridCell(object grid, int row, int col)
         {
-            // Receipted per link (2026-08-21): the combat-inventory ride
-            // proved this park failing SILENTLY on item grids while Buttons
-            // parks lived — every early-out and the final readback now log
-            // on the Park channel so the next ride names the dead link.
+            // Rewrite 2026-08-21 (the owner's first ride proved the old
+            // scrollable-list drill a silent no-op on item grids: navigation
+            // spoke — row speech is selection-driven — while the virtual
+            // mouse never moved, so Z clicked whatever last held it; the
+            // Buttons landing had left it on Exit, which closed the state).
+            // The old path leaned on the whole selection contract: filtered
+            // scrollable lists, a seat write, setMouseToUIElement's
+            // selected-child resolve, the controller gate. This one has two
+            // moving parts, both game-proven daily:
+            //  - resolve the CELL ELEMENT through the game's own accessors —
+            //    UIGridBase's own column accessor for grids (the exact
+            //    arithmetic the sheet controller contract uses, iterating
+            //    children UNFILTERED), a raw child walk for bespoke canvases
+            //    (party portraits: block → row canvas → leaf portrait);
+            //  - write its position straight to setVirtualMousePosition, the
+            //    overland latch's own setter; the mouse guard latches the
+            //    park against jitter as with every snap.
             try
             {
-                if (grid == null) { Scaffold.Log.Debug("Park", "grid null"); return; }
-                var rows = Seams.UICanvas_getScrollableElements?.Invoke(grid, null) as IList;
-                if (rows == null || row < 0 || row >= rows.Count)
+                if (grid == null) return;
+                object cell = null;
+                if (Seams.UIGridBaseType != null && Seams.UIGridBaseType.IsInstanceOfType(grid)
+                    && Seams.UIGridBase_getScrollableElementsAtColumn != null)
                 {
-                    Scaffold.Log.Debug("Park", $"rows dead: n={rows?.Count.ToString() ?? "null"} want row={row} ({grid.GetType().Name})");
-                    return;
+                    var colList = Seams.UIGridBase_getScrollableElementsAtColumn
+                        .Invoke(grid, new object[] { col }) as IList;
+                    if (colList != null && row >= 0 && row < colList.Count) cell = colList[row];
                 }
-                object rowCanvas = rows[row];
-                var cells = Seams.UICanvas_getScrollableElements?.Invoke(rowCanvas, null) as IList;
-                if (cells == null || col < 0 || col >= cells.Count)
+                else if (Seams.UICanvas_getElements != null)
                 {
-                    Scaffold.Log.Debug("Park", $"cells dead: n={cells?.Count.ToString() ?? "null"} want col={col} ({rowCanvas.GetType().Name})");
-                    return;
+                    var rows = Seams.UICanvas_getElements.Invoke(grid, null) as IList;
+                    if (rows == null || row < 0 || row >= rows.Count) return;
+                    var cells = Seams.UICanvas_getElements.Invoke(rows[row], null) as IList;
+                    if (cells == null || col < 0 || col >= cells.Count) return;
+                    cell = cells[col];
                 }
-                try { Seams.UICanvas_setCurrentSelectedButton?.Invoke(rowCanvas, new object[] { col }); }
-                catch (Exception ex) { Scaffold.Log.Debug("Park", "seat threw: " + ex.Message); }
-                Seams.GUIControl_setMouseToUIElement?.Invoke(_gui, new object[] { rowCanvas, 8, -8 });
-                Scaffold.Log.Debug("Park", $"drill parked r{row} c{col} -> vmouse {ReadVMouse()}");
+                ParkOnElement(cell);
             }
-            catch (Exception ex) { Scaffold.Log.Debug("Park", "drill threw: " + ex.Message); }
+            catch { }
         }
 
-        /// <summary>Seat the game's OWN inventory selection (focus surface +
-        /// sheet-canvas row index; the column was written by the caller) and
-        /// invoke the game's own snap — GUIControl.setMouseToSelectedOption,
-        /// virtual, dispatching to the inventory override's (8,-8). This is
-        /// the exact machinery that parks for native controller players; it
-        /// reads only game truth, so it cannot inherit a drill bug.</summary>
-        private static void NativeSeatAndSnap(object seg, int row)
+        /// <summary>Direct-coordinate park: the element's own rendered
+        /// position plus the game's inventory snap offsets (8,-8) — inside
+        /// any cell — through the virtual-mouse setter.</summary>
+        private static void ParkOnElement(object cell)
+        {
+            try
+            {
+                if (cell == null || Seams.UIElement_getPosition == null
+                    || Seams.SkaldPoint2D_getX == null || Seams.SkaldPoint2D_getY == null
+                    || Seams.SkaldIO_setVirtualMousePosition == null) return;
+                object pos = Seams.UIElement_getPosition.Invoke(cell, null);
+                if (pos == null) return;
+                int x = (int)Seams.SkaldPoint2D_getX.Invoke(pos, null);
+                int y = (int)Seams.SkaldPoint2D_getY.Invoke(pos, null);
+                Seams.SkaldIO_setVirtualMousePosition.Invoke(null, new object[] { x + 8, y - 8 });
+            }
+            catch { }
+        }
+
+        /// <summary>Seat the game's OWN inventory selection — focus surface
+        /// and the sheet canvas's row index (the column is written by the
+        /// caller) — so the game's controller machinery agrees with where
+        /// the table put the cursor; every native funnel call and snap then
+        /// starts from our cell instead of a stale index.</summary>
+        private static void NativeSeat(object seg, int row)
         {
             try
             {
                 object sheet = NativeScrollableList();
                 if (sheet == null || Seams.UIInventorySheetBaseType == null
-                    || !Seams.UIInventorySheetBaseType.IsInstanceOfType(sheet))
-                {
-                    Scaffold.Log.Debug("Park", "native seat: no sheet");
-                    return;
-                }
+                    || !Seams.UIInventorySheetBaseType.IsInstanceOfType(sheet)) return;
                 try { Seams.InvSheet_currentControllerSurface?.SetValue(sheet, seg); } catch { }
-                try { Seams.UICanvas_setCurrentSelectedButton?.Invoke(sheet, new object[] { row }); }
-                catch (Exception ex) { Scaffold.Log.Debug("Park", "native seat threw: " + ex.Message); }
-                Seams.GUIControl_setMouseToSelectedOption?.Invoke(_gui, null);
-                Scaffold.Log.Debug("Park", $"native snap row {row} -> vmouse {ReadVMouse()}");
+                try { Seams.UICanvas_setCurrentSelectedButton?.Invoke(sheet, new object[] { row }); } catch { }
             }
-            catch (Exception ex) { Scaffold.Log.Debug("Park", "native snap threw: " + ex.Message); }
-        }
-
-        private static string ReadVMouse()
-        {
-            try
-            {
-                object v = Seams.SkaldIO_getMousePosition?.Invoke(null, null);
-                return v == null ? "?" : v.ToString();
-            }
-            catch { return "?"; }
+            catch { }
         }
 
         /// <summary>Left/Right on inventory rows: facet 0 = the full row
