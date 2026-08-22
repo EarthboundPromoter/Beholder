@@ -1038,6 +1038,18 @@ namespace SkaldAccessibility
                 catch { }
                 object grid = Seams.InvSegment_grid?.GetValue(seg);
                 ParkGridCell(grid, row, col);
+                // The native contract, end-to-end (first-boot fix 2026-08-21:
+                // the owner's combat-inventory ride proved item-cell clicks
+                // landing off-cell — row speech was selection-driven and
+                // correct while the virtual mouse never reached the cell, so
+                // Z hit whatever last held the mouse, closing the state from
+                // the Buttons row. Belt: the drill park above, now receipted.
+                // Braces: seat the game's OWN selection state — focus surface,
+                // column (written above), and the SHEET canvas's row index —
+                // then invoke the game's own snap, the exact call that parks
+                // for native controller players; whatever link the drill gets
+                // wrong, the native path parks from its own truth.)
+                NativeSeatAndSnap(seg, row);
                 Pump.AlignInvHover(seg, row, col);
                 _invAnchor[sec.Id] = flatIdx;
                 _invAnchorItem[sec.Id] = ItemAt(sec, flatIdx);
@@ -1347,19 +1359,68 @@ namespace SkaldAccessibility
         /// cell.</summary>
         private static void ParkGridCell(object grid, int row, int col)
         {
+            // Receipted per link (2026-08-21): the combat-inventory ride
+            // proved this park failing SILENTLY on item grids while Buttons
+            // parks lived — every early-out and the final readback now log
+            // on the Park channel so the next ride names the dead link.
             try
             {
-                if (grid == null) return;
+                if (grid == null) { Scaffold.Log.Debug("Park", "grid null"); return; }
                 var rows = Seams.UICanvas_getScrollableElements?.Invoke(grid, null) as IList;
-                if (rows == null || row < 0 || row >= rows.Count) return;
+                if (rows == null || row < 0 || row >= rows.Count)
+                {
+                    Scaffold.Log.Debug("Park", $"rows dead: n={rows?.Count.ToString() ?? "null"} want row={row} ({grid.GetType().Name})");
+                    return;
+                }
                 object rowCanvas = rows[row];
                 var cells = Seams.UICanvas_getScrollableElements?.Invoke(rowCanvas, null) as IList;
-                if (cells == null || col < 0 || col >= cells.Count) return;
+                if (cells == null || col < 0 || col >= cells.Count)
+                {
+                    Scaffold.Log.Debug("Park", $"cells dead: n={cells?.Count.ToString() ?? "null"} want col={col} ({rowCanvas.GetType().Name})");
+                    return;
+                }
                 try { Seams.UICanvas_setCurrentSelectedButton?.Invoke(rowCanvas, new object[] { col }); }
-                catch { }
+                catch (Exception ex) { Scaffold.Log.Debug("Park", "seat threw: " + ex.Message); }
                 Seams.GUIControl_setMouseToUIElement?.Invoke(_gui, new object[] { rowCanvas, 8, -8 });
+                Scaffold.Log.Debug("Park", $"drill parked r{row} c{col} -> vmouse {ReadVMouse()}");
             }
-            catch { }
+            catch (Exception ex) { Scaffold.Log.Debug("Park", "drill threw: " + ex.Message); }
+        }
+
+        /// <summary>Seat the game's OWN inventory selection (focus surface +
+        /// sheet-canvas row index; the column was written by the caller) and
+        /// invoke the game's own snap — GUIControl.setMouseToSelectedOption,
+        /// virtual, dispatching to the inventory override's (8,-8). This is
+        /// the exact machinery that parks for native controller players; it
+        /// reads only game truth, so it cannot inherit a drill bug.</summary>
+        private static void NativeSeatAndSnap(object seg, int row)
+        {
+            try
+            {
+                object sheet = NativeScrollableList();
+                if (sheet == null || Seams.UIInventorySheetBaseType == null
+                    || !Seams.UIInventorySheetBaseType.IsInstanceOfType(sheet))
+                {
+                    Scaffold.Log.Debug("Park", "native seat: no sheet");
+                    return;
+                }
+                try { Seams.InvSheet_currentControllerSurface?.SetValue(sheet, seg); } catch { }
+                try { Seams.UICanvas_setCurrentSelectedButton?.Invoke(sheet, new object[] { row }); }
+                catch (Exception ex) { Scaffold.Log.Debug("Park", "native seat threw: " + ex.Message); }
+                Seams.GUIControl_setMouseToSelectedOption?.Invoke(_gui, null);
+                Scaffold.Log.Debug("Park", $"native snap row {row} -> vmouse {ReadVMouse()}");
+            }
+            catch (Exception ex) { Scaffold.Log.Debug("Park", "native snap threw: " + ex.Message); }
+        }
+
+        private static string ReadVMouse()
+        {
+            try
+            {
+                object v = Seams.SkaldIO_getMousePosition?.Invoke(null, null);
+                return v == null ? "?" : v.ToString();
+            }
+            catch { return "?"; }
         }
 
         /// <summary>Left/Right on inventory rows: facet 0 = the full row
@@ -1751,8 +1812,7 @@ namespace SkaldAccessibility
             var getter = FacetGetter(sec.Def.FacetData);
             if (getter == null || Seams.SkaldObjectList_getObjectList == null
                 || Seams.SkaldBaseObject_getFullDescription == null) return null;
-            object sheet = NativeScrollableList();
-            object character = Seams.CharSheet_currentCharacter?.GetValue(sheet);
+            object character = CurrentSheetCharacter();
             if (character == null) return null;
             object dataList = getter.Invoke(character, null);
             var objects = dataList == null ? null
@@ -1761,6 +1821,29 @@ namespace SkaldAccessibility
             string desc = Seams.SkaldBaseObject_getFullDescription.Invoke(objects[row], null) as string;
             if (string.IsNullOrWhiteSpace(desc)) return null;
             return Patches.TextCleaner.CleanText(desc.Replace("\n", " "));
+        }
+
+        /// <summary>The sheet family's character, from the hosting STATE's own
+        /// private field (first-boot fix 2026-08-21: the old bind targeted a
+        /// currentCharacter field on UIBaseCharacterSheet that never existed —
+        /// the base has none, the concrete sheets vary, but every hosting
+        /// state carries `character`).</summary>
+        private static object CurrentSheetCharacter()
+        {
+            try
+            {
+                object state = Pump.CurrentStateObject();
+                if (state == null) return null;
+                switch (state.GetType().Name)
+                {
+                    case "CharacterState": return Seams.CharacterState_character?.GetValue(state);
+                    case "AttributeState": return Seams.AttributeState_character?.GetValue(state);
+                    case "AbilitiesState": return Seams.AbilitiesState_character?.GetValue(state);
+                    case "SpellsState": return Seams.SpellsState_character?.GetValue(state);
+                    default: return null;
+                }
+            }
+            catch { return null; }
         }
 
         private static System.Reflection.MethodInfo FacetGetter(string key)

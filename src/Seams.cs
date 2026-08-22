@@ -328,6 +328,7 @@ namespace SkaldAccessibility
         internal static MethodInfo Prop_shouldBeRemovedFromGame;   // the renderer's third gate (MapIllustrator drawProps)
         internal static MethodInfo PropLockable_isLocked;          // "empty" tag suppressed behind locks (owner ruling 2026-08-19)
         internal static MethodInfo SkaldIO_setVirtualMousePosition;
+        internal static MethodInfo SkaldIO_getMousePosition;   // park receipt readback
         internal static MethodInfo ToolTipPrinter_clearToolTip;
         internal static MethodInfo ToolTipPrinter_hasToolTip;
         internal static MethodInfo OverlandState_setMouseInput;
@@ -433,7 +434,16 @@ namespace SkaldAccessibility
         internal static FieldInfo CharSheet_entrySlot3;
         internal static FieldInfo CharSheet_entrySlot4;
         internal static FieldInfo CharSheet_entrySlot5;
-        internal static FieldInfo CharSheet_currentCharacter;
+        // The sheet-family character (first-boot fix 2026-08-21: the old
+        // UIBaseCharacterSheet.currentCharacter bind was a phantom — no such
+        // field exists on the BASE; UIAbilitySheet/UISpellBookSheet declare
+        // their own private copies and UICharacterSheet/UIAttributeSheet have
+        // none at all. The character lives on each hosting STATE's own
+        // private field — one name, four types, exact-type binds.)
+        internal static FieldInfo CharacterState_character;
+        internal static FieldInfo AttributeState_character;
+        internal static FieldInfo AbilitiesState_character;
+        internal static FieldInfo SpellsState_character;
         internal static MethodInfo Character_getListOfConditions;
         internal static MethodInfo Character_getListOfPrimaryAttributes;
         internal static MethodInfo Character_getListOfSkills;
@@ -945,6 +955,7 @@ namespace SkaldAccessibility
             SkaldIO_setVirtualMousePosition = M(SkaldIOType, "SkaldIO", "setVirtualMousePosition",
                 new[] { typeof(int), typeof(int) });
             SkaldIO_updateMousePosition = M(SkaldIOType, "SkaldIO", "updateMousePosition");
+            SkaldIO_getMousePosition = M(SkaldIOType, "SkaldIO", "getMousePosition");
             AttributeEditor_scrollSidewaysLeft = M(T("UIAttributeEditorSheet"), "UIAttributeEditorSheet", "controllerScrollSidewaysLeft");
             AttributeEditor_scrollSidewaysRight = M(T("UIAttributeEditorSheet"), "UIAttributeEditorSheet", "controllerScrollSidewaysRight");
             var baseCharacterSheet = T("UIBaseCharacterSheet");
@@ -1260,7 +1271,10 @@ namespace SkaldAccessibility
             CharSheet_entrySlot3 = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "entry3");
             CharSheet_entrySlot4 = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "entry4");
             CharSheet_entrySlot5 = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "entry5");
-            CharSheet_currentCharacter = F(UIBaseCharacterSheetType, "UIBaseCharacterSheet", "currentCharacter");
+            CharacterState_character = F(T("CharacterState"), "CharacterState", "character");
+            AttributeState_character = F(T("AttributeState"), "AttributeState", "character");
+            AbilitiesState_character = F(T("AbilitiesState"), "AbilitiesState", "character");
+            SpellsState_character = F(T("SpellsState"), "SpellsState", "character");
             Character_getListOfConditions = M(CharacterType, "Character", "getListOfConditions");
             Character_getListOfPrimaryAttributes = M(CharacterType, "Character", "getListOfPrimaryAttributes");
             Character_getListOfSkills = M(CharacterType, "Character", "getListOfSkills");
