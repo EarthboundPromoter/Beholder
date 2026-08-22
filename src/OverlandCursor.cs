@@ -49,6 +49,17 @@ namespace SkaldAccessibility
     /// (shouldBeRemovedFromGame, the picked-up-item fix), hidden, undrawn.
     /// Unlocked empty containers carry ", empty" and sink to the ring tail.
     /// P re-anchors the cursor on the party tile from any overland context.
+    ///
+    /// Passive awareness (owner design 2026-08-21; config
+    /// Overland.PassiveAwareness): the "enters view" layer. One membership
+    /// sweep per world mutation (step commit, action key, excursion
+    /// return), diffed by identity against the previous sweep; arrivals
+    /// accumulate and flush as ONE category-counts line ("2 hostiles,
+    /// 1 loot.") on the event speech lane. Map entry speaks a full census
+    /// ("In view: ...") instead. Viewport-edge novelty is the RULE: leaving
+    /// and re-entering the window re-announces (stable geography the player
+    /// measures travel against). While passive is on the POI list rides the
+    /// same sweeps and is step-fresh by construction.
     /// </summary>
     public static class OverlandCursor
     {
@@ -62,6 +73,7 @@ namespace SkaldAccessibility
             public object Tracked;   // Character instance for People rings (beacon follows it)
             public int Dist;
             public bool Deprioritized;   // empty containers: ring tail regardless of distance
+            public bool Synthetic;       // edge exits: the anchor tile floats with the viewport
         }
 
         private static ConfigEntry<bool> _cfgCloseOnUse;
@@ -71,6 +83,11 @@ namespace SkaldAccessibility
             _cfgCloseOnUse = config.Bind("Overland", "POIListCloseOnUse", false,
                 "Close the POI list every time Z activates an entry (default: the list stays open and "
                 + "suspends/resumes around whatever the interaction opens).");
+            _cfgPassive = config.Bind("Overland", "PassiveAwareness", true,
+                "Announce what just came into view as category counts ('2 hostiles, 1 loot.') on every "
+                + "step or action, and speak an 'In view:' census on map entry. Deliberately pays one POI "
+                + "ring sweep per step while on (reverses the 2026-08-19 lazy-rebuild ruling for this "
+                + "feature; sweep timing logged on the PA channel). Off restores browse-time-only rebuilds.");
         }
 
         // ---- Cursor state (two ints + a held flag; the latch re-asserts) ----
@@ -226,6 +243,7 @@ namespace SkaldAccessibility
                 {
                     _lastMap = map;
                     Drop();       // new map: cursor and list reset (the edge below announces)
+                    ResetPassive();   // fresh identity sets; the census speaks after the mount settles
                 }
 
                 // ---- Modality edges (run in every state) ----
@@ -259,35 +277,45 @@ namespace SkaldAccessibility
                 if (map == null) return;
                 if (PopupUp() || Patches.GridNavigationPatch.GridActive()) return;
 
-                // ---- Staleness clock + beacon (list open, overland, unobstructed) ----
+                // ---- Staleness clock + beacon (overland, unobstructed) ----
                 // The world only mutates on player actions (step commits,
                 // bump interacts, clicks) — there is nothing to poll between
-                // them. Those edges only MARK the rings dirty; the rebuild
-                // runs at the next browse press, so an auto-walked path or a
-                // held-key march never pays the ring sweep per tile (Sonnet
-                // SHOULD-FIX 2026-08-19). The beacon stays live regardless:
+                // them. List-only mode: the edges only MARK the rings dirty
+                // and the rebuild runs at the next browse press, so a march
+                // never pays the ring sweep per tile (Sonnet SHOULD-FIX
+                // 2026-08-19). Passive awareness DELIBERATELY reverses that
+                // for its own clock — detection per step IS the feature
+                // (owner ruling 2026-08-21) — so the block now runs for
+                // list-open OR passive-on. The beacon stays live regardless:
                 // tracked entities re-read their own coordinates.
-                if (_listOpen && PartyPos(map, out int px, out int py))
+                bool passiveOn = _cfgPassive != null && _cfgPassive.Value;
+                if ((_listOpen || passiveOn) && PartyPos(map, out int px, out int py))
                 {
                     if (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.X)
                         || Input.GetKeyDown(KeyCode.Space)
                         || Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.A)
                         || Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.D))
+                    {
                         _ringsDirty = true;
+                        MarkPassiveDirty();
+                    }
 
                     bool moved = (_lastPartyX != px || _lastPartyY != py) && _lastPartyX != int.MinValue;
                     if (moved)
                     {
                         _ringsDirty = true;
+                        MarkPassiveDirty();
                         // Beacon: party stepped while an entity is landed —
                         // but SILENT while an auto-walk course is running (42
                         // offsets in 5 seconds on the ride — Opus log review
                         // 2026-08-19, owner-ruled). The arrival step's course
                         // is already empty, so arrival speaks naturally.
-                        if (_listIdx >= 0 && !PartyCourseActive(map)) SpeakBeacon(map, px, py);
+                        if (_listOpen && _listIdx >= 0 && !PartyCourseActive(map)) SpeakBeacon(map, px, py);
                     }
                     _lastPartyX = px; _lastPartyY = py;
                 }
+
+                if (passiveOn) PassiveTick(map);
 
                 if (!_held) return;
                 AssertMouse(map);
@@ -318,6 +346,19 @@ namespace SkaldAccessibility
         private static void RebuildRings(object map, int px, int py)
         {
             if (_rings == null) return;
+            var newRings = new List<Entry>[5];
+            for (int i = 0; i < 5; i++)
+                newRings[i] = BuildRing(map, (Category)i, px, py);
+            ApplyRings(newRings);
+        }
+
+        /// <summary>Install freshly-built rings into the open list, keeping
+        /// RebuildRings' contract: selection re-anchored by identity, drained
+        /// page auto-advanced. Split out 2026-08-21 so the passive-awareness
+        /// sweep can feed the list without paying a second sweep.</summary>
+        private static void ApplyRings(List<Entry>[] newRings)
+        {
+            if (_rings == null) return;
             object trackedSel = null;
             int selX = 0, selY = 0;
             bool hadSel = _listIdx >= 0 && _listIdx < _rings[_listCat].Count;
@@ -329,7 +370,7 @@ namespace SkaldAccessibility
             }
 
             for (int i = 0; i < 5; i++)
-                _rings[i] = BuildRing(map, (Category)i, px, py);
+                _rings[i] = newRings[i];
             Scaffold.Log.Debug("POI",
                 $"rebuild h={_rings[0].Count} n={_rings[1].Count} l={_rings[2].Count}"
                 + $" o={_rings[3].Count} x={_rings[4].Count} hadSel={hadSel}");
@@ -424,6 +465,10 @@ namespace SkaldAccessibility
         public static void OnStateTransition()
         {
             _held = false;
+            MarkPassiveDirty();   // excursions mutate the world off the step
+                                  // clock (dialogue spawns, combat outcomes);
+                                  // the first clean overland frame re-sweeps
+                                  // — an unchanged world diffs to silence.
             try
             {
                 object state = Pump.CurrentStateObject();
@@ -802,7 +847,7 @@ namespace SkaldAccessibility
                     int dist = Math.Abs(tx - px) + Math.Abs(ty - py);
                     if (!found || dist < best.Dist)
                     {
-                        best = new Entry { X = tx, Y = ty, Label = label, Dist = dist };
+                        best = new Entry { X = tx, Y = ty, Label = label, Dist = dist, Synthetic = true };
                         found = true;
                     }
                 }
@@ -1059,6 +1104,201 @@ namespace SkaldAccessibility
                 Scaffold.SpeechService.SayQueued(off.TrimStart(',', ' '), "Nav");
             }
             catch { }
+        }
+
+        // ---- Passive awareness (owner design 2026-08-21) ----
+        // One membership sweep per world mutation, diffed by identity against
+        // the previous sweep. Arrivals accumulate and flush as ONE line of
+        // category counts through the EVENT speech lane (SayQueuedEvent — no
+        // render-diff dedup: two honest "1 hostile." lines minutes apart must
+        // both speak; overflow coalesces, never drops). Viewport-edge novelty
+        // is the rule: the previous-sweep sets are the ONLY state, so leaving
+        // and re-entering the window re-announces by construction.
+
+        private static ConfigEntry<bool> _cfgPassive;
+
+        private sealed class RefEq : IEqualityComparer<object>
+        {
+            public static readonly RefEq Instance = new RefEq();
+            bool IEqualityComparer<object>.Equals(object a, object b) { return ReferenceEquals(a, b); }
+            int IEqualityComparer<object>.GetHashCode(object o) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o); }
+        }
+
+        private static HashSet<object> _paSeenTracked = new HashSet<object>(RefEq.Instance);
+        private static HashSet<long> _paSeenFixed = new HashSet<long>();
+        private static bool _paSeeded;               // census spoken for this map
+        private static int _paSeedEarliestFrame;     // census defers past the mount frame
+        private static bool _paDirty;
+        private static int _paDirtyFrame = -1;       // sweep waits one frame past the mark:
+                                                     // the mark lands on the keypress frame,
+                                                     // BEFORE the game processes the action
+        private static int _paEchoFrame = -1;        // one follow-up sweep after every dirty
+                                                     // sweep (Sonnet SHOULD-FIX 2026-08-21:
+                                                     // a same-tile interact has no movement
+                                                     // event to re-arm the clock, so a
+                                                     // mutation landing 2+ frames after the
+                                                     // keypress would bake into the baseline
+                                                     // silently or announce late on the next
+                                                     // step; the echo catches it — idempotent,
+                                                     // never self-rescheduling)
+        private static readonly int[] _paPending = new int[6];   // 5 categories + unseen
+        private static bool _paPendingAny;
+        private static float _paLastAccumAt;
+
+        private static void MarkPassiveDirty()
+        {
+            _paDirty = true;
+            _paDirtyFrame = Time.frameCount;
+        }
+
+        private static void ResetPassive()
+        {
+            _paSeenTracked.Clear();
+            _paSeenFixed.Clear();
+            _paSeeded = false;
+            _paSeedEarliestFrame = Time.frameCount + 1;
+            _paDirty = false;
+            _paEchoFrame = -1;
+            Array.Clear(_paPending, 0, _paPending.Length);
+            _paPendingAny = false;
+        }
+
+        /// <summary>Identity key for entries with no tracked reference.
+        /// Prop/ground/exit entries are tile-fixed: (category, x, y).
+        /// Synthetic edge exits FLOAT — their anchor tile slides along the
+        /// border with the viewport — so they key by label instead: one
+        /// "North edge" identity however the window moves.</summary>
+        private static long FixedKey(int cat, Entry e)
+        {
+            if (e.Synthetic)
+                return (1L << 60) | ((long)cat << 40) | (uint)e.Label.GetHashCode();
+            return ((long)cat << 40) | ((long)(e.X & 0xFFFFF) << 20) | (uint)(e.Y & 0xFFFFF);
+        }
+
+        /// <summary>Per-frame passive driver (from Tick; overland, no popup,
+        /// no grid). Seeds the map census, runs deferred-dirty sweeps, and
+        /// flushes the arrivals accumulator after a burst-merge gap.</summary>
+        private static void PassiveTick(object map)
+        {
+            if (!_paSeeded)
+            {
+                if (Time.frameCount < _paSeedEarliestFrame) return;
+                if (!PartyPos(map, out int sx, out int sy)) return;
+                var rings = PassiveSweep(map, sx, sy, countArrivals: false);
+                _paSeeded = true;
+                _paDirty = false;
+                var counts = new int[6];
+                for (int i = 0; i < 5; i++) counts[i] = rings[i].Count;
+                counts[5] = rings[(int)Category.Hostiles].FindAll(e => e.Label == "Something unseen").Count;
+                counts[(int)Category.Hostiles] -= counts[5];
+                string line = ComposeCounts(counts);
+                // Census on the map edge (owner ruling 2026-08-21: full
+                // enumeration of what is already in view and actionable, in
+                // the same language). Queued — it lands behind the game's own
+                // map-name announcement.
+                Scaffold.SpeechService.SayQueuedEvent(
+                    line == null ? "Nothing in view." : "In view: " + line + ".", "Passive");
+                Scaffold.Log.Debug("PA", "census: " + (line ?? "empty"));
+                return;
+            }
+
+            if (_paDirty && Time.frameCount > _paDirtyFrame)
+            {
+                _paDirty = false;
+                if (PartyPos(map, out int px, out int py))
+                {
+                    PassiveSweep(map, px, py, countArrivals: true);
+                    _paEchoFrame = Time.frameCount + 6;
+                }
+            }
+            else if (_paEchoFrame >= 0 && Time.frameCount >= _paEchoFrame)
+            {
+                _paEchoFrame = -1;
+                if (PartyPos(map, out int ex, out int ey))
+                    PassiveSweep(map, ex, ey, countArrivals: true);
+            }
+
+            // Burst merge: a held-key march lands arrivals across adjacent
+            // steps — hold briefly so they speak as one line. Back off while
+            // the speech queue is deep: the accumulator keeps merging, so
+            // nothing drops, it just gets terser.
+            if (_paPendingAny && Time.unscaledTime - _paLastAccumAt >= 0.35f
+                && Scaffold.SpeechService.QueueDepth < 15)
+                FlushPassive();
+        }
+
+        /// <summary>One full membership sweep: rebuild the identity sets,
+        /// optionally count arrivals into the accumulator, and — when the
+        /// POI list is open — apply the fresh rings to it (the list is
+        /// step-fresh by construction while passive is on).</summary>
+        private static List<Entry>[] PassiveSweep(object map, int px, int py, bool countArrivals)
+        {
+            float t0 = Time.realtimeSinceStartup;
+            var rings = new List<Entry>[5];
+            var tracked = new HashSet<object>(RefEq.Instance);
+            var fixedKeys = new HashSet<long>();
+            bool any = false;
+            for (int i = 0; i < 5; i++)
+            {
+                rings[i] = BuildRing(map, (Category)i, px, py);
+                foreach (var e in rings[i])
+                {
+                    bool fresh;
+                    if (e.Tracked != null)
+                    {
+                        fresh = !_paSeenTracked.Contains(e.Tracked);
+                        tracked.Add(e.Tracked);
+                    }
+                    else
+                    {
+                        long k = FixedKey(i, e);
+                        fresh = !_paSeenFixed.Contains(k);
+                        fixedKeys.Add(k);
+                    }
+                    if (fresh && countArrivals)
+                    {
+                        if (e.Label == "Something unseen") _paPending[5]++;
+                        else _paPending[i]++;
+                        any = true;
+                    }
+                }
+            }
+            _paSeenTracked = tracked;
+            _paSeenFixed = fixedKeys;
+            if (_listOpen) { ApplyRings(rings); _ringsDirty = false; }
+            if (any)
+            {
+                _paPendingAny = true;
+                _paLastAccumAt = Time.unscaledTime;
+            }
+            float ms = (Time.realtimeSinceStartup - t0) * 1000f;
+            if (ms >= 2f || any)
+                Scaffold.Log.Debug("PA", $"sweep {ms:0.0}ms"
+                    + (any ? $" pending h={_paPending[0]} n={_paPending[1]} l={_paPending[2]}"
+                           + $" o={_paPending[3]} x={_paPending[4]} u={_paPending[5]}" : ""));
+            return rings;
+        }
+
+        /// <summary>The census/arrival language — the K list's own count
+        /// grammar: "2 hostiles, 1 loot", unseen trailing. Null when all
+        /// slots are zero.</summary>
+        private static string ComposeCounts(int[] c)
+        {
+            var parts = new List<string>();
+            for (int i = 0; i < 5; i++)
+                if (c[i] > 0)
+                    parts.Add($"{c[i]} {(c[i] == 1 ? CategoryNames[i].TrimEnd('s') : CategoryNames[i])}");
+            if (c[5] > 0) parts.Add($"{c[5]} unseen");
+            return parts.Count == 0 ? null : string.Join(", ", parts.ToArray());
+        }
+
+        private static void FlushPassive()
+        {
+            string line = ComposeCounts(_paPending);
+            Array.Clear(_paPending, 0, _paPending.Length);
+            _paPendingAny = false;
+            if (line == null) return;
+            Scaffold.SpeechService.SayQueuedEvent(line + ".", "Passive");
         }
 
         private static void CloseList(bool announce)
