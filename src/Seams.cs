@@ -333,6 +333,11 @@ namespace SkaldAccessibility
         // straight to the virtual-mouse setter.
         internal static Type UIGridBaseType;
         internal static MethodInfo UIElement_getPosition;
+        // The element-surface families for the stick-feed arrow swap
+        // (stick-consumer survey 2026-08-23): every native element funnel
+        // reads through one of these bases (or a popup, or a selector grid).
+        internal static Type InfoBaseStateType;
+        internal static Type BaseMenuStateType;
         // (The Rules catalog seams — getRulesToolTips/getKeywords/getToolTip —
         //  already exist from the combat condition document; the nav
         //  revision's Rules tail reuses them.)
@@ -965,6 +970,8 @@ namespace SkaldAccessibility
                 new[] { typeof(int), typeof(int) });
             SkaldIO_updateMousePosition = M(SkaldIOType, "SkaldIO", "updateMousePosition");
             UIElement_getPosition = M(T("UIElement"), "UIElement", "getPosition");
+            InfoBaseStateType = T("InfoBaseState");
+            BaseMenuStateType = T("BaseMenuState");
             SkaldPoint2D_getX = M(T("SkaldPoint2D"), "SkaldPoint2D", "get_X");
             SkaldPoint2D_getY = M(T("SkaldPoint2D"), "SkaldPoint2D", "get_Y");
             AttributeEditor_scrollSidewaysLeft = M(T("UIAttributeEditorSheet"), "UIAttributeEditorSheet", "controllerScrollSidewaysLeft");

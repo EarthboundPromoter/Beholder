@@ -216,16 +216,51 @@ namespace SkaldAccessibility.Patches
         // wrappers, the Mono-inline lesson). A claimed press acted (walked the
         // text / hopped a topic, with its own player-nav stamp) and returns
         // the read to false so the option funnel never sees it.
-        // Nav revision §6 (owner carve-out 2026-08-23): selector bars are
-        // ELEMENTS — arrows' property. While a selector grid is open (either
-        // invocation path — Ctrl bar-browse or number key — sets the same
-        // flag), the stick emulation reads the ARROW keys instead of WASD:
-        // arrows drive the same native selection calls the stick drives,
-        // and WASD goes dark for the bar's lifetime (the receipt-7 shape,
-        // re-fenced). The K-latch stick claim is RETIRED (nav revision §5:
-        // WASD released to native character stepping under the latch).
+        // Nav revision §6, widened by the stick-consumer survey (owner
+        // fixups 2026-08-23): the stick emulation reads ARROWS on every
+        // ELEMENT surface and WASD only where the stick is WORLD movement.
+        // The survey enumerated every native stick consumer: WORLD =
+        // OverlandState walking, CombatPlanningState stepping,
+        // CombatPlacementState cursor; ELEMENT = selector grids, ALL popups
+        // (PopUpBase.updateControllerScrolling — the yes/no class),
+        // scene/dialogue option funnels (SceneBaseState — DialogueCursor's
+        // claim is key-agnostic, it consumes the boolean), the sheet/feat
+        // families (InfoBaseState — closes the FEAT TREE registry gap), the
+        // creation family (CharacterBuilderBaseState — stats/feats
+        // editors), and the menu family (BaseMenuState — credits, intro,
+        // nested). TableCursor-owned states are inert overlaps: ClaimsStick
+        // zeroes the read before FeedKey is consulted. Popup-vs-state is
+        // race-free by the game's own strict if/else (MainControl.cs:118).
+        // The K-latch stick claim is RETIRED (nav revision §5: WASD
+        // released to native character stepping under the latch).
+        private static int _elemFrame = -1;
+        private static bool _elemCache;
+        private static bool ElementSurface()
+        {
+            if (Time.frameCount == _elemFrame) return _elemCache;
+            _elemFrame = Time.frameCount;
+            bool elem = false;
+            try
+            {
+                if (GridNavigationPatch.GridActive()) elem = true;
+                else if (Seams.PopUpControl_getCurrentPopUp?.Invoke(null, null) != null) elem = true;
+                else
+                {
+                    object state = Pump.CurrentStateObject();
+                    elem = state != null
+                        && ((Seams.SceneBaseStateType?.IsInstanceOfType(state) ?? false)
+                         || (Seams.InfoBaseStateType?.IsInstanceOfType(state) ?? false)
+                         || (Seams.CharacterBuilderBaseStateType?.IsInstanceOfType(state) ?? false)
+                         || (Seams.BaseMenuStateType?.IsInstanceOfType(state) ?? false));
+                }
+            }
+            catch { elem = false; }
+            _elemCache = elem;
+            return elem;
+        }
+
         private static KeyCode FeedKey(KeyCode wasd, KeyCode arrow)
-            => GridNavigationPatch.GridActive() ? arrow : wasd;
+            => ElementSurface() ? arrow : wasd;
 
         static void Postfix_StickUpPressed(ref bool __result)
         {
