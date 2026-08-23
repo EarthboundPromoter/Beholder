@@ -349,7 +349,12 @@ namespace SkaldAccessibility
             bool composed = sections != null;
             if (sections == null)
                 sections = Composer.SectionPanel(_panelSource, _panelRaw);
-            if (_panelSource == "Tooltip")
+            // The Rules tail rides BOTH examine sources (fix 2026-08-23: it
+            // was fenced to the X-tip capture, but on table screens the
+            // reader mostly serves the game's select-updated description
+            // panel — the shipped route for sheet/item descriptions — so the
+            // mechanics definitions never appeared).
+            if (_panelSource == "Tooltip" || _panelSource == "SheetDesc")
                 AppendRulesTail(sections, _panelRaw);
             if (!composed) AppendStatusSection(sections);
             return sections;
@@ -419,8 +424,10 @@ namespace SkaldAccessibility
                 if (rules.Elements.Count == 0) return;
                 rules.FullText = $"Rules, {rules.Elements.Count}";
                 sections.Add(rules);
+                Scaffold.Log.Debug("Review",
+                    $"rules tail: {rules.Elements.Count} entries from {hits.Count} keyword hits ({_panelSource})");
             }
-            catch { }
+            catch (Exception ex) { Scaffold.Log.Throttled("review.rules", ex.Message); }
         }
 
         /// <summary>Word-bounded keyword search, mirroring the game's own
@@ -450,7 +457,13 @@ namespace SkaldAccessibility
         /// no document).</summary>
         internal static void InvalidateTooltipCapture()
         {
-            if (_panelSource == "Tooltip") ClearPanel();
+            if (_panelSource != "Tooltip") return;
+            ClearPanel();
+            // The forwarded-panel dedup record must die with the capture
+            // (fix 2026-08-23): a second X on the SAME item re-renders the
+            // identical tip text, and a surviving record swallowed the
+            // re-capture — the reader then served the previous document.
+            Pump.ForgetForwardedPanel("Tooltip");
         }
 
         private static void AppendStatusSection(List<Composer.PanelSection> sections)

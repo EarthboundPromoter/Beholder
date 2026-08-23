@@ -1687,6 +1687,28 @@ namespace SkaldAccessibility
             _spokenCanvases.Add(segment);
         }
 
+        /// <summary>Drop a source's forwarded-panel dedup record so the same
+        /// raw text can re-note the review buffer (the capture it gated was
+        /// invalidated — ReviewLayer.InvalidateTooltipCapture).</summary>
+        internal static void ForgetForwardedPanel(string source)
+        {
+            _lastPanelForwarded.Remove(source);
+        }
+
+        /// <summary>AlignInvHover's selection-side twin: align the selection
+        /// join's records to an index the table just wrote and spoke itself.
+        /// Without this, DrainSelection's element-identity escape re-voices
+        /// the row when the focused cell OBJECT moves under an unchanged
+        /// index (a grid crossing), interrupting the census line at +0f.</summary>
+        internal static void AlignSelection(object control, int index)
+        {
+            if (ReferenceEquals(_pendingSelection, control)) _pendingSelection = null;
+            _selControl = control;
+            _selIndex = index;
+            _selElement = FocusedElementOf(control, index);
+            _spokenCanvases.Add(control);
+        }
+
         /// <summary>Worn cell at (funnel row, zone column): slot label plus
         /// the item from the same Character getter the renderer paints the
         /// slot from — "Melee: Longsword" / "Head: empty". Row and column
@@ -2075,6 +2097,11 @@ namespace SkaldAccessibility
             _spokenListSelections.Clear(); // arrival observation in the new state
             _invHoverSegment = null;       // hover records die with the screen
             _invHoverRow = _invHoverCol = -1;
+            _lastPanelForwarded.Clear();   // the review capture died with the
+                                           // state — a surviving dedup record
+                                           // would swallow the SAME panel text
+                                           // re-rendering in the new screen
+                                           // (fix 2026-08-23)
             GameStateTracker.OnStateChanged(name, state);
         }
 

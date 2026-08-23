@@ -465,7 +465,8 @@ namespace SkaldAccessibility
         {
             var sections = ResolveSections();
             if (sections.Count == 0) { Scaffold.SpeechService.Say("Edge.", "Nav"); return; }
-            var sec = sections[CurrentSectionIndex(sections)];
+            int cur = CurrentSectionIndex(sections);
+            var sec = sections[cur];
 
             // Settings family: the chooser (revised R1a — was A/D). The flip
             // exists only where the canvas IS a slider control — on the
@@ -486,11 +487,13 @@ namespace SkaldAccessibility
                 NativeSideways(direction);
                 return;
             }
-            // 2D surfaces: cells laterally.
+            // 2D surfaces: cells laterally (sections ride along so a border
+            // press can cross into a laterally-adjacent grid — trade/container,
+            // owner ruling 2026-08-23).
             if (sec.InvDef != null
                 && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
-            { Grid2DStep(null, -1, sec, 0, direction); return; }
-            if (sec.PortraitRows) { Grid2DStep(null, -1, sec, 0, direction); return; }
+            { Grid2DStep(sections, cur, sec, 0, direction); return; }
+            if (sec.PortraitRows) { Grid2DStep(sections, cur, sec, 0, direction); return; }
 
             Scaffold.SpeechService.Say("Edge.", "Nav");
         }
@@ -990,12 +993,20 @@ namespace SkaldAccessibility
                 var wp = WornRowParts(flatIdx);
                 return wp == null || wp.Count == 0 ? null : wp[0];
             }
+            object item = ItemAt(sec, flatIdx);   // one filtered-list derive
+                                                  // serves selection + verdict
+                                                  // (this composes per hover)
             var parts = InvRowParts(sec, flatIdx);
             if (parts == null || parts.Count == 0) return "Empty.";
             var bits = new List<string> { parts[0] };
+            // The game's click-select renders only as a highlight — speak it
+            // (owner ruling 2026-08-23: identity + selected). The flag is the
+            // inventory's own currentObject, the exact item the grid paints
+            // highlighted (UIGridLists.setButtons).
+            if (IsGameSelected(sec, item)) bits.Add("Selected.");
             if (ModeOf(sec) != ItemRowComposer.Mode.Plain && parts.Count > 1)
                 bits.Add(parts[1]);   // the trade offer rides the identity
-            string verdict = ItemRowComposer.VerdictWord(ItemAt(sec, flatIdx));
+            string verdict = ItemRowComposer.VerdictWord(item);
             if (verdict != null) bits.Add(verdict + ".");
             string line = JoinParts(bits);
             return sec.Count > 1 ? $"{line} {flatIdx + 1} of {sec.Count}." : line;
@@ -1017,6 +1028,25 @@ namespace SkaldAccessibility
                 { identity != null ? $"{label}: {identity}" : $"{label}: equipped." };
             if (parts != null && parts.Count > 1) result.AddRange(parts.GetRange(1, parts.Count - 1));
             return result;
+        }
+
+        /// <summary>True when the landed cell holds the segment inventory's
+        /// own click-selected item (Inventory.getCurrentObject — set by the
+        /// grid's button-press paths only, never hover; the renderer
+        /// highlights exactly this item).</summary>
+        private static bool IsGameSelected(Section sec, object item)
+        {
+            try
+            {
+                if (item == null) return false;
+                if (sec.InvDef == null || sec.InvDef.Kind != InvKind.Grid) return false;
+                if (Seams.Inventory_getCurrentObject == null) return false;
+                object inv = Seams.InvSegment_inventory?.GetValue(sec.Canvas);
+                if (inv == null) return false;
+                object cur = Seams.Inventory_getCurrentObject.Invoke(inv, null);
+                return cur != null && ReferenceEquals(cur, item);
+            }
+            catch { return false; }
         }
 
         private static object WornItemAt(int slot)
@@ -1047,6 +1077,9 @@ namespace SkaldAccessibility
             bool grid = sec.InvDef != null && sec.InvDef.Kind == InvKind.Grid;
             if ((grid || sec.PortraitRows) && sec.Count == 0)
             {
+                // A lateral press still crosses OUT of an empty grid (an
+                // empty merchant must not trap the arrows).
+                if (dCol != 0 && CrossGridLateral(sections, sec, 0, 1, dCol)) return;
                 Scaffold.SpeechService.Say($"{sec.Label}, none.", "Nav");
                 return;
             }
@@ -1071,6 +1104,11 @@ namespace SkaldAccessibility
                 next = idx + dCol;
                 if ((dCol < 0 && col == 0) || (dCol > 0 && (col == w - 1 || next >= sec.Count)))
                 {
+                    // The border: cross into the laterally-adjacent grid where
+                    // one exists (trade/container — owner ruling 2026-08-23);
+                    // the landing announces the region and its gold via the
+                    // census prefix. No neighbour = the honest edge refusal.
+                    if (CrossGridLateral(sections, sec, idx, w, dCol)) return;
                     Scaffold.SpeechService.Say("Edge.", "Nav");
                     return;
                 }
@@ -1101,6 +1139,48 @@ namespace SkaldAccessibility
             AdoptSection(sec);
             if (sec.PortraitRows) SeatPartyRow(sec, next, speak: true, censusPrefix: null);
             else SeatInvRow(sec, next, speak: true, queued: false);
+        }
+
+        /// <summary>Walk across the border between two side-by-side grids
+        /// (trade/container — owner ruling 2026-08-23): a lateral press at
+        /// the edge lands in the nearest grid in that direction on the SAME
+        /// row at the near column, clamped onto a shorter grid's last row /
+        /// row tail ("align, else the closest cell on the nearest row").
+        /// The landing goes through the full section land, so the region
+        /// label and its gold ride the census ahead of the row line. False =
+        /// no lateral neighbour (the caller keeps the edge refusal).</summary>
+        private static bool CrossGridLateral(List<Section> sections, Section from,
+            int idx, int w, int dCol)
+        {
+            if (sections == null || from.InvDef == null || from.InvDef.Kind != InvKind.Grid)
+                return false;
+            Section best = null;
+            foreach (var s in sections)
+            {
+                if (ReferenceEquals(s, from)) continue;
+                if (s.InvDef == null || s.InvDef.Kind != InvKind.Grid) continue;
+                int delta = s.Column - from.Column;
+                if (dCol > 0 ? delta <= 0 : delta >= 0) continue;
+                if (best == null
+                    || Math.Abs(s.Column - from.Column) < Math.Abs(best.Column - from.Column))
+                    best = s;
+            }
+            if (best == null) return false;
+
+            int target = 0;
+            if (best.Count > 0)
+            {
+                int row = idx / Math.Max(1, w);
+                int tw = GridWidth(best.Canvas);
+                if (tw <= 0) tw = 1;
+                int lastRow = (best.Count - 1) / tw;
+                if (row > lastRow) row = lastRow;
+                int col = dCol > 0 ? 0 : tw - 1;   // enter at the near edge
+                target = row * tw + col;
+                if (target >= best.Count) target = best.Count - 1;
+            }
+            LandInvSection(best, explicitRow: target);
+            return true;
         }
 
         /// <summary>Seat the walk on a flat row: drive the game's own window
@@ -1491,6 +1571,13 @@ namespace SkaldAccessibility
                     || !Seams.UIInventorySheetBaseType.IsInstanceOfType(sheet)) return;
                 try { Seams.InvSheet_currentControllerSurface?.SetValue(sheet, seg); } catch { }
                 try { Seams.UICanvas_setCurrentSelectedButton?.Invoke(sheet, new object[] { row }); } catch { }
+                // Our own write must not re-speak through the selection join
+                // (AlignInvHover's twin): on a grid crossing the sheet's index
+                // can even be UNCHANGED while the focused cell object moves,
+                // and the drain's element-identity escape voiced the row at
+                // +0f OVER the census line (owner playtest log 2026-08-23 —
+                // the gold census was never heard on the merchant side).
+                Pump.AlignSelection(sheet, row);
             }
             catch { }
         }
