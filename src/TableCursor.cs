@@ -20,12 +20,18 @@ namespace SkaldAccessibility
     /// InventoryHoverPatch composes through the table, WornZonePatch and
     /// InventorySegmentPatch stand down while owned.
     ///
-    /// Grammar: ARROWS walk rows; W/S walks sections within the current
-    /// rendered column; A/D crosses columns (remembered section per column);
-    /// LEFT/RIGHT walks the current row's facets (facet 0 = the row line;
-    /// parked facet persists across rows within a section). Z/X, numbers,
-    /// Escape, Q/E stay native. No mod-side focus (R2): row position is the
-    /// canvas's own currentSelectedButton + the virtual-mouse park.
+    /// Grammar (nav revision, owner-ruled 2026-08-23 —
+    /// docs\nav-revision-design.md): ARROWS move focus within the current
+    /// container — rows in lists, CELLS in grids (2D restored), the
+    /// plus/minus chooser on settings slider rows (re-homed from A/D,
+    /// revising R1a), the difficulty row's options. W/A = previous section,
+    /// S/D = next section on ONE WRAPPED RING per screen in composed order
+    /// — geometry demoted to mouse-drive coordinates. The facet layer is
+    /// RETIRED: landings speak identity (+ the comparison verdict word on
+    /// equipables); full data is X (native tip) + the review cluster over
+    /// the composed examine document. Z/X, numbers, Escape, Q/E stay
+    /// native. No mod-side focus (R2): row position is the canvas's own
+    /// currentSelectedButton + the virtual-mouse park.
     ///
     /// Two row-walk modes:
     ///  - FUNNEL (gate-B lists): drive the game's own
@@ -60,8 +66,9 @@ namespace SkaldAccessibility
         public static void BindConfig(BepInEx.Configuration.ConfigFile config)
         {
             _enabled = config.Bind("Tables", "Engine", true,
-                "Table navigation on standard UI screens (table-ui-design R15): arrows walk rows, "
-                + "W/S walks sections, A/D crosses columns, Left/Right walks facets. Off restores native-only nav.");
+                "Table navigation on standard UI screens (nav-revision-design 2026-08-23): arrows move "
+                + "focus (rows, 2D grid cells, slider choosers), W/A and S/D step the screen's wrapped "
+                + "section ring. Off restores native-only nav.");
         }
 
         // =====================================================================
@@ -253,8 +260,8 @@ namespace SkaldAccessibility
 
         private static object _redirectCanvas;   // current non-native section canvas
         private static bool _resolving;          // re-entrancy guard for NativeScrollableList
-        private static int _facet;               // parked facet (0 = the row line)
-        private static readonly string[] _colRemember = new string[2];
+        // (_facet and _colRemember retired with the facet layer and the 2D
+        //  section grammar — nav revision 2026-08-23.)
         private static int _armedLogFrame = -1;
 
         private static bool Refresh()
@@ -441,19 +448,66 @@ namespace SkaldAccessibility
             try
             {
                 if (up || down) RowStep(up);
-                else if (left || right) FacetStep(left ? -1 : +1);
-                else if (w || s) SectionStep(w ? -1 : +1);
-                else ColumnStep(a ? -1 : +1);
+                else if (left || right) ArrowLateral(left ? -1 : +1);
+                else SectionStep((w || a) ? -1 : +1);   // one wrapped ring; W/A prev, S/D next
             }
             catch (Exception ex) { Scaffold.Log.Throttled("table.input", ex.Message); }
             return true;
         }
 
+        /// <summary>Left/Right = focus movement within the current container
+        /// (nav revision): the settings slider's plus/minus chooser (re-homed
+        /// from A/D — the slider is a horizontal control, arrows adjust
+        /// within focus), the difficulty row's options, grid/worn/portrait
+        /// CELLS laterally. Vertical lists have no lateral axis — terse edge
+        /// refusal.</summary>
+        private static void ArrowLateral(int direction)
+        {
+            var sections = ResolveSections();
+            if (sections.Count == 0) { Scaffold.SpeechService.Say("Edge.", "Nav"); return; }
+            var sec = sections[CurrentSectionIndex(sections)];
+
+            // Settings family: the chooser (revised R1a — was A/D). The flip
+            // exists only where the canvas IS a slider control — on the
+            // key-bindings tab the sideways chain dead-ends in UICanvas's
+            // no-op (gate-E MUST-FIX class: refusal, never silence).
+            if (_settingsScreen)
+            {
+                bool sliderCanvas = sec.Id != "buttons"
+                    && Seams.UITextSliderControlType != null
+                    && Seams.UITextSliderControlType.IsInstanceOfType(sec.Canvas);
+                if (!sliderCanvas) { Scaffold.SpeechService.Say("Edge.", "Nav"); return; }
+                NativeSideways(direction);
+                return;
+            }
+            // Difficulty selector: the horizontal difficulty row's options.
+            if (_difficultyScreen && sec.Id == "primary")
+            {
+                NativeSideways(direction);
+                return;
+            }
+            // 2D surfaces: cells laterally.
+            if (sec.InvDef != null
+                && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
+            { Grid2DStep(null, -1, sec, 0, direction); return; }
+            if (sec.PortraitRows) { Grid2DStep(null, -1, sec, 0, direction); return; }
+
+            Scaffold.SpeechService.Say("Edge.", "Nav");
+        }
+
+        private static void NativeSideways(int direction)
+        {
+            var sideways = direction < 0
+                ? Seams.GUIControl_controllerScrollSidewaysLeft
+                : Seams.GUIControl_controllerScrollSidewaysRight;
+            if (sideways == null) return;
+            Pump.NotePlayerNav();
+            try { sideways.Invoke(_gui, null); } catch { }
+        }
+
         public static void OnStateTransition()
         {
             _redirectCanvas = null;
-            _facet = 0;
-            _colRemember[0] = null; _colRemember[1] = null;
             _invCurrentId = null;
             _invAnchor.Clear();
             _invAnchorItem.Clear();
@@ -890,12 +944,10 @@ namespace SkaldAccessibility
                     }
                     catch { }
                 }
-                if (sec.Column >= 0) _colRemember[sec.Column] = sec.Id;
                 return;
             }
             object native = NativeScrollableList();
             _redirectCanvas = ReferenceEquals(sec.Canvas, native) ? null : sec.Canvas;
-            if (sec.Column >= 0) _colRemember[sec.Column] = sec.Id;
         }
 
         // =====================================================================
@@ -924,18 +976,27 @@ namespace SkaldAccessibility
             return ItemRowComposer.RowParts(ItemAt(sec, flatIdx), ModeOf(sec));
         }
 
-        /// <summary>The full row line with the trailing positional counter
-        /// (counts always trail — standing rule).</summary>
+        /// <summary>The IDENTITY landing line (nav revision §3 — fast grid
+        /// browse): name+glyphs, the comparison verdict word where the game
+        /// colors one ("Iron Sword. Better."), the offer facet on trade rows
+        /// (offer-first is the row's trade identity, owner ruling R80), and
+        /// the trailing positional counter (counts always trail — standing
+        /// rule). Full data = X + the review cluster's examine document.</summary>
         private static string InvRowLine(Section sec, int flatIdx)
         {
             if (sec.InvDef.Kind == InvKind.Worn)
             {
                 var wp = WornRowParts(flatIdx);
-                return wp == null ? null : JoinParts(wp);
+                return wp == null || wp.Count == 0 ? null : wp[0];
             }
             var parts = InvRowParts(sec, flatIdx);
-            if (parts == null) return "Empty.";
-            string line = JoinParts(parts);
+            if (parts == null || parts.Count == 0) return "Empty.";
+            var bits = new List<string> { parts[0] };
+            if (ModeOf(sec) != ItemRowComposer.Mode.Plain && parts.Count > 1)
+                bits.Add(parts[1]);   // the trade offer rides the identity
+            string verdict = ItemRowComposer.VerdictWord(ItemAt(sec, flatIdx));
+            if (verdict != null) bits.Add(verdict + ".");
+            string line = JoinParts(bits);
             return sec.Count > 1 ? $"{line} {flatIdx + 1} of {sec.Count}." : line;
         }
 
@@ -971,35 +1032,74 @@ namespace SkaldAccessibility
         }
 
         private static void InvRowStep(List<Section> sections, int cur, Section sec, bool upward)
+            => Grid2DStep(sections, cur, sec, upward ? -1 : +1, 0);
+
+        /// <summary>2D grid focus (nav revision §3 — grid nav restored):
+        /// Up/Down move a physical ROW (±width, clamped onto a shorter last
+        /// row; seam-flow to the neighbour section past the extremes),
+        /// Left/Right move one CELL with honest edge refusals — travel
+        /// between sections is the WASD ring's job. Serves the item grids
+        /// (live width), worn slots (6×2), and the party portrait blocks
+        /// (6 per row).</summary>
+        private static void Grid2DStep(List<Section> sections, int cur, Section sec, int dRow, int dCol)
         {
-            if (sec.InvDef.Kind == InvKind.Grid && sec.Count == 0)
+            bool grid = sec.InvDef != null && sec.InvDef.Kind == InvKind.Grid;
+            if ((grid || sec.PortraitRows) && sec.Count == 0)
             {
                 Scaffold.SpeechService.Say($"{sec.Label}, none.", "Nav");
                 return;
             }
+            int w = sec.PortraitRows ? 6
+                : sec.InvDef != null && sec.InvDef.Kind == InvKind.Worn ? 6
+                : GridWidth(sec.Canvas);
+            if (w <= 0) w = 1;
+
             int idx = _invAnchor.TryGetValue(sec.Id, out int a) ? a : -1;
             if (idx < 0 || idx >= sec.Count)
             {
                 // First touch (or the anchor died with a shrink): full landing.
-                LandInvSection(sec);
+                if (sec.PortraitRows) LandPartySection(sec);
+                else LandInvSection(sec);
                 return;
             }
-            int next = idx + (upward ? -1 : +1);
-            if (next < 0)
+
+            int next;
+            if (dCol != 0)
             {
-                // Row flow (§3): cross the seam, announced.
-                if (cur > 0) LandSection(sections[cur - 1], atLastRow: true);
-                else Scaffold.SpeechService.Say("Top of list.", "Nav");
-                return;
+                int col = idx % w;
+                next = idx + dCol;
+                if ((dCol < 0 && col == 0) || (dCol > 0 && (col == w - 1 || next >= sec.Count)))
+                {
+                    Scaffold.SpeechService.Say("Edge.", "Nav");
+                    return;
+                }
             }
-            if (next >= sec.Count)
+            else
             {
-                if (cur < sections.Count - 1) LandSection(sections[cur + 1], atFirstRow: true);
-                else Scaffold.SpeechService.Say("Bottom of list.", "Nav");
-                return;
+                next = idx + dRow * w;
+                if (next < 0)
+                {
+                    if (sections != null && cur > 0) LandSection(sections[cur - 1], atLastRow: true);
+                    else Scaffold.SpeechService.Say("Top of list.", "Nav");
+                    return;
+                }
+                if (next >= sec.Count)
+                {
+                    // A shorter last row catches the fall (standard grid nav);
+                    // stepping down FROM the last row flows to the next section.
+                    if (idx / w < (sec.Count - 1) / w) next = sec.Count - 1;
+                    else
+                    {
+                        if (sections != null && cur < sections.Count - 1)
+                            LandSection(sections[cur + 1], atFirstRow: true);
+                        else Scaffold.SpeechService.Say("Bottom of list.", "Nav");
+                        return;
+                    }
+                }
             }
             AdoptSection(sec);
-            SeatInvRow(sec, next, speak: true, queued: false);
+            if (sec.PortraitRows) SeatPartyRow(sec, next, speak: true, censusPrefix: null);
+            else SeatInvRow(sec, next, speak: true, queued: false);
         }
 
         /// <summary>Seat the walk on a flat row: drive the game's own window
@@ -1045,16 +1145,7 @@ namespace SkaldAccessibility
             }
 
             if (!speak) return;
-            string text;
-            var parts = InvRowParts(sec, flatIdx);
-            if (_facet > 0 && parts != null && parts.Count > 0)
-            {
-                // Parked facet (R11): rows speak "identity, facet" — facet f
-                // maps to parts[f-1], matching InvFacetStep.
-                int f = Math.Min(_facet, parts.Count);
-                text = f <= 1 ? parts[0] : $"{parts[0]} {parts[f - 1]}";
-            }
-            else text = InvRowLine(sec, flatIdx) ?? "Empty.";
+            string text = InvRowLine(sec, flatIdx) ?? "Empty.";
             if (censusPrefix != null) text = $"{censusPrefix} {text}";
             if (queued) Scaffold.SpeechService.SayQueued(text, "Nav");
             else Scaffold.SpeechService.Say(text, "Nav");
@@ -1068,7 +1159,6 @@ namespace SkaldAccessibility
             bool atFirstRow = false, bool queued = false, int? explicitRow = null)
         {
             AdoptSection(sec);
-            _facet = 0;
 
             string census = InvCensusOf(sec);
             if (sec.InvDef.Kind == InvKind.Grid && sec.Count == 0)
@@ -1190,35 +1280,11 @@ namespace SkaldAccessibility
         // =====================================================================
 
         private static void PartyRowStep(List<Section> sections, int cur, Section sec, bool upward)
-        {
-            if (sec.Count == 0)
-            {
-                Scaffold.SpeechService.Say($"{sec.Label}, none.", "Nav");
-                return;
-            }
-            int idx = _invAnchor.TryGetValue(sec.Id, out int a) ? a : -1;
-            if (idx < 0 || idx >= sec.Count) { LandPartySection(sec); return; }
-            int next = idx + (upward ? -1 : +1);
-            if (next < 0)
-            {
-                if (cur > 0) LandSection(sections[cur - 1], atLastRow: true);
-                else Scaffold.SpeechService.Say("Top of list.", "Nav");
-                return;
-            }
-            if (next >= sec.Count)
-            {
-                if (cur < sections.Count - 1) LandSection(sections[cur + 1], atFirstRow: true);
-                else Scaffold.SpeechService.Say("Bottom of list.", "Nav");
-                return;
-            }
-            AdoptSection(sec);
-            SeatPartyRow(sec, next, speak: true, censusPrefix: null);
-        }
+            => Grid2DStep(sections, cur, sec, upward ? -1 : +1, 0);
 
         private static void LandPartySection(Section sec, bool atLastRow = false, bool atFirstRow = false)
         {
             AdoptSection(sec);
-            _facet = 0;
             string census = sec.Count == 0 ? $"{sec.Label}, none" : $"{sec.Label}, {sec.Count}";
             if (sec.Count == 0)
             {
@@ -1426,30 +1492,67 @@ namespace SkaldAccessibility
             catch { }
         }
 
-        /// <summary>Left/Right on inventory rows: facet 0 = the full row
-        /// line; 1.. = the row's parts (identity, offer, type, stats,
-        /// value/weight, prose). The parked facet persists across rows
-        /// (R11: park on gold → rows speak "name, gold").</summary>
-        private static void InvFacetStep(Section sec, int direction)
+        /// <summary>The examine document for the review cluster (nav revision
+        /// §4): when the captured tooltip is the anchored item's own
+        /// comparative block, compose REAL sections from the R11 parts — the
+        /// decision-weight order as authored structure, never parsed. Null =
+        /// not ours (the parser handles it).</summary>
+        internal static List<Composer.PanelSection> ComposeExamineDocument(string rawTip)
         {
-            int idx = _invAnchor.TryGetValue(sec.Id, out int a) ? a : -1;
-            if (idx < 0 || idx >= sec.Count)
+            try
             {
-                Scaffold.SpeechService.Say(
-                    sec.InvDef.Kind == InvKind.Grid && sec.Count == 0
-                        ? $"{sec.Label}, none." : "No columns.", "Nav");
-                return;
-            }
-            var parts = InvRowParts(sec, idx);
-            if (parts == null || parts.Count == 0)
-            { Scaffold.SpeechService.Say("No columns.", "Nav"); return; }
+                if (!Active() || _invDef == null || string.IsNullOrWhiteSpace(rawTip)) return null;
+                var sections = ResolveSections();
+                var sec = sections.Count > 0 ? sections[CurrentSectionIndex(sections)] : null;
+                if (sec?.InvDef == null) return null;
+                int idx = _invAnchor.TryGetValue(sec.Id, out int a) ? a : -1;
+                object item = sec.InvDef.Kind == InvKind.Worn ? WornItemAt(idx) : ItemAt(sec, idx);
+                if (item == null) return null;
 
-            int max = parts.Count; // facet 0 = row line, 1..Count = parts
-            _facet += direction;
-            if (_facet < 0) _facet = 0;
-            if (_facet > max) _facet = max;
-            string text = _facet == 0 ? (InvRowLine(sec, idx) ?? "Empty.") : parts[_facet - 1];
-            Scaffold.SpeechService.Say(string.IsNullOrWhiteSpace(text) ? "No columns." : text, "Nav");
+                // The tip must BE this item's block (first rendered line is
+                // the uppercased name header) — a mismatched capture falls
+                // back to the parser rather than mislabeling.
+                string name = Patches.TextCleaner.CleanText(
+                    Seams.SkaldBaseObject_getName?.Invoke(item, null) as string ?? "");
+                string firstLine = null;
+                foreach (var l in rawTip.Split('\n'))
+                {
+                    firstLine = Patches.TextCleaner.CleanText(l).Trim();
+                    if (firstLine.Length > 0) break;
+                }
+                if (string.IsNullOrEmpty(name) || firstLine == null
+                    || firstLine.IndexOf(name, StringComparison.OrdinalIgnoreCase) < 0) return null;
+
+                var parts = InvRowParts(sec, idx);
+                if (parts == null || parts.Count == 0) return null;
+
+                var doc = new List<Composer.PanelSection>();
+                var identity = new Composer.PanelSection { Title = "Item" };
+                var stats = new Composer.PanelSection { Title = "Stats" };
+                var tail = new Composer.PanelSection { Title = "Description" };
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    string p = parts[i];
+                    if (string.IsNullOrWhiteSpace(p)) continue;
+                    if (i == 0) identity.Elements.Add(p);
+                    else if (System.Text.RegularExpressions.Regex.IsMatch(p, @"\bgold\b")
+                             && System.Text.RegularExpressions.Regex.IsMatch(p, @"\bpounds?\b"))
+                        stats.Elements.Add(p);          // value/weight closes the stats block
+                    else if (i == parts.Count - 1 && !p.Contains(","))
+                        tail.Elements.Add(p);           // trailing prose (single clause)
+                    else if (i == parts.Count - 1 && p.Length > 60)
+                        tail.Elements.Add(p);           // trailing prose (long form)
+                    else stats.Elements.Add(p);
+                }
+                foreach (var s in new[] { identity, stats, tail })
+                {
+                    if (s.Elements.Count == 0) continue;
+                    s.FullText = string.Join(" ", s.Elements.ToArray());
+                    doc.Add(s);
+                }
+                return doc.Count > 0 ? doc : null;
+            }
+            catch { return null; }
         }
 
         /// <summary>The hover join's composer while the table owns an
@@ -1535,129 +1638,19 @@ namespace SkaldAccessibility
         // Section / column travel
         // =====================================================================
 
+        /// <summary>W/A = previous, S/D = next on ONE WRAPPED RING of the
+        /// screen's sections in composed order (nav revision §2 — replaces
+        /// the 2D column grammar; geometry is demoted to mouse-drive
+        /// coordinates). Singletons are discoverable by construction; the
+        /// wrap kills the dead ends; the landing prefix makes the seam
+        /// audible.</summary>
         private static void SectionStep(int direction)
         {
             var sections = ResolveSections();
             if (sections.Count == 0) { Scaffold.SpeechService.Say("No sections.", "Nav"); return; }
             int cur = CurrentSectionIndex(sections);
-            var sec = sections[cur];
-
-            if (_sheetDef == null && _invDef == null)
-            {
-                // Gate-B linear stack (unchanged).
-                int next = cur + direction;
-                if (next < 0) { Scaffold.SpeechService.Say("No section above.", "Nav"); return; }
-                if (next >= sections.Count) { Scaffold.SpeechService.Say("No section below.", "Nav"); return; }
-                LandSection(sections[next]);
-                return;
-            }
-
-            // Sheet screens: W/S travels the current column's chain (shared
-            // -1 sections ride every chain's tail — §3a "then buttons").
-            var chain = new List<int>();
-            int chainPos = -1;
-            int col = sec.Column;
-            for (int i = 0; i < sections.Count; i++)
-            {
-                if (sections[i].Column == col || sections[i].Column == -1 || col == -1)
-                {
-                    if (i == cur) chainPos = chain.Count;
-                    chain.Add(i);
-                }
-            }
-            int target = chainPos + direction;
-            if (target < 0) { Scaffold.SpeechService.Say("No section above.", "Nav"); return; }
-            if (target >= chain.Count) { Scaffold.SpeechService.Say("No section below.", "Nav"); return; }
-            LandSection(sections[chain[target]]);
-        }
-
-        /// <summary>A/D on sheet screens: cross to the other rendered column's
-        /// remembered section (§3a "left column ↔ right column").</summary>
-        private static void ColumnStep(int direction)
-        {
-            // Gate E (ruling R1a): A/D on settings stays the game's own
-            // plus/minus chooser — the table drives the native sideways so
-            // the shipped ArrowFlipJoin speaks "Plus."/"Minus." unchanged.
-            // (Settings are single-column; the section axis is empty here.)
-            if (_settingsScreen)
-            {
-                var sections0 = ResolveSections();
-                var secNow = sections0.Count > 0 ? sections0[CurrentSectionIndex(sections0)] : null;
-                // The flip exists only where the canvas IS a slider control —
-                // on the key-bindings tab the sideways chain dead-ends in
-                // UICanvas's no-op (gate-E review MUST-FIX: silence, not a
-                // refusal). Buttons refuse likewise.
-                bool sliderCanvas = secNow != null && secNow.Id != "buttons"
-                    && Seams.UITextSliderControlType != null
-                    && Seams.UITextSliderControlType.IsInstanceOfType(secNow.Canvas);
-                if (!sliderCanvas)
-                {
-                    Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
-                    return;
-                }
-                var sideways = direction < 0
-                    ? Seams.GUIControl_controllerScrollSidewaysLeft
-                    : Seams.GUIControl_controllerScrollSidewaysRight;
-                if (sideways != null)
-                {
-                    Pump.NotePlayerNav();
-                    try { sideways.Invoke(_gui, null); } catch { }
-                    return;
-                }
-            }
-            // Gate F: the difficulty selector's horizontal row — A/D steps
-            // its options through the native sideways (the game aliases all
-            // four directions onto this row; the alias is the affordance).
-            if (_difficultyScreen)
-            {
-                var dSections = ResolveSections();
-                var dSec = dSections.Count > 0 ? dSections[CurrentSectionIndex(dSections)] : null;
-                if (dSec != null && dSec.Id == "primary")
-                {
-                    var sideways = direction < 0
-                        ? Seams.GUIControl_controllerScrollSidewaysLeft
-                        : Seams.GUIControl_controllerScrollSidewaysRight;
-                    if (sideways != null)
-                    {
-                        Pump.NotePlayerNav();
-                        try { sideways.Invoke(_gui, null); } catch { }
-                        return;
-                    }
-                }
-                Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
-                return;
-            }
-
-            if (_sheetDef == null && _invDef == null)
-            {
-                Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
-                return;
-            }
-            var sections = ResolveSections();
-            if (sections.Count == 0) { Scaffold.SpeechService.Say("No sections.", "Nav"); return; }
-            int cur = CurrentSectionIndex(sections);
-            int col = sections[cur].Column;
-            // Directional, geometrically faithful: A from the left column and
-            // D from the right are edge refusals; the shared buttons tail
-            // refuses laterally (W climbs out of it).
-            int other = col < 0 ? -1 : col + direction;
-            Section target = null;
-            if (other == 0 || other == 1)
-            {
-                string remembered = _colRemember[other];
-                foreach (var s in sections)
-                {
-                    if (s.Column != other) continue;
-                    if (target == null) target = s;
-                    if (remembered != null && s.Id == remembered) { target = s; break; }
-                }
-            }
-            if (target == null)
-            {
-                Scaffold.SpeechService.Say(direction < 0 ? "No section left." : "No section right.", "Nav");
-                return;
-            }
-            LandSection(target);
+            int next = ((cur + direction) % sections.Count + sections.Count) % sections.Count;
+            LandSection(sections[next]);
         }
 
         /// <summary>Section landing (R15): label + census ride the zone-label
@@ -1679,7 +1672,6 @@ namespace SkaldAccessibility
                 return;
             }
             AdoptSection(sec);
-            _facet = 0;
 
             if (sec.Count == 0)
             {
@@ -1705,165 +1697,12 @@ namespace SkaldAccessibility
             Scaffold.Log.Debug("Gate", $"table section land: {sec.Label} count={sec.Count} row={row}");
         }
 
-        // =====================================================================
-        // Facets (Left/Right — R11's lateral scan; facet 0 = the row line)
-        // =====================================================================
-
-        private static void FacetStep(int direction)
-        {
-            var sections = ResolveSections();
-            if (sections.Count == 0) { Scaffold.SpeechService.Say("No columns.", "Nav"); return; }
-            var sec = sections[CurrentSectionIndex(sections)];
-
-            if (sec.InvDef != null
-                && (sec.InvDef.Kind == InvKind.Grid || sec.InvDef.Kind == InvKind.Worn))
-            {
-                InvFacetStep(sec, direction);
-                return;
-            }
-
-            // Gate F: portrait rows have no lateral facets — Left/Right
-            // re-speaks the row (the inspect block stays the reading-cursor
-            // payload via the native X tooltip).
-            if (sec.PortraitRows)
-            {
-                int slot = _invAnchor.TryGetValue(sec.Id, out int pa) ? pa : -1;
-                string line = slot >= 0 && slot < sec.Count ? ComposePartyRow(sec, slot) : null;
-                Scaffold.SpeechService.Say(line ?? "No columns.", "Nav");
-                return;
-            }
-
-            // Gate E (ruling R2): the settings row's one lateral facet is the
-            // setting's full description, queued through the shipped
-            // name-dedup path (SliderArrowPatch.QueueDescription).
-            if (_settingsScreen && sec.Id == "primary")
-            {
-                try
-                {
-                    object element = null;
-                    int idx = CurrentIndex(sec.Canvas);
-                    var elements = Seams.UICanvas_getScrollableElements?.Invoke(sec.Canvas, null) as IList;
-                    if (elements != null && idx >= 0 && idx < elements.Count) element = elements[idx];
-                    object sliderRow = element == null ? null
-                        : Patches.SliderArrowPatch.RowForScrollableElement(sec.Canvas, element);
-                    if (sliderRow != null) { Patches.SliderArrowPatch.QueueDescription(sliderRow); return; }
-                }
-                catch { }
-                Scaffold.SpeechService.Say("No columns.", "Nav");
-                return;
-            }
-            int row = sec.IndexRows ? CurrentIndex(sec.Canvas) : -1;
-            if (sec.IndexRows && (row < sec.Start || row >= sec.Start + sec.Count))
-            {
-                Scaffold.SpeechService.Say(sec.Count == 0 ? $"{sec.Label}, none." : "No columns.", "Nav");
-                return;
-            }
-
-            var facets = FacetsOf(sec, row);
-            if (facets == null || facets.Count == 0)
-            {
-                // Funnel sections: the one facet is the composed row line.
-                string line = null;
-                try { line = Pump.CurrentLineOf(CurrentCanvasVirtual()); } catch { }
-                Scaffold.SpeechService.Say(line ?? "No columns.", "Nav");
-                return;
-            }
-
-            _facet += direction;
-            if (_facet < 0) _facet = 0;
-            if (_facet >= facets.Count) _facet = facets.Count - 1;
-            string text = facets[_facet];
-            Scaffold.SpeechService.Say(string.IsNullOrWhiteSpace(text) ? "No columns." : text, "Nav");
-        }
-
-        /// <summary>The current row's ordered facet list; [0] = the row line.
-        /// Null on funnel sections (gate B).</summary>
-        private static List<string> FacetsOf(Section sec, int row)
-        {
-            if (sec.Def == null || row < 0) return null;
-            if (sec.Id == "buttons") return null; // numeric rows: generic voice
-            try
-            {
-                if (sec.IsGrid)
-                {
-                    var parts = GridRowParts(sec, row);
-                    if (parts == null) return null;
-                    var facets = new List<string> { JoinParts(parts) };
-                    facets.AddRange(parts);
-                    return facets;
-                }
-                var rowLine = ComposeEntryRow(sec, row);
-                if (rowLine == null) return null;
-                var list = new List<string> { rowLine };
-                if (sec.Def.FacetData != null)
-                {
-                    string desc = FacetDescription(sec, row);
-                    if (!string.IsNullOrWhiteSpace(desc)) list.Add(desc);
-                }
-                return list;
-            }
-            catch { return null; }
-        }
-
-        /// <summary>The lateral description facet: the row's own data object,
-        /// re-resolved from the character's live list (the game rebuilds the
-        /// SkaldDataList per call — never cached). Canvas row i is 1:1 with
-        /// data row i (blanked surplus buttons drop off the scrollable tail;
-        /// live rows keep order).</summary>
-        private static string FacetDescription(Section sec, int row)
-        {
-            var getter = FacetGetter(sec.Def.FacetData);
-            if (getter == null || Seams.SkaldObjectList_getObjectList == null
-                || Seams.SkaldBaseObject_getFullDescription == null) return null;
-            object character = CurrentSheetCharacter();
-            if (character == null) return null;
-            object dataList = getter.Invoke(character, null);
-            var objects = dataList == null ? null
-                : Seams.SkaldObjectList_getObjectList.Invoke(dataList, null) as IList;
-            if (objects == null || row < 0 || row >= objects.Count) return null;
-            string desc = Seams.SkaldBaseObject_getFullDescription.Invoke(objects[row], null) as string;
-            if (string.IsNullOrWhiteSpace(desc)) return null;
-            return Patches.TextCleaner.CleanText(desc.Replace("\n", " "));
-        }
-
-        /// <summary>The sheet family's character, from the hosting STATE's own
-        /// private field (first-boot fix 2026-08-21: the old bind targeted a
-        /// currentCharacter field on UIBaseCharacterSheet that never existed —
-        /// the base has none, the concrete sheets vary, but every hosting
-        /// state carries `character`).</summary>
-        private static object CurrentSheetCharacter()
-        {
-            try
-            {
-                object state = Pump.CurrentStateObject();
-                if (state == null) return null;
-                switch (state.GetType().Name)
-                {
-                    case "CharacterState": return Seams.CharacterState_character?.GetValue(state);
-                    case "AttributeState": return Seams.AttributeState_character?.GetValue(state);
-                    case "AbilitiesState": return Seams.AbilitiesState_character?.GetValue(state);
-                    case "SpellsState": return Seams.SpellsState_character?.GetValue(state);
-                    default: return null;
-                }
-            }
-            catch { return null; }
-        }
-
-        private static System.Reflection.MethodInfo FacetGetter(string key)
-        {
-            switch (key)
-            {
-                case "conditions": return Seams.Character_getListOfConditions;
-                case "primary": return Seams.Character_getListOfPrimaryAttributes;
-                case "skills": return Seams.Character_getListOfSkills;
-                case "secondary": return Seams.Character_getListOfSecondaryAttributes;
-                case "combat": return Seams.Character_getListOfCombatStats;
-                case "defences": return Seams.Character_getListOfDefences;
-                case "magicattrs": return Seams.Character_getListOfMagicAttributes;
-                case "schools": return Seams.Character_getListOfSpellSchools;
-                default: return null;
-            }
-        }
+        // (The facet layer — FacetStep/FacetsOf/FacetDescription and the
+        // Left/Right lateral scan — is RETIRED, nav revision 2026-08-23.
+        // Disclosure = identity landings + the native tip/panel + the review
+        // cluster over the composed examine document. Sheet-row descriptions
+        // reach the cluster through the game's own description panel on
+        // select (Z), captured as SheetDesc.)
 
         // =====================================================================
         // Row composition (the ComposeSelection hook)

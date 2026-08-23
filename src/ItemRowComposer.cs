@@ -159,6 +159,34 @@ namespace SkaldAccessibility
         // The stat core — parsing the game's own comparative block
         // =====================================================================
 
+        /// <summary>The aggregate comparison verdict for the identity landing
+        /// (nav revision §3, the facet-scan carry-over): scan the comparative
+        /// block's own color tags per stat line — green and no red =
+        /// "better", red only = "worse", both = "mixed", none (consumables,
+        /// equal gear) = null.</summary>
+        internal static string VerdictWord(object item)
+        {
+            try
+            {
+                if (item == null) return null;
+                string block = Seams.Item_printComparativeStats?.Invoke(item, new[] { CurrentPC() }) as string;
+                if (string.IsNullOrWhiteSpace(block)) return null;
+                string green = Seams.TagValue(Seams.C64_GreenLightTag);
+                string red = Seams.TagValue(Seams.C64_RedLightTag);
+                bool better = false, worse = false;
+                foreach (string rawLine in block.Split('\n'))
+                {
+                    if (rawLine.IndexOf('\t') < 0) continue;   // stat lines only
+                    int gi = string.IsNullOrEmpty(green) ? -1 : rawLine.IndexOf(green, StringComparison.Ordinal);
+                    int ri = string.IsNullOrEmpty(red) ? -1 : rawLine.IndexOf(red, StringComparison.Ordinal);
+                    if (gi >= 0 && (ri < 0 || gi < ri)) better = true;
+                    else if (ri >= 0 && (gi < 0 || ri < gi)) worse = true;
+                }
+                return better && worse ? "mixed" : better ? "better" : worse ? "worse" : null;
+            }
+            catch { return null; }
+        }
+
         /// <summary>Append the type facet, the stat facets (verdict-first per
         /// stat, R14/§4b: "Damage, better, 2 to 7, versus 1 to 6.") and the
         /// combined value/weight facet ("12 gold each, 8 pounds." — value is
