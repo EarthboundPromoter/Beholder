@@ -257,41 +257,65 @@ namespace SkaldAccessibility
 
         // ---- Stepping (both doorways share cursors and composition) ----
 
-        /// <summary>Combat Layer 2: the K-table latch's Left/Right facet walk
-        /// rides the same section cursor over the staged document.</summary>
-        internal static void FacetStep(int direction) => StepSection(direction);
-
+        /// <summary>Home/End: the section walk WRAPS (nav revision §4 — the
+        /// dead ends go; the seam is named). With the Rules tail, one Home
+        /// press from the top lands on the definitions.</summary>
         private static void StepSection(int direction)
         {
             var sections = Parse();
             if (sections.Count == 0) { Scaffold.SpeechService.Say("No details.", "Review"); return; }
             int next = _section + direction;
-            if (next < 0) { Scaffold.SpeechService.Say("First section.", "Review"); _section = 0; return; }
-            if (next >= sections.Count) { Scaffold.SpeechService.Say("Last section.", "Review"); _section = sections.Count - 1; return; }
-            _section = next;
+            bool wrapped = next < 0 || next >= sections.Count;
+            _section = ((next % sections.Count) + sections.Count) % sections.Count;
             _element = -1;
-            SpeakSection(sections);
+            SpeakSection(sections, wrapped ? "Wrapped. " : null);
         }
 
+        /// <summary>PgUp/PgDn: elements FLOW across section seams, announced
+        /// composed ("Stats. Soak 0 to 9."); past the document's ends the
+        /// flow wraps with the seam named (nav revision §4).</summary>
         private static void StepElement(int direction)
         {
             var sections = Parse();
             if (sections.Count == 0) { Scaffold.SpeechService.Say("No details.", "Review"); return; }
             if (_section >= sections.Count) _section = sections.Count - 1;
-            var elements = sections[_section].Elements;
-            if (elements.Count == 0) { Scaffold.SpeechService.Say("Empty section.", "Review"); return; }
+            string prefix = null;
             int next = (_element < 0 && direction > 0) ? 0 : _element + direction;
-            if (next < 0) { Scaffold.SpeechService.Say("Start of section.", "Review"); _element = 0; return; }
-            if (next >= elements.Count) { Scaffold.SpeechService.Say("End of section.", "Review"); _element = elements.Count - 1; return; }
-            _element = next;
-            Scaffold.SpeechService.Say($"{elements[_element]}, {_element + 1} of {elements.Count}.", "Review");
+
+            int guard = sections.Count + 1;   // skip empty sections, at most one lap
+            while (guard-- > 0)
+            {
+                var elements = sections[_section].Elements;
+                if (next >= 0 && next < elements.Count) break;
+                // Crossing a seam: move to the neighbour section, land on its
+                // near edge, and let its label ride the element.
+                int dir = next < 0 ? -1 : +1;
+                int nextSec = _section + dir;
+                if (nextSec < 0 || nextSec >= sections.Count)
+                {
+                    prefix = "Wrapped. ";
+                    nextSec = ((nextSec % sections.Count) + sections.Count) % sections.Count;
+                }
+                _section = nextSec;
+                var landed = sections[_section];
+                if (prefix == null)
+                    prefix = (landed.Title ?? $"Section {_section + 1}") + ". ";
+                next = dir < 0 ? landed.Elements.Count - 1 : 0;
+                // An empty landed section leaves next out of range in the
+                // SAME direction — the loop flows onward.
+            }
+            var els = sections[_section].Elements;
+            if (els.Count == 0) { Scaffold.SpeechService.Say("Empty section.", "Review"); return; }
+            _element = Math.Max(0, Math.Min(next, els.Count - 1));
+            Scaffold.SpeechService.Say(
+                $"{prefix}{els[_element]}, {_element + 1} of {els.Count}.", "Review");
         }
 
-        private static void SpeakSection(List<Composer.PanelSection> sections)
+        private static void SpeakSection(List<Composer.PanelSection> sections, string prefix = null)
         {
             if (_section >= sections.Count) _section = sections.Count - 1;
             var s = sections[_section];
-            Scaffold.SpeechService.Say($"{s.FullText}, section {_section + 1} of {sections.Count}.", "Review");
+            Scaffold.SpeechService.Say($"{prefix}{s.FullText}, section {_section + 1} of {sections.Count}.", "Review");
         }
 
         // ---- Sectioning (TP1): migrated into the Composer — provenance picks
@@ -310,9 +334,77 @@ namespace SkaldAccessibility
             if (_staged != null && _staged.Count > 0 && !PopupBlocking())
                 return new List<Composer.PanelSection>(_staged);
             PanelPolicy.EnsureTags();
-            var sections = Composer.SectionPanel(_panelSource, _panelRaw);
-            AppendStatusSection(sections);
+            // Examine surfaces compose, never parse (nav revision §4): a
+            // captured item tip becomes the R11 decision-weight sections;
+            // anything else keeps the native-structure parse (the overland
+            // panel is the case that already works).
+            List<Composer.PanelSection> sections = null;
+            if (_panelSource == "Tooltip")
+                sections = TableCursor.ComposeExamineDocument(_panelRaw);
+            bool composed = sections != null;
+            if (sections == null)
+                sections = Composer.SectionPanel(_panelSource, _panelRaw);
+            if (_panelSource == "Tooltip")
+                AppendRulesTail(sections, _panelRaw);
+            if (!composed) AppendStatusSection(sections);
             return sections;
+        }
+
+        /// <summary>The Rules tail (nav revision §4): keywords from the
+        /// game's own Rules catalog (conditions, abilities, attributes,
+        /// classes — the green-highlighted tooltip words) found in the ROOT
+        /// tip text append ONE trailing section; elements = "Name: full
+        /// description.", deduped, first-mention order. LEVEL-1 CAP by
+        /// construction — keywords inside a keyword's description are heard
+        /// as names, never expanded (the anti-recursion ruling). No mouse,
+        /// no render dependency: resolution is a catalog lookup.</summary>
+        private static void AppendRulesTail(List<Composer.PanelSection> sections, string raw)
+        {
+            try
+            {
+                if (sections == null || string.IsNullOrEmpty(raw)) return;
+                object catalog = Seams.ToolTipControl_getRulesToolTips?.Invoke(null, null);
+                var keywords = catalog == null ? null
+                    : Seams.ToolTipCategory_getKeywords?.Invoke(catalog, null) as System.Collections.IList;
+                if (keywords == null || keywords.Count == 0) return;
+
+                var hits = new List<KeyValuePair<int, string>>();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (object k in keywords)
+                {
+                    string kw = k as string;
+                    if (string.IsNullOrEmpty(kw) || kw.Length < 3 || seen.Contains(kw)) continue;
+                    int at = raw.IndexOf(kw, StringComparison.Ordinal);
+                    if (at < 0) continue;
+                    seen.Add(kw);
+                    hits.Add(new KeyValuePair<int, string>(at, kw));
+                }
+                if (hits.Count == 0) return;
+                hits.Sort((x, y) => x.Key.CompareTo(y.Key));
+
+                var rules = new Composer.PanelSection { Title = "Rules" };
+                foreach (var hit in hits)
+                {
+                    if (rules.Elements.Count >= 12)
+                    {
+                        Scaffold.Log.Debug("Review", $"rules tail capped at 12 of {hits.Count}");
+                        break;
+                    }
+                    object tip = Seams.ToolTipCategory_getToolTip?.Invoke(catalog, new object[] { hit.Value });
+                    if (tip == null) continue;
+                    string name = Patches.TextCleaner.CleanText(
+                        Seams.SkaldBaseObject_getName?.Invoke(tip, null) as string ?? hit.Value);
+                    string desc = Patches.TextCleaner.CleanText(
+                        (Seams.SkaldBaseObject_getFullDescription?.Invoke(tip, null) as string ?? "")
+                        .Replace("\n", " ")).Trim();
+                    if (string.IsNullOrWhiteSpace(desc)) continue;
+                    rules.Elements.Add($"{name}: {desc}");
+                }
+                if (rules.Elements.Count == 0) return;
+                rules.FullText = $"Rules, {rules.Elements.Count}";
+                sections.Add(rules);
+            }
+            catch { }
         }
 
         private static void AppendStatusSection(List<Composer.PanelSection> sections)

@@ -333,6 +333,9 @@ namespace SkaldAccessibility
         // straight to the virtual-mouse setter.
         internal static Type UIGridBaseType;
         internal static MethodInfo UIElement_getPosition;
+        // (The Rules catalog seams — getRulesToolTips/getKeywords/getToolTip —
+        //  already exist from the combat condition document; the nav
+        //  revision's Rules tail reuses them.)
         internal static MethodInfo SkaldPoint2D_getX;
         internal static MethodInfo SkaldPoint2D_getY;
         internal static MethodInfo ToolTipPrinter_clearToolTip;

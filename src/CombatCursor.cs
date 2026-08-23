@@ -51,8 +51,9 @@ namespace SkaldAccessibility
         {
             _cfgLight = config.Bind("Combat", "LightOnLanding", true,
                 "Append the tile's light level to combat cursor landings (owner ruling: independent of the game's Show Stealth Info setting).");
-            _cfgValidPrepend = config.Bind("Combat", "PlacementQualifierLeads", true,
-                "During deployment, speak Valid/Invalid before the tile label (false = after).");
+            _cfgValidPrepend = config.Bind("Combat", "PlacementQualifierLeads", false,
+                "During deployment, speak Valid/Invalid before the tile label (default false — "
+                + "validity TRAILS tile data, owner ruling 2026-08-23).");
             _cfgPlacementCensus = config.Bind("Combat", "PlacementCensus", false,
                 "Speak the number of valid deployment tiles when the deploy screen opens.");
         }
@@ -104,16 +105,10 @@ namespace SkaldAccessibility
         private static readonly string[] TabNames =
             { "Turn Order", "Hostiles", "Neutrals and friendlies", "Party" };
 
-        /// <summary>Consulted by the feed layer's stick postfixes: while the
-        /// latch is open, every left-stick read answers false — native axis
-        /// and keyboard emulation alike (the force-false half of receipt 7).
-        /// The latch SUSPENDS under the game's own modal surfaces (Sonnet
-        /// MUST-FIX 2026-08-21: popups and selector grids drive their
-        /// navigation through the same stick accessors — an unguarded claim
-        /// left a grid opened over the latch unnavigable and Escape-proof;
-        /// the POI list learned this exact lesson in R10).</summary>
-        internal static bool LatchClaimsStick
-            => _listOpen && InCombat() && !PopupUp() && !Patches.GridNavigationPatch.GridActive();
+        // (LatchClaimsStick retired — nav revision §5, owner ruling
+        //  2026-08-23: WASD is RELEASED under the latch to native character
+        //  stepping, the overland walk-while-browsing model. The protective
+        //  swallows on numbers/Space stand; movement is intent.)
 
         // ---- Placement boundary state ----
         private static bool _lastValidKnown;
@@ -161,13 +156,8 @@ namespace SkaldAccessibility
                 case KeyCode.Escape:
                 case KeyCode.Backspace:
                 case KeyCode.K:
-                // The latch owns WASD (§6.18 Layer 2): the binding-route
-                // half of receipt 7 — the game goes blind to the movement
-                // keys at the choke while the tables are open.
-                case KeyCode.W:
-                case KeyCode.A:
-                case KeyCode.S:
-                case KeyCode.D:
+                // (WASD released — nav revision §5: native character
+                // stepping while the latch is open, deliberate by nature.)
                 // Protective mandate (Sonnet note, adopted): option-row
                 // numbers and Space (the MainInteract alias — the contextual
                 // ATTACK button) must not spend the turn from inside a
@@ -1197,16 +1187,15 @@ namespace SkaldAccessibility
                 CloseListSilent();
                 return false;
             }
-            // WASD = tab swap (the latch owns the stick — receipt 7 keeps
-            // the character still; these are raw reads, the game is blind).
-            if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.W))
-            { StepTab(-1); return true; }
-            if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.S))
-            { StepTab(+1); return true; }
-            // Left/Right = the row's facet walk: the staged document's
-            // sections, spoken in place (arrows = rows/facets, §6.18).
-            if (Input.GetKeyDown(KeyCode.LeftArrow)) { ReviewLayer.FacetStep(-1); return true; }
-            if (Input.GetKeyDown(KeyCode.RightArrow)) { ReviewLayer.FacetStep(+1); return true; }
+            // Nav revision §5 (owner ruling 2026-08-23): the K instruments
+            // are OVERLAYS over a live world, one creature in both worlds —
+            // Up/Down = entries, Left/Right = pages (the four tabs here, the
+            // categories overland). WASD is RELEASED to native character
+            // stepping, exactly like walking overland with the POI list
+            // open; the staged document's section walk lives on the review
+            // cluster (its proper house), not in the latch.
+            if (Input.GetKeyDown(KeyCode.LeftArrow)) { StepTab(-1); return true; }
+            if (Input.GetKeyDown(KeyCode.RightArrow)) { StepTab(+1); return true; }
             if (Input.GetKeyDown(KeyCode.DownArrow)) { TabRowStep(map, +1); return true; }
             if (Input.GetKeyDown(KeyCode.UpArrow)) { TabRowStep(map, -1); return true; }
             return false;
