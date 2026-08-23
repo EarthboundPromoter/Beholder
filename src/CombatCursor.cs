@@ -710,7 +710,7 @@ namespace SkaldAccessibility
                 _lastValidKnown = true;
                 _lastValid = isValid;
                 valid = isValid ? "Valid" : "Invalid";
-                bool lead = _cfgValidPrepend == null || _cfgValidPrepend.Value;
+                bool lead = _cfgValidPrepend != null && _cfgValidPrepend.Value;
                 string body = lead ? valid + ", " + label : label + ", " + valid.ToLowerInvariant();
                 Scaffold.SpeechService.Say(
                     lead0 + crossing + body + offset + payload + LightTail(tile) + (countTail ?? ""), "Nav");

@@ -280,7 +280,12 @@ namespace SkaldAccessibility
             if (sections.Count == 0) { Scaffold.SpeechService.Say("No details.", "Review"); return; }
             if (_section >= sections.Count) _section = sections.Count - 1;
             string prefix = null;
-            int next = (_element < 0 && direction > 0) ? 0 : _element + direction;
+            // Sentinel landing (Sonnet MUST-FIX 2026-08-23): from the fresh
+            // -1 cursor, PgDn enters at the section's FIRST element and PgUp
+            // at its LAST — the old asymmetric sentinel made a first PgUp
+            // skip the whole current section (and wrap the document).
+            int next = _element >= 0 ? _element + direction
+                : direction > 0 ? 0 : sections[_section].Elements.Count - 1;
 
             int guard = sections.Count + 1;   // skip empty sections, at most one lap
             while (guard-- > 0)
@@ -374,7 +379,7 @@ namespace SkaldAccessibility
                 {
                     string kw = k as string;
                     if (string.IsNullOrEmpty(kw) || kw.Length < 3 || seen.Contains(kw)) continue;
-                    int at = raw.IndexOf(kw, StringComparison.Ordinal);
+                    int at = BoundedIndexOf(raw, kw);
                     if (at < 0) continue;
                     seen.Add(kw);
                     hits.Add(new KeyValuePair<int, string>(at, kw));
@@ -383,6 +388,10 @@ namespace SkaldAccessibility
                 hits.Sort((x, y) => x.Key.CompareTo(y.Key));
 
                 var rules = new Composer.PanelSection { Title = "Rules" };
+                // Concept-level dedup (Sonnet MUST-FIX): the catalog registers
+                // casing variants per concept that resolve to the same tip —
+                // dedup on the RESOLVED name, not the literal keyword.
+                var resolved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var hit in hits)
                 {
                     if (rules.Elements.Count >= 12)
@@ -393,10 +402,17 @@ namespace SkaldAccessibility
                     object tip = Seams.ToolTipCategory_getToolTip?.Invoke(catalog, new object[] { hit.Value });
                     if (tip == null) continue;
                     string name = Patches.TextCleaner.CleanText(
-                        Seams.SkaldBaseObject_getName?.Invoke(tip, null) as string ?? hit.Value);
+                        Seams.SkaldBaseObject_getName?.Invoke(tip, null) as string ?? hit.Value).Trim();
+                    if (name.Length == 0 || !resolved.Add(name)) continue;
                     string desc = Patches.TextCleaner.CleanText(
                         (Seams.SkaldBaseObject_getFullDescription?.Invoke(tip, null) as string ?? "")
                         .Replace("\n", " ")).Trim();
+                    // The catalog ToolTip's own getFullDescription prepends the
+                    // uppercased name header (ToolTipControl.cs:152-155) — the
+                    // cleaner strips the tags, not the text (Sonnet MUST-FIX:
+                    // every entry spoke its name twice). Strip the echo.
+                    if (desc.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+                        desc = desc.Substring(name.Length).TrimStart(':', ' ', '-', '.');
                     if (string.IsNullOrWhiteSpace(desc)) continue;
                     rules.Elements.Add($"{name}: {desc}");
                 }
@@ -405,6 +421,36 @@ namespace SkaldAccessibility
                 sections.Add(rules);
             }
             catch { }
+        }
+
+        /// <summary>Word-bounded keyword search, mirroring the game's own
+        /// highlighter contract (UITextBlock.identifyTooltipKeywords: letters
+        /// on either side of the match refuse it — Sonnet MUST-FIX: "Rage"
+        /// must not fire inside "outrageous").</summary>
+        private static int BoundedIndexOf(string raw, string kw)
+        {
+            int from = 0;
+            while (from < raw.Length)
+            {
+                int at = raw.IndexOf(kw, from, StringComparison.Ordinal);
+                if (at < 0) return -1;
+                bool leftOk = at == 0 || !char.IsLetter(raw[at - 1]);
+                int end = at + kw.Length;
+                bool rightOk = end >= raw.Length || !char.IsLetter(raw[end]);
+                if (leftOk && rightOk) return at;
+                from = at + 1;
+            }
+            return -1;
+        }
+
+        /// <summary>A table landing moved the anchor: a captured tooltip is
+        /// about the PREVIOUS focus — drop it so the cluster never narrates
+        /// stale item data as if it were the new row (Sonnet MUST-FIX
+        /// 2026-08-23; a changed capture is a new document, a moved anchor is
+        /// no document).</summary>
+        internal static void InvalidateTooltipCapture()
+        {
+            if (_panelSource == "Tooltip") ClearPanel();
         }
 
         private static void AppendStatusSection(List<Composer.PanelSection> sections)

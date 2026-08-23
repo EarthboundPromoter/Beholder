@@ -902,6 +902,7 @@ namespace SkaldAccessibility
         private static void Seat(Section sec, int row)
         {
             Pump.NotePlayerNav();
+            ReviewLayer.InvalidateTooltipCapture();
             try { Seams.UICanvas_setCurrentSelectedButton?.Invoke(sec.Canvas, new object[] { row }); }
             catch { }
             Park(sec);
@@ -1112,6 +1113,7 @@ namespace SkaldAccessibility
             string censusPrefix = null)
         {
             Pump.NotePlayerNav();
+            ReviewLayer.InvalidateTooltipCapture();
             if (sec.InvDef.Kind == InvKind.Worn)
             {
                 int w = 6;
@@ -1306,6 +1308,7 @@ namespace SkaldAccessibility
         private static void SeatPartyRow(Section sec, int slot, bool speak, string censusPrefix)
         {
             Pump.NotePlayerNav();
+            ReviewLayer.InvalidateTooltipCapture();
             ParkGridCell(sec.Canvas, slot / 6, slot % 6);
             _invAnchor[sec.Id] = slot;
             if (!speak) return;
@@ -1530,18 +1533,25 @@ namespace SkaldAccessibility
                 var identity = new Composer.PanelSection { Title = "Item" };
                 var stats = new Composer.PanelSection { Title = "Stats" };
                 var tail = new Composer.PanelSection { Title = "Description" };
+                // The value/weight facet CLOSES the stats block by the
+                // composer's own construction (Value/Weight are the block's
+                // final labels — Item.cs:730-733): anything after it is
+                // prose. Without one, the last part is prose unless it reads
+                // like a stat (Sonnet SHOULD-FIX: short comma-bearing flavor
+                // text must not file under Stats).
+                int vw = -1;
+                for (int i = 1; i < parts.Count; i++)
+                    if (System.Text.RegularExpressions.Regex.IsMatch(parts[i], @"\bgold\b")
+                        && System.Text.RegularExpressions.Regex.IsMatch(parts[i], @"\bpounds?\b"))
+                    { vw = i; break; }
                 for (int i = 0; i < parts.Count; i++)
                 {
                     string p = parts[i];
                     if (string.IsNullOrWhiteSpace(p)) continue;
                     if (i == 0) identity.Elements.Add(p);
-                    else if (System.Text.RegularExpressions.Regex.IsMatch(p, @"\bgold\b")
-                             && System.Text.RegularExpressions.Regex.IsMatch(p, @"\bpounds?\b"))
-                        stats.Elements.Add(p);          // value/weight closes the stats block
-                    else if (i == parts.Count - 1 && !p.Contains(","))
-                        tail.Elements.Add(p);           // trailing prose (single clause)
-                    else if (i == parts.Count - 1 && p.Length > 60)
-                        tail.Elements.Add(p);           // trailing prose (long form)
+                    else if (vw >= 0 ? i > vw
+                             : (i == parts.Count - 1 && !System.Text.RegularExpressions.Regex.IsMatch(p, @"\d")))
+                        tail.Elements.Add(p);
                     else stats.Elements.Add(p);
                 }
                 foreach (var s in new[] { identity, stats, tail })
