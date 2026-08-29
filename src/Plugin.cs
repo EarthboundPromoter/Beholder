@@ -60,6 +60,9 @@ namespace SkaldAccessibility
                 // Table engine (gate A): the R15 arrows-as-rows / WASD-as-
                 // sections grammar on registered UI screens.
                 TableCursor.BindConfig(Config);
+                // Tile-art transcode: overland art nouns + tile coordinates
+                // (owner go 2026-08-29; combat deliberately excluded).
+                TileArtTable.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own

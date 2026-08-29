@@ -653,24 +653,27 @@ namespace SkaldAccessibility
         private static void SpeakTile(object map, int tx, int ty, string countTail, string prefix = null)
         {
             string lead0 = prefix ?? "";
+            // Tile coordinates ride combat landings too (owner add 2026-08-29;
+            // the art-noun transcode does NOT — combat keeps flag words).
+            string coords = TileArtTable.CoordTail(tx, ty);
             if (!AnchorPos(out int ax, out int ay)) { ax = tx; ay = ty; }
             object tile = TileAt(map, tx, ty);
             if (tile == null)
             {
                 ReviewLayer.ClearStaged();   // no combatant here (Sonnet find 2)
-                Scaffold.SpeechService.Say(lead0 + "Nothing." + Offset(tx - ax, ty - ay), "Nav");
+                Scaffold.SpeechService.Say(lead0 + "Nothing." + Offset(tx - ax, ty - ay) + coords, "Nav");
                 return;
             }
 
             if (!B(Seams.MapTile_isSpotted, tile))
             {
                 ReviewLayer.ClearStaged();   // no combatant here (Sonnet find 2)
-                Scaffold.SpeechService.Say(lead0 + "Unexplored." + Offset(tx - ax, ty - ay) + (countTail ?? ""), "Nav");
+                Scaffold.SpeechService.Say(lead0 + "Unexplored." + Offset(tx - ax, ty - ay) + coords + (countTail ?? ""), "Nav");
                 return;
             }
 
             string label = TileLabel(tile);
-            string offset = Offset(tx - ax, ty - ay);
+            string offset = Offset(tx - ax, ty - ay) + coords;
             string fact = "";
             string valid = "";
 

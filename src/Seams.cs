@@ -310,6 +310,16 @@ namespace SkaldAccessibility
         internal static MethodInfo MapTile_getVerb;
         internal static MethodInfo MapTile_getTileX;
         internal static MethodInfo MapTile_getTileY;
+        // Tile-art transcode (2026-08-29): the tile's render identity — the
+        // private layer stack the renderer draws from, plus the water family's
+        // animation key. Read live per utterance, never cached (liveness by
+        // construction; the runtime autotile chain is dead code but the read
+        // doesn't rely on that).
+        internal static FieldInfo MapTile_textureBuffer;      // MapTile.textureBuffer (private nested TextureBuffer)
+        internal static FieldInfo MapTile_animationPath;      // water/sewage render key (applyTerrain)
+        internal static FieldInfo TextureBuffer_imageLayers;  // ImageLayer[] {path, subImage, ...}
+        internal static FieldInfo ImageLayer_path;            // = TerrainTile.modelPath
+        internal static FieldInfo ImageLayer_subImage;        // baked at map construction
         internal static MethodInfo SkaldBaseObject_getName;
         internal static MethodInfo SkaldWorldObject_getTileX;
         internal static MethodInfo SkaldWorldObject_getTileY;
@@ -947,6 +957,18 @@ namespace SkaldAccessibility
             MapTile_getVerb = M(MapTileType, "MapTile", "getVerb");
             MapTile_getTileX = M(MapTileType, "MapTile", "getTileX");
             MapTile_getTileY = M(MapTileType, "MapTile", "getTileY");
+            // MapTile+TextureBuffer(+ImageLayer) are private nested — GetNestedType.
+            MapTile_textureBuffer = F(MapTileType, "MapTile", "textureBuffer");
+            MapTile_animationPath = F(MapTileType, "MapTile", "animationPath");
+            var textureBufferType = MapTileType?.GetNestedType("TextureBuffer",
+                BindingFlags.NonPublic | BindingFlags.Public);
+            Row("MapTile+TextureBuffer", textureBufferType != null);
+            TextureBuffer_imageLayers = F(textureBufferType, "MapTile+TextureBuffer", "imageLayers");
+            var imageLayerType = textureBufferType?.GetNestedType("ImageLayer",
+                BindingFlags.NonPublic | BindingFlags.Public);
+            Row("MapTile+TextureBuffer+ImageLayer", imageLayerType != null);
+            ImageLayer_path = F(imageLayerType, "ImageLayer", "path");
+            ImageLayer_subImage = F(imageLayerType, "ImageLayer", "subImage");
             SkaldBaseObject_getName = M(SkaldBaseObjectType, "SkaldBaseObject", "getName");
             var worldObjectType = T("SkaldWorldObject");
             SkaldWorldObject_getTileX = M(worldObjectType, "SkaldWorldObject", "getTileX");
