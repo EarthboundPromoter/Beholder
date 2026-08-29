@@ -79,6 +79,11 @@ namespace SkaldAccessibility
             _currentStateName = stateName;
             _currentMode = ClassifyState(stateName);
 
+            // The standing rebinds, reasserted at every transition (silent;
+            // see RebindGuard) — here rather than on the mode compare so the
+            // rebind screen's own within-mode state hops are covered too.
+            RebindGuard.Check();
+
             if (_currentMode != _previousMode)
             {
                 Plugin.Logger?.LogInfo($"[GameState] {_previousMode} -> {_currentMode} ({stateName})");

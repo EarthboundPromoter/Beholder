@@ -294,6 +294,17 @@ namespace SkaldAccessibility
             if (!string.IsNullOrWhiteSpace(text)) _pendingBarks.Add(text);
         }
 
+        private static readonly System.Collections.Generic.List<string> _pendingCutSceneText
+            = new System.Collections.Generic.List<string>();
+
+        /// <summary>Cutscene header/card text (the ctor-write patches) —
+        /// queued whole at the drain; a card hangs seconds on screen, so the
+        /// queue always catches up.</summary>
+        public static void NoteCutSceneText(string text)
+        {
+            if (!string.IsNullOrWhiteSpace(text)) _pendingCutSceneText.Add(text);
+        }
+
         /// <summary>Remove one pending bark by exact text — used by a composed
         /// line that ABSORBS the game's raw bark (the CP1 disengage ruling:
         /// one utterance, never two). Runs in the spine drain, before
@@ -492,6 +503,9 @@ namespace SkaldAccessibility
             try { CombatSpine.SpeakOrphanTactical(); }
             catch (Exception ex) { Scaffold.Log.Throttled("Pump:tactical", ex.Message); }
 
+            try { DrainCutSceneText(); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:cutscene", ex.Message); }
+
             try { DrainBarks(); }
             catch (Exception ex) { Scaffold.Log.Throttled("Pump:bark", ex.Message); }
 
@@ -668,10 +682,23 @@ namespace SkaldAccessibility
                     if (!string.IsNullOrWhiteSpace(identity)) toSpeak = Composer.EnsurePeriod(identity);
                 }
 
+                // Stealth toggle: the round-spend's generic wait line is
+                // dropped — HidePatch speaks the stealth announcement itself
+                // (the diff record above keeps the game's own text, so
+                // nothing re-speaks late).
+                if (StealthDropsWaitLine(toSpeak)) continue;
+
                 if (kv.Value.Interrupt)
                     Scaffold.SpeechService.Say(toSpeak, source);
                 else
                     Scaffold.SpeechService.SayQueued(toSpeak, source);
+
+                // Character-change vitals ride the leader line itself (owner
+                // ruling 2026-08-29: link to the name string, never a frame
+                // delay) — queued immediately behind the line that names the
+                // character. Held vitals that never see their name line are
+                // dropped at overwrite or state transition.
+                ReleasePCVitalsAfter(toSpeak);
 
                 // Dialogue node change (owner ruling 2026-08-17): picking a
                 // choice mounts a new node INSIDE the same scene state — no
@@ -746,6 +773,59 @@ namespace SkaldAccessibility
                 Scaffold.SpeechService.SayQueued(text, "CombatLog");
                 i += run;
             }
+        }
+
+        private static string _pendingPCVitals;
+
+        /// <summary>Character-change vitals line (ChangePCPatch) — latest
+        /// wins; spoken only when the game's own leader line is spoken, queued
+        /// immediately behind it (ReleasePCVitalsAfter).</summary>
+        public static void NotePCVitals(string line)
+        {
+            if (!string.IsNullOrWhiteSpace(line)) _pendingPCVitals = line;
+        }
+
+        private static int _stealthNoteFrame = -1;
+
+        /// <summary>Stealth toggle (HidePatch): the game spends a round on the
+        /// toggle and its passRound writes the generic "You wait a short
+        /// while." strip line — misleading for stealth, and unreliable as a
+        /// speech anchor (an identical back-to-back toggle dedups away at the
+        /// per-source diff — the owner-caught "left stealth goes quiet" bug).
+        /// The stealth announcement is spoken by HidePatch itself; this note
+        /// only makes DrainContent DROP the wait line for that toggle. A
+        /// genuine wait has no note and speaks unchanged.</summary>
+        public static void NoteStealthToggle()
+        {
+            _stealthNoteFrame = UnityEngine.Time.frameCount;
+        }
+
+        private static bool StealthDropsWaitLine(string toSpeak)
+        {
+            if (_stealthNoteFrame < 0 || UnityEngine.Time.frameCount - _stealthNoteFrame > 2)
+                return false;
+            if (toSpeak == null || !toSpeak.Contains("You wait a short while")) return false;
+            _stealthNoteFrame = -1;
+            return true;
+        }
+
+        private static void ReleasePCVitalsAfter(string spoken)
+        {
+            if (_pendingPCVitals == null || spoken == null) return;
+            if (spoken.Contains("is now leading the party"))
+            {
+                Scaffold.SpeechService.SayQueued(_pendingPCVitals, "PCVitals");
+                _pendingPCVitals = null;
+            }
+        }
+
+        private static void DrainCutSceneText()
+        {
+            if (_pendingCutSceneText.Count == 0) return;
+            var lines = new System.Collections.Generic.List<string>(_pendingCutSceneText);
+            _pendingCutSceneText.Clear();
+            foreach (var line in lines)
+                Scaffold.SpeechService.SayQueued(line, "CutScene");
         }
 
         private static void DrainBarks()
@@ -2045,6 +2125,7 @@ namespace SkaldAccessibility
             }
             _inSceneFamily = nowScene;
 
+            _pendingPCVitals = null;            // vitals never outlive their name line's state
             ReviewLayer.OnStateTransition();    // review never survives a state change
             DialogueCursor.OnStateTransition(); // text mode dies with its scene
             PanelPolicy.OnStateTransition();    // fact differ re-seeds: first strip

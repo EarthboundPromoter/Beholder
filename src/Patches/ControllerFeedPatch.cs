@@ -157,7 +157,7 @@ namespace SkaldAccessibility.Patches
         // names are the bridge's reflection API) arm one-shot synthetic presses.
 
         private static bool Emulate(KeyCode key)
-            => !TextEntryActive() && Input.GetKeyDown(key);
+            => !TextEntryActive() && !KeyTable.Engaged && Input.GetKeyDown(key);
 
         // Activation-class emulations additionally suspend while the review
         // layer is open or eating its closing press (WP10) — a confirm from
@@ -188,18 +188,18 @@ namespace SkaldAccessibility.Patches
         static void Postfix_LeftTriggerHeld(ref bool __result)
         {
             if (__result) return;
-            if ((!TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKey(KeyCode.Z))
+            if ((!TextEntryActive() && !KeyTable.Engaged && !ReviewLayer.EatingActivations() && Input.GetKey(KeyCode.Z))
                 || Time.frameCount == SkaldIOPatches.InjectConfirmFrame) __result = true;
         }
         static void Postfix_LeftTriggerUp(ref bool __result)
         {
             if (__result) return;
-            if ((!TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKeyUp(KeyCode.Z))
+            if ((!TextEntryActive() && !KeyTable.Engaged && !ReviewLayer.EatingActivations() && Input.GetKeyUp(KeyCode.Z))
                 || Time.frameCount == SkaldIOPatches.InjectConfirmFrame + 1) __result = true;
         }
         static void Postfix_RightTriggerPressed(ref bool __result) { if (!__result && EmulateActivation(KeyCode.X)) __result = true; }
-        static void Postfix_RightTriggerHeld(ref bool __result) { if (!__result && !TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKey(KeyCode.X)) __result = true; }
-        static void Postfix_RightTriggerUp(ref bool __result) { if (!__result && !TextEntryActive() && !ReviewLayer.EatingActivations() && Input.GetKeyUp(KeyCode.X)) __result = true; }
+        static void Postfix_RightTriggerHeld(ref bool __result) { if (!__result && !TextEntryActive() && !KeyTable.Engaged && !ReviewLayer.EatingActivations() && Input.GetKey(KeyCode.X)) __result = true; }
+        static void Postfix_RightTriggerUp(ref bool __result) { if (!__result && !TextEntryActive() && !KeyTable.Engaged && !ReviewLayer.EatingActivations() && Input.GetKeyUp(KeyCode.X)) __result = true; }
 
         // The stick postfixes also carry the player-nav stamp (owner ruling
         // 2026-08-17): a direction read answering true IS the player
@@ -295,9 +295,9 @@ namespace SkaldAccessibility.Patches
             if (!__result && (Emulate(FeedKey(KeyCode.D, KeyCode.RightArrow)) || Time.frameCount == SkaldIOPatches.InjectRightFrame)) __result = true;
             if (__result) Pump.NotePlayerNav();
         }
-        static void Postfix_StickUpHeld(ref bool __result) { if (TableCursor.ClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && Input.GetKey(FeedKey(KeyCode.W, KeyCode.UpArrow))) __result = true; if (__result) Pump.NotePlayerNav(); }
-        static void Postfix_StickDownHeld(ref bool __result) { if (TableCursor.ClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && Input.GetKey(FeedKey(KeyCode.S, KeyCode.DownArrow))) __result = true; if (__result) Pump.NotePlayerNav(); }
-        static void Postfix_StickLeftHeld(ref bool __result) { if (TableCursor.ClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && Input.GetKey(FeedKey(KeyCode.A, KeyCode.LeftArrow))) __result = true; if (__result) Pump.NotePlayerNav(); }
-        static void Postfix_StickRightHeld(ref bool __result) { if (TableCursor.ClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && Input.GetKey(FeedKey(KeyCode.D, KeyCode.RightArrow))) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickUpHeld(ref bool __result) { if (TableCursor.ClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && !KeyTable.Engaged && Input.GetKey(FeedKey(KeyCode.W, KeyCode.UpArrow))) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickDownHeld(ref bool __result) { if (TableCursor.ClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && !KeyTable.Engaged && Input.GetKey(FeedKey(KeyCode.S, KeyCode.DownArrow))) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickLeftHeld(ref bool __result) { if (TableCursor.ClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && !KeyTable.Engaged && Input.GetKey(FeedKey(KeyCode.A, KeyCode.LeftArrow))) __result = true; if (__result) Pump.NotePlayerNav(); }
+        static void Postfix_StickRightHeld(ref bool __result) { if (TableCursor.ClaimsStick) { __result = false; return; } if (!__result && !TextEntryActive() && !KeyTable.Engaged && Input.GetKey(FeedKey(KeyCode.D, KeyCode.RightArrow))) __result = true; if (__result) Pump.NotePlayerNav(); }
     }
 }

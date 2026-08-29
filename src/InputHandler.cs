@@ -14,7 +14,8 @@ namespace SkaldAccessibility
     ///
     /// Hotkeys:
     ///   /              - Stop speech (flushes the queue too — explicit act)
-    ///   F1             - Repeat last spoken text
+    ///   F1             - Contextual key table (owner design 2026-08-29; the
+    ///                    repeat key it displaced is retired outright)
     ///   [              - Speech history: previous
     ///   ]              - Speech history: next
     ///   R              - Review toggle (WP10); Home/End + PgUp/PgDn = the
@@ -36,6 +37,11 @@ namespace SkaldAccessibility
             {
                 SpeechService.Stop();
             }
+
+            // The key table (F1): a static two-column browse over the current
+            // surface's keys. While open it consumes everything except the
+            // speech-control keys. Runs before every driving layer.
+            if (KeyTable.ProcessInput()) return;
 
             // The review layer (WP10): toggle, cluster, and in-state input
             // classes. Consumed presses stop here.
@@ -64,12 +70,6 @@ namespace SkaldAccessibility
             bool combatConsumed = CombatCursor.ProcessInput();
             CombatCursor.Tick();
             if (combatConsumed) return;
-
-            // Repeat last speech: F1
-            if (Input.GetKeyDown(KeyCode.F1))
-            {
-                SpeechService.RepeatLast();
-            }
 
             // Speech history browse: [ and ] — reads the ring, never mutates it.
             if (Input.GetKeyDown(KeyCode.LeftBracket))

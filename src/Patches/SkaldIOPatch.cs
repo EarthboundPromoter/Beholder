@@ -185,7 +185,8 @@ namespace SkaldAccessibility.Patches
 
         static void Postfix_SwallowKey(UnityEngine.KeyCode __0, ref bool __result)
         {
-            if (__result && (ReviewLayer.ShouldSwallowKey(__0) || OverlandCursor.ShouldSwallowKey(__0)
+            if (__result && (KeyTable.ShouldSwallowKey(__0)
+                || ReviewLayer.ShouldSwallowKey(__0) || OverlandCursor.ShouldSwallowKey(__0)
                 || CombatCursor.ShouldSwallowKey(__0) || TableCursor.ShouldSwallowKey(__0) || ArrowClaimed(__0)))
                 __result = false;
         }
@@ -232,7 +233,8 @@ namespace SkaldAccessibility.Patches
 
         static void Postfix_SwallowEscape(ref bool __result)
         {
-            if (__result && (ReviewLayer.ShouldSwallowKey(UnityEngine.KeyCode.Escape)
+            if (__result && (KeyTable.ShouldSwallowKey(UnityEngine.KeyCode.Escape)
+                || ReviewLayer.ShouldSwallowKey(UnityEngine.KeyCode.Escape)
                 || OverlandCursor.ShouldSwallowKey(UnityEngine.KeyCode.Escape)))
                 __result = false;
         }

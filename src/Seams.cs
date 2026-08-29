@@ -191,6 +191,24 @@ namespace SkaldAccessibility
         internal static MethodInfo CombatLog_addEntry;
         internal static ConstructorInfo Bark_ctor;
 
+        // ---- Rebind guard (the mod's two standing rebinds asserted silently:
+        //      Next Character -> Period, Inventory -> Comma — the game's Q/E
+        //      defaults collide with the mod's bumper feed. Public getters are
+        //      direct calls; the setter path is nested-private) ----
+        internal static FieldInfo KeyBindings_nextCharacter;
+        internal static FieldInfo KeyBindings_inventory;
+        internal static FieldInfo SkaldObjectList_objectList;
+        internal static MethodInfo KeyBinding_setKey;
+        internal static MethodInfo KeyBinding_clearIfKey;
+
+        // ---- Cutscene text (CutSceneControl's nested private renderers write
+        //      their UITextBlocks in their ctors — no GUIControl choke sees
+        //      the text: animated-cutscene narration headers + script-driven
+        //      text cards share one base ctor; game-win composes its own) ----
+        internal static ConstructorInfo CutsceneTextHeader_ctor;
+        internal static ConstructorInfo CutSceneGameWin_ctor;
+        internal static FieldInfo CutSceneGameWin_textBlock;
+
         // ---- Popup announce (top-of-stack watch — the add event alone misses
         //      reveals and frame-late UI builds; the drain reads getCurrentPopUp,
         //      the game's own authoritative current-popup accessor) ----
@@ -844,6 +862,36 @@ namespace SkaldAccessibility
                       typeof(UnityEngine.Color), typeof(UnityEngine.Color), typeof(int)
                   });
             Row("Bark..ctor", Bark_ctor != null);
+
+            // Rebind guard — SKALDKeyBindings is public (direct getters); the
+            // binding slots and their setters are nested-private.
+            KeyBindings_nextCharacter = F(typeof(SKALDKeyBindings), "SKALDKeyBindings", "nextCharacter");
+            KeyBindings_inventory = F(typeof(SKALDKeyBindings), "SKALDKeyBindings", "inventory");
+            SkaldObjectList_objectList = F(typeof(SkaldObjectList), "SkaldObjectList", "objectList");
+            var keyBindingType = typeof(SKALDKeyBindings).GetNestedType("KeyBinding",
+                BindingFlags.NonPublic | BindingFlags.Public);
+            KeyBinding_setKey = keyBindingType == null ? null
+                : AccessTools.Method(keyBindingType, "setKey", new[] { typeof(UnityEngine.KeyCode) });
+            KeyBinding_clearIfKey = keyBindingType == null ? null
+                : AccessTools.Method(keyBindingType, "clearIfKey", new[] { typeof(UnityEngine.KeyCode) });
+            Row("SKALDKeyBindings+KeyBinding.setKey/clearIfKey",
+                KeyBinding_setKey != null && KeyBinding_clearIfKey != null);
+
+            // Cutscene text — CutSceneControl+CutScene+CutsceneTextHeader is
+            // doubly nested private; both Header subclasses (animated
+            // narration, text cards e.g. "Two Weeks Earlier") chain through
+            // this one base ctor. CutSceneGameWin builds a plain UITextBlock.
+            var cutSceneControl = T("CutSceneControl");
+            var cutSceneType = cutSceneControl?.GetNestedType("CutScene", BindingFlags.NonPublic | BindingFlags.Public);
+            var cutHeaderType = cutSceneType?.GetNestedType("CutsceneTextHeader", BindingFlags.NonPublic | BindingFlags.Public);
+            CutsceneTextHeader_ctor = cutHeaderType == null ? null
+                : AccessTools.Constructor(cutHeaderType, new[] { typeof(string), typeof(int), typeof(int) });
+            Row("CutSceneControl+CutScene+CutsceneTextHeader..ctor", CutsceneTextHeader_ctor != null);
+            var gameWinType = cutSceneControl?.GetNestedType("CutSceneGameWin", BindingFlags.NonPublic | BindingFlags.Public);
+            CutSceneGameWin_ctor = gameWinType == null ? null : AccessTools.Constructor(gameWinType, Type.EmptyTypes);
+            CutSceneGameWin_textBlock = gameWinType == null ? null : AccessTools.Field(gameWinType, "textBlock");
+            Row("CutSceneControl+CutSceneGameWin..ctor+textBlock",
+                CutSceneGameWin_ctor != null && CutSceneGameWin_textBlock != null);
 
             // Popup announce
             PopUpBase_uiElements = F(PopUpBaseType, "PopUpBase", "uiElements");

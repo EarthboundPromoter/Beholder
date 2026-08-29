@@ -83,7 +83,7 @@ namespace SkaldAccessibility
             catch { return ""; }
         }
 
-        private static int ConditionCount(object ch)
+        internal static int ConditionCount(object ch)
         {
             try
             {

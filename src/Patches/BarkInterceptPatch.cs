@@ -36,6 +36,18 @@ namespace SkaldAccessibility.Patches
                 string cleaned = TextCleaner.CleanText(__0);
                 if (string.IsNullOrWhiteSpace(cleaned)) return;
 
+                // A bark constructed before any world state exists is never
+                // rendered — every boot, the game's data warm-up constructs a
+                // Magma Ooze whose "FELL LIGHT" barks fire at frame 2, during
+                // the splash roll. Drop pre-world barks; a real bubble can only
+                // arise once a world state is live.
+                var mode = GameStateTracker.CurrentMode;
+                if (mode == GameMode.Unknown || mode == GameMode.MainMenu)
+                {
+                    Plugin.Logger?.LogDebug($"[BarkIntercept] pre-world bark dropped: \"{cleaned}\"");
+                    return;
+                }
+
                 // Note-only (WP5): barks batch at the Pump; identical repeats in a
                 // frame coalesce to "text, N times" at the drain (compress, don't
                 // curate), then queue — floating text never interrupts.

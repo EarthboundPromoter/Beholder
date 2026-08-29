@@ -1,6 +1,6 @@
-# PARKED JOB — Tile-art classification (terrain vocabulary for the geography layer)
+# JOB — Tile-art classification (terrain vocabulary for the geography layer)
 
-**Status: PARKED by owner ruling 2026-08-21** ("functionality first — the passive layer enhances gameplay, this is a grace feature I want"). Fire on owner request. Runs fully offline (decomp + extracted assets); no game session needed; can run as a background Fable agent in parallel with other work.
+**Status: FIRED by owner 2026-08-24** (parked 2026-08-21 → launched with three owner-approved amendments, §Amendments below). Runs fully offline (decomp + extracted assets); no game session needed.
 
 ## Purpose
 
@@ -42,8 +42,14 @@ Consumer: the passive awareness / geography layer (in design as of 2026-08-21). 
 7. **Deliverable: one local HTML review page.** Grouped by sheet: upscaled sprite image, proposed label, `(id, subImage)`, usage count, confidence flag. Label doubles as the image alt text — the same page is the sighted infographic AND NVDA-navigable. No external hosting.
 8. **Tooling gate at job start.** Verify the texture-export tool is present before starting; stop if missing (standing owner rule — never improvise tooling).
 
+## Amendments (owner-approved 2026-08-24, at launch)
+
+9. **Interaction-discrepancy census rides the usage census.** While walking every shipped map's data, also harvest every entity carrying interaction wiring (info tiles, script triggers, props with interaction data) and compute what the mod's current classification path would speak for it. Anything answering with a bare flag word ("blocked", "floor") while the game treats it as an interactable goes into a **discrepancy table** — its own section on the review page. Motivating case: the refugee-camp footprints spoke as "blocked" (impassable flag fall-through; the POI categories don't recognize the class). This finds the rest of that class in one sweep.
+10. **Non-descriptive-interactives findings column — record only, no remediation.** The same harvest records which interactables lack a designer title/description. Deciding what they *should* say is speech-side design with its own rulings — explicitly out of scope for this pass.
+11. **Layer-role tags on every label** (ground / wall / decoration / overlay). Tiles compose from stacked layers; the eventual precedence rule for which noun wins is consumer-side design, not decided here — the tag is cheap metadata so any later rule works without a re-pass.
+
 ## Execution shape
 
-Fable agent (owner-specified), background-capable. Sequence: tooling gate → (re-)extract if needed → usage census → sheet-level table (geography ids → nouns) → per-subimage labeling of manually-placed sheets with context viewing → HTML review page → owner + sighted review → only then does anything enter speech.
+Fable agent (owner-specified), background-capable. Sequence: tooling gate → (re-)extract if needed → usage census + interaction-discrepancy census (amendment 9, same walk) → sheet-level table (geography ids → nouns) → per-subimage labeling of manually-placed sheets with context viewing → HTML review page (labels + layer-role tags + discrepancy table + findings column) → owner + sighted review → only then does anything enter speech.
 
 Note for the classifier: this table is the first place in the design where the agent's reading of the art becomes the source of truth rather than a designer string. It is transcription of what is drawn — interpretive in a way the id table is not. Nothing from it speaks until the review pass.

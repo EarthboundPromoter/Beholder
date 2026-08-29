@@ -30,6 +30,7 @@ all_types.txt
 docs/combat-survey.md
 docs/combat-spec.md
 docs/text-surface-audit.md
+docs/table-ui-design.md
 
 # Dev bridge — local-only, never ships (lineage rule)
 bridge/bin/

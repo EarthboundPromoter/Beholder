@@ -14,8 +14,8 @@ namespace SkaldAccessibility
         // GUID kept identical to the BepInEx 6 era's generated value so the
         // plugin identity (and any config) carries across the toolchain flip.
         public const string Guid = "SkaldAccessibility";
-        public const string Name = "Skald Accessibility";
-        public const string Version = "0.2.0";
+        public const string Name = "Beholder";
+        public const string Version = "0.5.0";
 
         internal static new ManualLogSource Logger;
 
@@ -32,7 +32,7 @@ namespace SkaldAccessibility
                 // Tolk with screen reader preferred, SAPI fallback, log-only degrade.
                 SpeechService.Init();
                 UnityEngine.Application.quitting += SpeechService.Shutdown;
-                SpeechService.Say($"Skald Accessibility {Version} loaded.", "Init");
+                SpeechService.Say($"{Name} {Version} loaded.", "Init");
 
                 // WP8: resolve the full seam manifest first (metadata only —
                 // frame-0 safe), so patch classes Prepare() against it.
@@ -63,6 +63,11 @@ namespace SkaldAccessibility
                 // Tile-art transcode: overland art nouns + tile coordinates
                 // (owner go 2026-08-29; combat deliberately excluded).
                 TileArtTable.BindConfig(Config);
+                // F1 contextual key table (owner design 2026-08-29).
+                KeyTable.BindConfig(Config);
+                // Silent auto-rebind of the two standing game rebinds
+                // (owner ruling 2026-08-29).
+                RebindGuard.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own
