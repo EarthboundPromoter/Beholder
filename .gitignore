@@ -38,3 +38,6 @@ bridge/obj/
 
 # Session log snapshots (bridge log watcher, 2026-08-18)
 logs/
+
+# Reception analytics history (gha) — local trend data, not for the public repo
+docs/reception_log.jsonl
