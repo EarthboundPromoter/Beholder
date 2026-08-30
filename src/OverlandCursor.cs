@@ -641,19 +641,23 @@ namespace SkaldAccessibility
             // Tile-art transcode rung (owner go 2026-08-29): the classification
             // job's noun for the tile's topmost speakable layer, replacing the
             // bare flag words below. Everything the game labels won already,
-            // above — primacy by ladder order. The blocked qualifier rides only
-            // where the noun wouldn't carry it itself: wall-role nouns
-            // self-evidently block, water nouns (surf/ocean) carry the flag's
-            // meaning. Null (unknown art, config off, seams missing) keeps the
-            // flag words — the zero-regression floor. Combat's ladder
-            // deliberately has no such rung (owner ruling: clear/blocked stays).
+            // above — primacy by ladder order. Owner revision same day
+            // (post-release player feedback): the noun alone confused spatial
+            // reading — the flag word LEADS again, uniformly ("Blocked, birch
+            // trees" / "Open, cobbles"), replacing the trailing qualifier and
+            // its wall exemption. Water keeps its bare noun: the old ladder's
+            // Water rung outranked Blocked (passability differs afoot vs
+            // asail), so a flag prefix there would mislead sailing. Null
+            // (unknown art, config off, seams missing) keeps the flag words —
+            // the zero-regression floor. Combat's ladder deliberately has no
+            // such rung (owner ruling: clear/blocked stays).
             string art = TileArtTable.LabelFor(tile, out bool wallish);
             if (!string.IsNullOrEmpty(art))
             {
-                if (!B(Seams.MapTile_isPassable, tile) && !wallish
-                    && !B(Seams.MapTile_isWater, tile))
-                    art += ", blocked";
-                return char.ToUpperInvariant(art[0]) + art.Substring(1);
+                if (B(Seams.MapTile_isWater, tile))
+                    return char.ToUpperInvariant(art[0]) + art.Substring(1);
+                string flag = B(Seams.MapTile_isPassable, tile) ? "Open" : "Blocked";
+                return flag + ", " + art;
             }
 
             if (B(Seams.MapTile_isWater, tile)) return "Water";
