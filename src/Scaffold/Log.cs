@@ -115,7 +115,7 @@ namespace SkaldAccessibility.Scaffold
             KeyCode.W, KeyCode.A, KeyCode.S, KeyCode.D,
             KeyCode.Z, KeyCode.X, KeyCode.Space, KeyCode.Escape, KeyCode.Backspace, KeyCode.Return,
             KeyCode.H, KeyCode.N, KeyCode.B, KeyCode.O, KeyCode.M, KeyCode.P, KeyCode.K,
-            KeyCode.R, KeyCode.I, KeyCode.U, KeyCode.Q, KeyCode.E, KeyCode.T,
+            KeyCode.R, KeyCode.I, KeyCode.U, KeyCode.Q, KeyCode.E, KeyCode.T, KeyCode.V,
             KeyCode.F1, KeyCode.LeftBracket, KeyCode.RightBracket, KeyCode.Slash,
             KeyCode.Home, KeyCode.End, KeyCode.PageUp, KeyCode.PageDown,
             KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5,

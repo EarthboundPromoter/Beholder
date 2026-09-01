@@ -84,6 +84,56 @@ Lineage idiom: each row = finding, receipts, root-cause hypothesis, fix shape. O
 
 **PARTIAL RULING + FIX (owner, 2026-08-17):** the strip was overrunning the game-opening dialogue on load. Ruled: forced quiet on initial load and whenever dialogue or other UI takes precedence. Landed same day: the strip (recognized by its rendered "Time: " shape on the SecondaryDesc source) speaks only while OverlandState is the settled, popup-free state, and its first value after any state transition settles silently (the B1 shape) — the diff record still updates so a suppressed value can never speak late. Per-step chatter during plain overland walking remains the OPEN half of this row.
 
+## B15 — Attribute-editor flip teleports the cursor; rows land unlabeled (FIX LANDED 2026-08-29, first external report — ninetails16; reporter-verify pending. Numbered out of sequence: the row predates the B8–B14 triage and briefly shared the B8 number; renumbered 2026-09-01)
+
+**Symptom (ninetails16, first bug report, Beholder 0.5.0):** "the pluss/minus speech delay is quite long, I press right arrow to get to pluss and when I want to get back to minus, I have to press the left arrow multiple times." Owner could not reproduce; controller/Steam Input ruled out by the reporter's own unplug test.
+
+**Receipts (reporter's LogOutput, 2026-08-30):** input fully exonerated — every Left/Right press emits exactly one immediate `[Speech:Nav]` Minus./Plus. line; reader=NVDA; ~240fps; zero phantom input in idle stretches. The defect pair: (1) f9022 — a single Left press produces "Minus." AND a same-frame SheetDesc change WILLPOWER→AGILITY: the flip teleported the cursor across entries. (2) The whole stats section contains **no Nav row-landing lines** — row identity arrived only as the queued ~250-char description (class/background lists speak "Bard, 2 of 20"; appearance sliders speak "Hair Style: Style 6, plus, 3 of 9"; stats rows spoke nothing).
+
+**Root cause (decomp-verified):** the flip swaps which arrow column is the scrollable list, then snaps the mouse to `scrollableElements[currentSelectedButton]` — but the canvas index tracks hover only through up/down presses (`UICanvas.increment/decrementCurrentSelectedButton` walk for the hovered element and silently no-op when nothing scrollable is hovered; the index starts at −1 and bounds to 0). A flip pressed before any up/down — canonically right after the intro popup parked the mouse — snaps to row zero regardless of the hovered row. Owner-can't-repro explained: any up/down press first syncs the index, so a tested flow never desyncs.
+
+**Fix (landed 2026-08-29, this session):** (1) resync prefix on both sheet flip methods calls the game's own `setCurrentSelectedButtonIndexToHoveredElement` on the sheet canvas before the flag flips — flips now stay on the hovered row by construction; (2) row-landing join (`Pump.DrainEditorRow`, noted from `updateEntry1/2` postfixes): rows speak "{name}, {side}, {i} of {n}" on landing, the slider-row idiom; a same-frame flip is consumed by the landing line (it carries the side), the bare "Plus."/"Minus." remains for same-row flips. The 2026-08-17 side-only ruling stands for same-row flips; the landing line is the ruled amendment for row changes. Covers CC and level-up (same sheet class).
+
+**Desync-class sweep (owner request 2026-08-29 — other index-vs-hover snap surfaces):** the hazard exists only where a snap reads `currentSelectedButton` while the scrollable-list COMPOSITION can change or hover can be absent. Surveyed: **stats editor** — the one list-swap offender, fixed above. **Settings/appearance sliders** — flip is per-element (`element.controllerScrollSidewaysLeft` flips the current row's own arrow), no list swap, no snap: immune. **Feat tree** — sideways rides its own registry (`currentControllerSelectedFeatTree` / `FeatTreeCollection.controllerScrollIndex`), tree hops deliberately land at the target column's element; no observed defect (reporter log's feat section is clean); watchlist, not patched. **Selector grids** — WP9 layer drives the game's own scroll calls and the mouse snaps per move; Tick suspends under popups: immune. **Inventory/trade tables** — TableCursor owns the surface, native sideways unreachable (ClaimsStick): immune. **Popups** — fresh canvases with an entry snap, popup lifetime too short to desync; native behavior kept. **Up/down after a hover-void** (post-popup, screen entry): increment no-ops and the snap recovers to the canvas's remembered index — native recovery behavior, now always audible via the landing join on the one screen where it teleported; elsewhere the selection joins already announce the landing. General guard considered and rejected: prefixing `setMouseToSelectedOption` itself is a small-method detour (the Mono inline hazard class); the surgical resync at the already-detoured flip choke covers the only proven offender.
+
+## B8 — Character-sheet sections dead mid-session (OPEN, Chaosbringer216 report 2026-08-30, ship/new-game context; NEEDS HIS LOG)
+
+**Symptom:** on the ship (early game), companion's stats then own character's stats unreadable; his diagnosis "it isn't properly moving between sections." Worked earlier in his session, then broke and STAYED broken.
+
+**Static eliminations (2026-08-30):** stale `_state`/`_gui` impossible — `TableCursor.Refresh()` re-resolves both per frame; redirect-canvas staleness revalidated per read (the R13 MUST-FIX); popup lingering ruled out — `PopUpControl` pops handled popups every frame from `MainControl`. Owner-side logs (2026-08-29/30) show CharacterState/AttributeState resolving all sections correctly — but NO in-place PC-swap ("." on a sheet) appears in any owner ride, and that is exactly Chaos's sequence.
+
+**Decider:** his `BepInEx/LogOutput.log` — the [Gate] lines log every registered screen's section map at entry and every landing. One Discord ask. (Bridge repro blocked: /press injects stick/confirm/cancel/numbers only — no W/S/C/"." path; extending the bridge with raw key injection is the fallback.)
+
+**Owner-account revision + log archaeology (2026-08-30):** the owner has himself been stranded on the attributes page ("the mod decides there's no exit from one of the tabbed elements"; PC-swap relevance unknown). FOUND ON RECORD — session-20260822-161016 f211416: on a swapped-to companion's attributes page, S from Skills lands Buttons (skips the right column) and W from Secondary Stats speaks "No section above." — but that log is the R14 BUILD, where the clamped 2D column grammar was the design. The nav revision (2026-08-23) deleted it: the string is gone from source, the current SectionStep is a pure wrapping ring, and the post-revision log (session-20260823-184650) shows Primary→Skills→Secondary landing in sequence with zero refusals. The owner's stranding memories are consistent with pre-revision builds. No current-build stranding exists in any local log; Chaosbringer's current-build report remains the only open claim — his log still decides.
+
+## B9 — Tutorial popup titles unspoken (FIX LANDED 2026-08-30, ride-verify pending)
+
+**Symptom (same report):** "the first part of each tutorial popup isn't reading the text."
+
+**Root cause:** `PopUpUITutorial` carries its TITLE in its own nested class's private `header` field — not one of the three `PopUpUIBase` description slots the popup announce reads — so every tutorial's leading chunk was invisible to the compose and the speak. (Its main description IS a base-slot field and was spoken; whether the title accounts for the whole report or only part of it, the ride tells.)
+
+**Fix:** the announce and the review-buffer compose now read a concrete popup UI type's own `header` field (resolved per type, cached, UITextBlock-typed only); the title leads the announce, body queues behind.
+
+## B10 — "Walking X tiles" travel line intermittently absent (OPEN, same report)
+
+Z on a tile sometimes moves the party with no travel line — "you don't know if you actually moved unless you check the tile manually." The course-join speaks on course set; find the silent path.
+
+## B11 — Looted-container "empty" tag fails out of view (OPEN, same report; his diagnosis)
+
+The ", empty" tag on unlocked emptied containers doesn't speak when the tile is out of view. Suspect: the emptiness read (or the prop/inventory surface it reads) changes under the game's in/out-of-view handling. Compare `IsEmptyContainer`'s reads against the renderer's out-of-view path.
+
+## B12 — Page-relative counts read as model totals (FIX LANDED 2026-08-30, ride-verify pending)
+
+The class picker spoke "10 of 20" — 20 is `SkaldObjectList.maxPageSize`, the button canvas's fixed slot window, not the roster; long rosters likewise spoke page-relative positions. The B4 amendment (2026-08-16) named model-total counts as a future composition pass; the first outside player hit it within the hour. **Fix:** ComposeSelection's trailing counter now resolves the current state's backing `SkaldObjectList` (the "list" field every list-sheet family declares — creation pickers, load/save, load-module, journal family, settings), speaking `scrollIndex + row` of `getCount()`; any resolution failure keeps the page numbers, never silence. Verify: class picker "10 of 10", and a long roster (load-save with 15+ saves, the class list's Thief-last check) mid-scroll.
+
+## B13 — Creation feat screens navigate on WASD, not arrows (OPEN, same report; owner-acknowledged known exception)
+
+The stick-feed element fence (e8c1ba3) was believed to cover the creation family via CharacterBuilderBaseState; the creation feat tree still reads WASD. Either the state is outside the fence's families or a regression. Also the named candidate for registering the creation stats/feats editors into the table contract outright.
+
+## B14 — Dialogue prose counted as its own one-item list (FIX LANDED 2026-08-30, ride-verify pending)
+
+The scene prose crossing announced a sentence counter of its own ("…, 5 of 5.") alongside the correctly-counted options list — read by the player as a phantom second list. **Fix:** the prose sentence line drops its "N of M" outright (owner ruling: the prose is not a list); the topic trailer stays — it carries content, not position. Verify: W from the top dialogue option into the story text — sentence plus topic count only.
+
 ## Closed
 
 (none yet)

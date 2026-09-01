@@ -68,6 +68,9 @@ namespace SkaldAccessibility
                 // Silent auto-rebind of the two standing game rebinds
                 // (owner ruling 2026-08-29).
                 RebindGuard.BindConfig(Config);
+                // Overland reachability verdict (owner go 2026-08-29,
+                // wayfinding tier 1).
+                TileReach.BindConfig(Config);
 
                 // Apply Harmony patches (excludes SkaldIOPatches — deferred to
                 // Update). Class-by-class with isolation: Harmony's own

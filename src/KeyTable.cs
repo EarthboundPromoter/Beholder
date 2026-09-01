@@ -189,6 +189,7 @@ namespace SkaldAccessibility
                 Add(rows, "Up and Down", "entries");
                 Add(rows, "Left and Right", "category pages");
                 Add(rows, "Z", "act on the highlighted entry — the game's click on its tile; the list stays open");
+                Add(rows, "V", "read the walking path to the highlighted entry");
                 Add(rows, "W A S D", "walk; the list follows");
                 Add(rows, "P", "cursor back to the party");
                 Add(rows, "K or Escape", "close the list");
@@ -234,6 +235,7 @@ namespace SkaldAccessibility
                         Add(rows, "M", "exits scan");
                         Add(rows, "P", "cursor back to the party");
                         Add(rows, "K", "points of interest list");
+                        Add(rows, "V", "read the walking path to the cursor");
                         Add(rows, "T", "light or douse your lantern");
                         Add(rows, "Period", "next character, with vitals");
                         Add(rows, "Comma", "inventory");

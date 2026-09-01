@@ -54,6 +54,7 @@ namespace SkaldAccessibility.Patches
                 if (tertiary != null) tertiary = tertiary.TrimEnd('_').TrimEnd();
                 string rawPanel = string.Join("\n\n", new[]
                 {
+                    ReadOwnHeader(uiElements),
                     ReadRaw(Seams.PopUpUIBase_mainDescription, uiElements),
                     ReadRaw(Seams.PopUpUIBase_secondaryDescription, uiElements),
                     tertiary,
@@ -100,9 +101,24 @@ namespace SkaldAccessibility.Patches
                 // descriptions queue behind it.
                 bool spoken = false;
 
+                // Some popup UI classes carry their TITLE in their own nested
+                // "header" field — PopUpUITutorial most notably — which is not
+                // one of the three PopUpUIBase description slots, so every
+                // tutorial's leading chunk went unspoken (player report
+                // 2026-08-30). The title leads the announce.
+                string header = ReadOwnHeader(uiElements);
+                if (header != null) header = TextCleaner.CleanText(header);
+                if (!string.IsNullOrWhiteSpace(header))
+                {
+                    Scaffold.SpeechService.Say(header, "Popup");
+                    Plugin.Logger?.LogInfo($"[Popup:title] \"{header}\"");
+                    spoken = true;
+                }
+
                 if (!string.IsNullOrWhiteSpace(main))
                 {
-                    Scaffold.SpeechService.Say(main, "Popup");
+                    if (spoken) Scaffold.SpeechService.SayQueued(main, "Popup");
+                    else Scaffold.SpeechService.Say(main, "Popup");
                     Plugin.Logger?.LogInfo($"[Popup:text] \"{main}\"");
                     spoken = true;
                 }
@@ -155,6 +171,30 @@ namespace SkaldAccessibility.Patches
             if (textBlock == null) return null;
             string raw = Seams.UITextBlock_content.GetValue(textBlock) as string;
             return string.IsNullOrWhiteSpace(raw) ? null : raw;
+        }
+
+        /// <summary>A popup UI subclass's OWN title block ("header" field on
+        /// its concrete nested type — PopUpUITutorial's title), resolved per
+        /// type and cached; null for the classes without one. Only UITextBlock
+        /// fields qualify — a same-named non-text field never reads.</summary>
+        private static readonly System.Collections.Generic.Dictionary<Type, FieldInfo> _headerFields
+            = new System.Collections.Generic.Dictionary<Type, FieldInfo>();
+
+        private static string ReadOwnHeader(object uiElements)
+        {
+            try
+            {
+                Type t = uiElements.GetType();
+                if (!_headerFields.TryGetValue(t, out FieldInfo f))
+                {
+                    f = t.GetField("header",
+                        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    if (f != null && !typeof(UITextBlock).IsAssignableFrom(f.FieldType)) f = null;
+                    _headerFields[t] = f;
+                }
+                return f == null ? null : ReadRaw(f, uiElements);
+            }
+            catch { return null; }
         }
     }
 }

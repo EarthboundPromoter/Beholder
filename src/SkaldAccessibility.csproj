@@ -22,6 +22,10 @@
       <HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="System.Drawing">
+      <HintPath>$(Managed)\System.Drawing.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="SKALDAssembly">
       <HintPath>$(Managed)\SKALDAssembly.dll</HintPath>
       <Private>false</Private>

@@ -188,8 +188,11 @@ namespace SkaldAccessibility
             string sentence = sentences[_sentence];
             int topics = CountTopicsIn(gui, sentence);
             string trailer = topics == 1 ? ", 1 topic" : topics > 1 ? $", {topics} topics" : "";
-            Scaffold.SpeechService.Say(
-                $"{sentence}{trailer}, {_sentence + 1} of {sentences.Count}.", "Dialogue");
+            // No sentence counter (B14, owner ruling 2026-08-30): the prose is
+            // not a list, and its own "N of M" read as a second list count
+            // beside the correctly-counted options (player report). The topic
+            // trailer stays — it carries content, not position.
+            Scaffold.SpeechService.Say($"{sentence}{trailer}.", "Dialogue");
         }
 
         private static void ExitToOptions(object gui)

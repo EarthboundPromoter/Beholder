@@ -148,6 +148,7 @@ namespace SkaldAccessibility
 
         private static void Reset()
         {
+            ResetSpeechLanes();
             _encounter = null;
             _currentChar = null;
             _turnsSeen = int.MinValue;
@@ -166,8 +167,6 @@ namespace SkaldAccessibility
             _censusMembers.Clear();
             _censusActive = false;
             _weaponDiffChar = null;
-            _placePos.Clear();
-            _placeTracking = false;
         }
 
         /// <summary>"Goblin B" / "Bjorn" — the uniform identifier (owner
@@ -325,7 +324,14 @@ namespace SkaldAccessibility
             // movement (the cursor is the sensing tool); the SWAP side effect
             // (stepping onto a party member exchanges places, silently) is
             // the surprise that speaks.
-            try { DrainPlacementSwap(state); } catch (Exception ex) { Scaffold.Log.Throttled("CombatSpine:swap", ex.Message); }
+            // CP5's position-diff swap line RETIRED 2026-09-01 — superseded by
+            // PlacementNudgePatch at the placeCharacterAtAdjacentTile choke,
+            // which speaks the swap WITH coordinates (owner ruling); the diff
+            // here would double it.
+
+            // Speech-lane reform (owner go 2026-09-01): held strip echoes age
+            // out or die against the composed ledger every drain.
+            try { DrainStripEchoes(); } catch (Exception ex) { Scaffold.Log.Throttled("CombatSpine:echo", ex.Message); }
 
             // CP4 joins: Ctrl-row compose, AoE census, weapon-toggle diff.
             try { DrainRowShift(); } catch (Exception ex) { Scaffold.Log.Throttled("CombatSpine:row", ex.Message); }
@@ -466,6 +472,23 @@ namespace SkaldAccessibility
             var lines = Composer.ComposeCombatFrame(frame);
             frame.Tactical.Clear();   // spoken by the composer — never doubled by the orphan path
 
+            // Speech-lane reform (owner go 2026-09-01, spec: causality
+            // preserved, every source's unique facts kept, one composed
+            // stream): the composer's typed absorptions (damage packets,
+            // Miss, Resisted/Immune, Saved/Phalanx) never covered the
+            // ability-use bark corpus — "(event) Reaver Scout: Rapid Shot."
+            // + bark "Rapid Shot" was the standing double (bark docket ~60%,
+            // specimens in the 8/22-23 logs). The generalized sweep: any
+            // remaining bark whose whole-phrase, case-insensitive text is
+            // contained in a line composed THIS frame or in the recent
+            // composed LEDGER (cross-frame stragglers) is covered content —
+            // absorbed. Survivors are unique facts and speak on the bark
+            // lane as before. Length-guarded so punctuation barks can't
+            // false-match.
+            if (shorts.Count > 0 || frame.Barks.Count > 0) _lastActivityFrame = UnityEngine.Time.frameCount;
+            SweepCoveredBarks(frame.Barks, lines);
+            RegisterComposedLines(lines);
+
             // Reflect bark consumption back into the pump's pending list.
             barks.Clear();
             barks.AddRange(frame.Barks);
@@ -474,61 +497,174 @@ namespace SkaldAccessibility
             return true;
         }
 
-        // ---- CP5: placement swap detection (positions of every roster PC,
-        //      diffed per drain while the deploy screen is up) ----
-        private static readonly System.Collections.Generic.Dictionary<object, long> _placePos
-            = new System.Collections.Generic.Dictionary<object, long>(new RefCmp());
-        private static bool _placeTracking;
+        // ---- Speech-lane reform: the composed ledger, the bark sweep, and
+        //      the strip-echo hold (owner go 2026-09-01) ----
 
-        private static void DrainPlacementSwap(object state)
+        private static readonly System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>> _composedLedger
+            = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>>();
+        private static readonly System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>> _stripEchoes
+            = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>>();
+        private static int _lastActivityFrame = -1;
+        private const int LedgerWindow = 90;   // frames a composed fact still absorbs stragglers
+        private const int EchoWindow = 45;     // frames a held strip echo waits for its covering line
+
+        /// <summary>True while an event group is resolving — log/bark
+        /// activity within the last half-second. The strip's combat lines are
+        /// action echoes during this window (held for the sweep); outside it
+        /// they are browse/hover content and speak immediately.</summary>
+        internal static bool NarrationActive()
+            => _lastActivityFrame >= 0
+               && UnityEngine.Time.frameCount - _lastActivityFrame <= 30;
+
+        /// <summary>A combat-mode SecondaryDesc line noted during an active
+        /// narration window (DrainContent routes it here instead of
+        /// speaking): covered by the composed stream it dies; unique it
+        /// speaks at the window's end. Never dropped unheard.</summary>
+        internal static void NoteStripEcho(string line)
         {
-            bool placing = state != null && Seams.CombatPlacementStateType != null
-                && Seams.CombatPlacementStateType.IsInstanceOfType(state);
-            if (!placing)
+            if (!string.IsNullOrWhiteSpace(line))
+                _stripEchoes.Add(new System.Collections.Generic.KeyValuePair<int, string>(
+                    UnityEngine.Time.frameCount, line));
+        }
+
+        private static void SweepCoveredBarks(
+            System.Collections.Generic.List<string> barks,
+            System.Collections.Generic.List<string> lines)
+        {
+            if (barks.Count == 0) return;
+            for (int i = barks.Count - 1; i >= 0; i--)
             {
-                if (_placeTracking) { _placeTracking = false; _placePos.Clear(); }
-                return;
-            }
-            var moved = new System.Collections.Generic.List<object>();
-            foreach (object c in _roster)
-            {
-                if (!IsPC(c)) continue;
-                long pos = ReadPackedPos(c);
-                if (pos == long.MinValue) continue;
-                long prev;
-                if (_placeTracking && _placePos.TryGetValue(c, out prev) && prev != pos)
-                    moved.Add(c);
-                _placePos[c] = pos;
-            }
-            _placeTracking = true;
-            // Exactly two PCs moving in one frame during placement IS the
-            // swap (CombatEncounter.placeCharacterAtAdjacentTile:291-307 —
-            // the only multi-mover path).
-            if (moved.Count == 2)
-            {
-                object dc = null;
-                try { dc = Seams.MainControl_getDataControl?.Invoke(null, null); } catch { }
-                object placer = null;
-                try { placer = dc == null ? null : Seams.DataControl_getCurrentPC?.Invoke(dc, null); } catch { }
-                object other = ReferenceEquals(moved[0], placer) ? moved[1] : moved[0];
-                string name = DisplayNameOf(other);
-                if (name != null)
-                    Scaffold.SpeechService.Say($"Swapped with {name}.", "Nav");
+                string b = barks[i];
+                if (b == null || b.Length < 4) continue;
+                // Same-frame coverage sweeps at length 4 (the covering line
+                // composed from THIS frame's facts — attribution near-certain);
+                // the cross-frame ledger requires length 8+ (review SHOULD-FIX
+                // 5: a short generic bark from one combatant must not die
+                // against another combatant's minutes-old line).
+                if (CoveredByLines(b, lines) || (b.Length >= 8 && CoveredByLedger(b)))
+                {
+                    Scaffold.Log.Debug("Spine", $"bark absorbed (covered): \"{b}\"");
+                    barks.RemoveAt(i);
+                }
             }
         }
 
-        private static long ReadPackedPos(object c)
+        private static bool CoveredByLines(string text, System.Collections.Generic.List<string> lines)
         {
-            try
-            {
-                object tile = Seams.Character_getMapTile?.Invoke(c, null);
-                if (tile == null) return long.MinValue;
-                int x = (int)Seams.MapTile_getTileX.Invoke(tile, null);
-                int y = (int)Seams.MapTile_getTileY.Invoke(tile, null);
-                return ((long)x << 32) | (uint)y;
-            }
-            catch { return long.MinValue; }
+            foreach (string l in lines)
+                if (Composer.ContainsWord(l, text)) return true;
+            return false;
         }
+
+        private static bool CoveredByLedger(string text)
+        {
+            int now = UnityEngine.Time.frameCount;
+            for (int i = _composedLedger.Count - 1; i >= 0; i--)
+            {
+                if (now - _composedLedger[i].Key > LedgerWindow) break;
+                if (Composer.ContainsWord(_composedLedger[i].Value, text)) return true;
+            }
+            return false;
+        }
+
+        private static void RegisterComposedLines(System.Collections.Generic.List<string> lines)
+        {
+            int now = UnityEngine.Time.frameCount;
+            foreach (string l in lines)
+                if (!string.IsNullOrWhiteSpace(l))
+                    _composedLedger.Add(new System.Collections.Generic.KeyValuePair<int, string>(now, l));
+            // Prune from the front — entries are frame-ordered.
+            while (_composedLedger.Count > 0 && now - _composedLedger[0].Key > LedgerWindow)
+                _composedLedger.RemoveAt(0);
+        }
+
+        private static void DrainStripEchoes()
+        {
+            if (_stripEchoes.Count == 0) return;
+            int now = UnityEngine.Time.frameCount;
+            System.Collections.Generic.List<string> expired = null;
+            for (int i = _stripEchoes.Count - 1; i >= 0; i--)
+            {
+                string text = _stripEchoes[i].Value;
+                if (EchoCovered(text))
+                {
+                    Scaffold.Log.Debug("Spine", $"strip echo absorbed: \"{text}\"");
+                    _stripEchoes.RemoveAt(i);
+                }
+                else if (now - _stripEchoes[i].Key > EchoWindow)
+                {
+                    // Unique fact — nothing composed covered it. Collect and
+                    // speak OLDEST-FIRST below (review SHOULD-FIX 3: the
+                    // backward removal walk must not invert causal order).
+                    (expired = expired ?? new System.Collections.Generic.List<string>()).Insert(0, text);
+                    _stripEchoes.RemoveAt(i);
+                }
+            }
+            if (expired != null)
+                foreach (string text in expired)
+                    Scaffold.SpeechService.SayQueued(text, "SecondaryDesc");
+        }
+
+        /// <summary>Echo coverage: direct phrase containment first; then the
+        /// game's own echo formats transcoded — "X begun: Y" and "X: Y" are
+        /// covered when ONE recent composed line word-contains both halves
+        /// ("Reaver Scout begun: Rapid Shot" dies against "(event) Reaver
+        /// Scout: Rapid Shot." even though the connective breaks phrase
+        /// contiguity). Both halves must match in the SAME line — a death
+        /// echo can never be eaten by an attack line sharing only the
+        /// actor.</summary>
+        private static bool EchoCovered(string echo)
+        {
+            if (CoveredByLedger(echo)) return true;
+            int sep = echo.IndexOf(": ", StringComparison.Ordinal);
+            if (sep <= 0 || sep + 2 >= echo.Length) return false;
+            string left = echo.Substring(0, sep).Trim();
+            string right = echo.Substring(sep + 2).Trim().TrimEnd('.');
+            if (left.EndsWith(" begun", StringComparison.OrdinalIgnoreCase))
+                left = left.Substring(0, left.Length - 6).Trim();
+            if (left.Length < 3 || right.Length < 3) return false;
+            int now = UnityEngine.Time.frameCount;
+            for (int i = _composedLedger.Count - 1; i >= 0; i--)
+            {
+                if (now - _composedLedger[i].Key > LedgerWindow) break;
+                string l = _composedLedger[i].Value;
+                if (Composer.ContainsWord(l, left) && Composer.ContainsWord(l, right)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>DrainContent's gate: combat strip lines are held as
+        /// action echoes during resolution (the resolve-side modes, or the
+        /// half-second after any log/bark activity); planning-phase browse
+        /// and hover echoes speak immediately as before.</summary>
+        internal static bool HoldsStripEchoes()
+        {
+            // Review MUST-FIX 1: a live encounter is the gate, not the state
+            // name — post-combat screens classify GameMode.Combat while the
+            // drain's ActiveEncounter early-return would leave held echoes
+            // unserviced forever (the black hole). _encounter is nulled by
+            // Reset(), which also flushes; the window between combat's end
+            // and the next drain's Reset is one frame, covered by the flush.
+            if (_encounter == null) return false;
+            var m = GameStateTracker.CurrentMode;
+            if (m == GameMode.Combat || m == GameMode.CombatResolve) return true;
+            return (m == GameMode.CombatPlanning || m == GameMode.CombatPlacement) && NarrationActive();
+        }
+
+        /// <summary>Encounter teardown: unspoken echoes flush (never dropped
+        /// unheard), the ledger and activity clock clear.</summary>
+        private static void ResetSpeechLanes()
+        {
+            foreach (var e in _stripEchoes)
+                Scaffold.SpeechService.SayQueued(e.Value, "SecondaryDesc");
+            _stripEchoes.Clear();
+            _composedLedger.Clear();
+            _lastActivityFrame = -1;
+        }
+
+        // (CP5's position-diff swap detector DELETED 2026-09-01 — superseded
+        // by PlacementNudgePatch at the placeCharacterAtAdjacentTile choke,
+        // which speaks the swap with coordinates; review cleanup item 6.)
 
         /// <summary>CP4: the Ctrl-row walk's terse anchor</summary> — "3: Maneuvers." —
         /// from the row's own settled index and the state's ButtonData
@@ -727,8 +863,69 @@ namespace SkaldAccessibility
 
         private static void EmitEventLines(System.Collections.Generic.List<string> lines)
         {
-            foreach (string line in lines)
+            // A composed combat event mid-run is a sanctioned movement stop
+            // (owner ruling 2026-09-01: disengages and kin break the
+            // utterance) — the accumulated movement speaks first.
+            if (lines.Count > 0) Pump.FlushMoveReceipt();
+
+            // Identical composed lines in one frame coalesce to ", N times"
+            // (verify-ride find 2026-09-01: two same-name unlettered
+            // combatants applying the same effect composed two identical
+            // "(event)" lines — compress, don't curate).
+            int i = 0;
+            while (i < lines.Count)
+            {
+                int run = 1;
+                while (i + run < lines.Count && lines[i + run] == lines[i]) run++;
+                string line = run > 1
+                    ? Composer.EnsurePeriod(lines[i]).TrimEnd('.') + $", {run} times."
+                    : lines[i];
                 Scaffold.SpeechService.SayQueuedEvent(line, "CombatEvent");
+                i += run;
+            }
+        }
+
+        /// <summary>Pump's gate for the strip-echo hold: attribution-colon
+        /// lines ("X: Y", "X begun: Y"), plus SHORT colon-less action echoes
+        /// anchored to a live combatant's name ("Driina Defends" — the
+        /// verify-ride residual 2026-09-01). Name-only hovers and long
+        /// stat blocks stay immediate — the MUST-FIX-2 hole stays closed.</summary>
+        internal static bool ShouldHoldEcho(string text)
+        {
+            if (!HoldsStripEchoes() || string.IsNullOrWhiteSpace(text)) return false;
+            if (text.Contains(": ")) return true;
+            if (text.Length > 48) return false;
+            foreach (var kv in _bareOf)
+            {
+                string name = kv.Value;
+                if (string.IsNullOrEmpty(name)) continue;
+                if (text.Length > name.Length + 2
+                    && text.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>The fallback path's sweep (verify-ride residual
+        /// 2026-09-01: when the composer can't run — no frame yet, encounter
+        /// teardown — the raw log lines and barks both spoke; "Driina:
+        /// Defending ended" + bark "DEFENDING ended"). Same containment rule,
+        /// applied to the raw lines.</summary>
+        internal static void SweepBarksAgainstRaw(
+            System.Collections.Generic.List<string> lines,
+            System.Collections.Generic.List<string> barks)
+        {
+            if (barks.Count == 0 || lines.Count == 0) return;
+            for (int i = barks.Count - 1; i >= 0; i--)
+            {
+                string b = barks[i];
+                if (b == null || b.Length < 4) continue;
+                if (CoveredByLines(b, lines))
+                {
+                    Scaffold.Log.Debug("Spine", $"bark absorbed (fallback): \"{b}\"");
+                    barks.RemoveAt(i);
+                }
+            }
         }
 
         private static void ReadTacticalFlashes(Composer.Frame frame)

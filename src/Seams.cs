@@ -308,6 +308,7 @@ namespace SkaldAccessibility
         internal static FieldInfo Map_westernEdgeMapId;
         internal static FieldInfo Map_southernEdgeMapId;
         internal static MethodInfo MapTileGrid_testLineOfSight;
+        internal static FieldInfo MapTileGrid_tileMap;      // the raw grid array — NavigationTools.findPath input (V path readout)
         internal static FieldInfo MapIllustrator_scrollControl;
         internal static FieldInfo ScrollControl_scrollX;
         internal static FieldInfo ScrollControl_scrollY;
@@ -550,6 +551,19 @@ namespace SkaldAccessibility
         internal static FieldInfo CharacterSheet_entry1;
         internal static Type EditorSheetEntryType;   // UIBaseCharacterSheet+EditorSheetEntry
         internal static FieldInfo EditorEntry_scrollToPlusButton;
+
+        // ---- Attribute-editor flip resync + row landings (B8, ninetails16
+        //      log 2026-08-30: a flip snaps to the canvas's remembered index,
+        //      which tracks hover only through up/down presses — a flip-first
+        //      press teleports the cursor; and rows on this sheet land with
+        //      no label, only the queued description) ----
+        internal static FieldInfo CharacterSheet_entry2;
+        internal static MethodInfo SheetEntry_getCurrentObject;
+        internal static MethodInfo UICanvas_syncSelectedIndexToHover;  // setCurrentSelectedButtonIndexToHoveredElement
+        internal static MethodInfo AttrSheet_updateEntry1;
+        internal static MethodInfo AttrSheet_updateEntry2;
+        internal static Type SkaldDataListType;
+        internal static MethodInfo SkaldDataList_getObjectList;
 
         // ---- Combat spine (CP1, 2026-08-18): turn/round cues, economy diffs,
         //      cost forecast, deployment order. Every name verified against
@@ -823,6 +837,7 @@ namespace SkaldAccessibility
 
             // Selection / navigation
             UICanvas_setCurrentSelectedButton = M(UICanvasType, "UICanvas", "setCurrentSelectedButton");
+            UICanvas_syncSelectedIndexToHover = M(UICanvasType, "UICanvas", "setCurrentSelectedButtonIndexToHoveredElement");
             UICanvas_currentSelectedButton = F(UICanvasType, "UICanvas", "currentSelectedButton");
             UICanvas_getScrollableElements = M(UICanvasType, "UICanvas", "getScrollableElements");
             UICanvas_getElements = M(UICanvasType, "UICanvas", "getElements");
@@ -985,6 +1000,7 @@ namespace SkaldAccessibility
             Map_southernEdgeMapId = F(MapType, "Map", "southernEdgeMapId");
             MapTileGrid_testLineOfSight = M(MapTileGridType, "MapTileGrid", "testLineOfSight",
                 new[] { typeof(int), typeof(int), typeof(int), typeof(int) });
+            MapTileGrid_tileMap = F(MapTileGridType, "MapTileGrid", "tileMap");
             MapIllustrator_scrollControl = F(MapIllustratorType, "MapIllustrator", "scrollControl");
             ScrollControl_scrollX = F(ScrollControlType, "ScrollControl", "scrollX");
             ScrollControl_scrollY = F(ScrollControlType, "ScrollControl", "scrollY");
@@ -1048,10 +1064,12 @@ namespace SkaldAccessibility
             AttributeEditor_scrollSidewaysRight = M(T("UIAttributeEditorSheet"), "UIAttributeEditorSheet", "controllerScrollSidewaysRight");
             var baseCharacterSheet = T("UIBaseCharacterSheet");
             CharacterSheet_entry1 = F(baseCharacterSheet, "UIBaseCharacterSheet", "entry1");
+            CharacterSheet_entry2 = F(baseCharacterSheet, "UIBaseCharacterSheet", "entry2");
             EditorSheetEntryType = baseCharacterSheet?.GetNestedType("EditorSheetEntry",
                 BindingFlags.NonPublic | BindingFlags.Public);
             Row("UIBaseCharacterSheet+EditorSheetEntry", EditorSheetEntryType != null);
             EditorEntry_scrollToPlusButton = F(EditorSheetEntryType, "EditorSheetEntry", "controllerScrollToPlusButton");
+            SheetEntry_getCurrentObject = M(EditorSheetEntryType, "EditorSheetEntry", "getCurrentObject");
             ToolTipPrinter_clearToolTip = M(ToolTipPrinterType, "ToolTipPrinter", "clearToolTip");
             ToolTipPrinter_hasToolTip = M(ToolTipPrinterType, "ToolTipPrinter", "hasToolTip");
             OverlandState_setMouseInput = M(OverlandStateType, "OverlandState", "setMouseInput");
@@ -1093,6 +1111,10 @@ namespace SkaldAccessibility
             AttrSheet_getAttributeMinusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getAttributeMinusObject");
             AttrSheet_getSkillPlusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getSkillPlusObject");
             AttrSheet_getSkillMinusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getSkillMinusObject");
+            AttrSheet_updateEntry1 = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "updateEntry1");
+            AttrSheet_updateEntry2 = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "updateEntry2");
+            SkaldDataListType = T("SkaldDataList");
+            SkaldDataList_getObjectList = M(SkaldDataListType, "SkaldDataList", "getObjectList");
             CharacterBuilderBase_getCharacter = M(CharacterBuilderBaseStateType, "CharacterBuilderBaseState", "getCharacter");
             Character_getAttributeRank = M(CharacterType, "Character", "getAttributeRank", new[] { typeof(string) });
             SkaldBaseObject_getId = M(SkaldBaseObjectType, "SkaldBaseObject", "getId");

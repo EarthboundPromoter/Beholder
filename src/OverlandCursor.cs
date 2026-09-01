@@ -288,6 +288,16 @@ namespace SkaldAccessibility
                 // (owner ruling 2026-08-21) — so the block now runs for
                 // list-open OR passive-on. The beacon stays live regardless:
                 // tracked entities re-read their own coordinates.
+                // Reachability's own mutation marks — deliberately UNGATED
+                // (the rings block below is list/passive-gated; the reach set
+                // must stay honest even with both off). A bool per keypress;
+                // the fill itself is lazy.
+                if (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.X)
+                    || Input.GetKeyDown(KeyCode.Space)
+                    || Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.A)
+                    || Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.D))
+                    TileReach.MarkDirty();
+
                 bool passiveOn = _cfgPassive != null && _cfgPassive.Value;
                 if ((_listOpen || passiveOn) && PartyPos(map, out int px, out int py))
                 {
@@ -465,6 +475,7 @@ namespace SkaldAccessibility
         public static void OnStateTransition()
         {
             _held = false;
+            TileReach.MarkDirty(); // same rationale as the passive mark below
             MarkPassiveDirty();   // excursions mutate the world off the step
                                   // clock (dialogue spawns, combat outcomes);
                                   // the first clean overland frame re-sweeps
@@ -506,8 +517,85 @@ namespace SkaldAccessibility
             if (Input.GetKeyDown(KeyCode.O)) { Scan(map, Category.Objects); return true; }
             if (Input.GetKeyDown(KeyCode.M)) { Scan(map, Category.Exits); return true; }
             if (Input.GetKeyDown(KeyCode.P)) { Recenter(map); return true; }
+            if (Input.GetKeyDown(KeyCode.V)) { SpeakPath(map); return true; }
 
             return false;
+        }
+
+        /// <summary>V: the path readout (owner design 2026-09-01, from
+        /// day-one player feedback — the party routing around closed doors
+        /// through four open ones with no warning). The course the game's own
+        /// pathfinder would walk from the party to the cursor tile, computed
+        /// side-effect-free: NavigationTools.findPath RETURNS a course
+        /// without assigning it — only setPath commits one to the party.
+        /// Mirrors findPathToMouseTile exactly (same water/land flags, same
+        /// impassable-prop root-tile retry), so the readout is the click's
+        /// truth. Works with the POI list open — the landed entry's tile IS
+        /// the cursor tile. Grammar (owner ruling, RW3 lineage): direction
+        /// then count per leg, comma-joined, "arrive" tail —
+        /// "North 4, east 2, arrive."</summary>
+        private static void SpeakPath(object map)
+        {
+            try
+            {
+                if (!PartyPos(map, out int px, out int py)) return;
+                int tx = _held ? _tileX : px, ty = _held ? _tileY : py;
+                if (tx == px && ty == py)
+                { Scaffold.SpeechService.Say("Here.", "Nav"); return; }
+
+                var grid = Seams.Map_tileGrid?.GetValue(map) as MapTileGrid;
+                var tiles = grid == null ? null
+                    : Seams.MapTileGrid_tileMap?.GetValue(grid) as MapTile[,];
+                MapTile target = grid == null ? null : grid.getTile(tx, ty);
+                if (tiles == null || target == null)
+                { Scaffold.SpeechService.Say("No path.", "Nav"); return; }
+
+                bool traverseWater = false;
+                try { traverseWater = MainControl.getDataControl()?.getParty()?.canTraverseWater() ?? false; }
+                catch { }
+                bool traverseLand = !target.isWater() || target.hasVehicle();
+
+                NavigationCourse course = NavigationTools.findPath(px, py, tx, ty,
+                    traverseWater, traverseLand, tiles, returnApproximate: false);
+                if (course == null || !course.hasNodes())
+                {
+                    // The click's own fallback: an impassable prop is "at"
+                    // its root tile (findPathToMouseTile lines 213-221).
+                    MapTile root = target.getPropRootTile();
+                    if (root != null && !ReferenceEquals(root, target))
+                        course = NavigationTools.findPath(px, py, root.getTileX(), root.getTileY(),
+                            traverseWater, traverseLand, tiles, returnApproximate: false);
+                }
+                if (course == null || !course.hasNodes())
+                { Scaffold.SpeechService.Say("No path.", "Nav"); return; }
+
+                Scaffold.SpeechService.Say(ComposeCourse(course, px, py), "Nav");
+            }
+            catch (System.Exception ex)
+            {
+                Scaffold.Log.Throttled("Path", ex.Message);
+            }
+        }
+
+        private static string ComposeCourse(NavigationCourse course, int px, int py)
+        {
+            var legs = new List<string>();
+            int cx = px, cy = py;
+            string dir = null; int run = 0;
+            foreach (var p in course.course)
+            {
+                string d = p.Y > cy ? "north" : p.Y < cy ? "south"
+                    : p.X > cx ? "east" : p.X < cx ? "west" : null;
+                cx = p.X; cy = p.Y;
+                if (d == null) continue;
+                if (d == dir) { run++; continue; }
+                if (dir != null) legs.Add($"{dir} {run}");
+                dir = d; run = 1;
+            }
+            if (dir != null) legs.Add($"{dir} {run}");
+            if (legs.Count == 0) return "Here.";
+            string line = string.Join(", ", legs.ToArray()) + ", arrive.";
+            return char.ToUpperInvariant(line[0]) + line.Substring(1);
         }
 
         /// <summary>P: re-anchor the cursor on the party tile from any
@@ -578,7 +666,8 @@ namespace SkaldAccessibility
 
             string label = TileLabel(map, tile, tx, ty, px, py);
             string qualifier = InSight(map, tx, ty, px, py) ? "" : ", out of view";
-            Scaffold.SpeechService.Say(label + qualifier + Offset(tx - px, ty - py) + coords + (countTail ?? ""), "Nav");
+            string reach = TileReach.Verdict(map, tile, tx, ty);
+            Scaffold.SpeechService.Say(label + qualifier + reach + Offset(tx - px, ty - py) + coords + (countTail ?? ""), "Nav");
 
             // The game's own inspect text is the review panel (raw — tag
             // grammar sections it). Only spotted tiles produce one.

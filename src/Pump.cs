@@ -100,6 +100,16 @@ namespace SkaldAccessibility
         //      sheet instance — the drain reads its entry flag at the clock) ----
         private static object _pendingEditorFlip;
 
+        // ---- Attribute-editor row landings (B8; noted by
+        //      EditorRowLandingPatch from the sheet's own per-frame entry
+        //      updates — latest non-null hover wins within the frame) ----
+        private static object _pendingEditorRowSheet;
+        private static object _pendingEditorRow;
+        private static int _pendingEditorRowIndex = -1, _pendingEditorRowCount = -1;
+        private static int _editorRowNoteFrame = -1;
+        private static string _lastEditorRowName;
+        private static int _editorRowSpokeFrame = -1;
+
         // ---- Inventory hover stream (noted by InventoryHoverPatch during the
         //      segment's own update pass; the hovered cell is the surface's
         //      focus truth — owner direction 2026-08-17) ----
@@ -389,6 +399,31 @@ namespace SkaldAccessibility
         /// row cursor (A/D sideways). The drain reads the settled flag.</summary>
         public static void NoteEditorFlip(object sheet) => _pendingEditorFlip = sheet;
 
+        /// <summary>Note-only: the attribute editor's hovered row this frame
+        /// (per entry; null row = this entry has no arrow hovered). Both
+        /// entries note every frame the sheet updates; at most one carries a
+        /// row (one mouse). A gap in the note stream longer than a frame
+        /// (popup up, screen left) re-arms the landing diff so the return
+        /// re-announces the row.</summary>
+        public static void NoteEditorRow(object sheet, object row, int index, int count)
+        {
+            if (_editorRowNoteFrame != Time.frameCount)
+            {
+                if (_editorRowNoteFrame >= 0 && Time.frameCount - _editorRowNoteFrame > 1)
+                    _lastEditorRowName = null;
+                _editorRowNoteFrame = Time.frameCount;
+                _pendingEditorRow = null;
+                _pendingEditorRowSheet = sheet;
+            }
+            if (row != null)
+            {
+                _pendingEditorRow = row;
+                _pendingEditorRowSheet = sheet;
+                _pendingEditorRowIndex = index;
+                _pendingEditorRowCount = count;
+            }
+        }
+
         /// <summary>Note-only: the virtual cursor sits on an inventory cell
         /// (found during the segment's own update). Latest wins; only noted
         /// when a hovered cell exists, so an idle segment never clobbers
@@ -471,6 +506,11 @@ namespace SkaldAccessibility
             try { DrainSliderArrowFlip(); }
             catch (Exception ex) { Scaffold.Log.Throttled("Pump:flip", ex.Message); }
 
+            // B8: landings before the flip drain — a same-frame flip is
+            // consumed by the landing line, which carries the side.
+            try { DrainEditorRow(); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:editorrow", ex.Message); }
+
             try { DrainEditorFlip(); }
             catch (Exception ex) { Scaffold.Log.Throttled("Pump:editorflip", ex.Message); }
 
@@ -502,6 +542,9 @@ namespace SkaldAccessibility
             // channel) — a no-op when the composer already spoke them.
             try { CombatSpine.SpeakOrphanTactical(); }
             catch (Exception ex) { Scaffold.Log.Throttled("Pump:tactical", ex.Message); }
+
+            try { DrainMoveReceipt(); }
+            catch (Exception ex) { Scaffold.Log.Throttled("Pump:move", ex.Message); }
 
             try { DrainCutSceneText(); }
             catch (Exception ex) { Scaffold.Log.Throttled("Pump:cutscene", ex.Message); }
@@ -688,6 +731,22 @@ namespace SkaldAccessibility
                 // nothing re-speaks late).
                 if (StealthDropsWaitLine(toSpeak)) continue;
 
+                // Speech-lane reform (owner go 2026-09-01): a combat strip
+                // line during resolution is the action accumulator echoing
+                // facts the spine composes — held at the spine, where the
+                // covered die and the unique speak at the window's end. The
+                // diff record above is already updated, so nothing re-speaks
+                // late either way. ONLY attribution-colon lines are echoes
+                // (review MUST-FIX 2: the accumulator's own "X: Y" /
+                // "X begun: Y" shapes) — colon-less combat strip content
+                // (hover blocks, command echoes, the leader line with its
+                // vitals release below) speaks immediately as before.
+                if (source == "SecondaryDesc" && CombatSpine.ShouldHoldEcho(toSpeak))
+                {
+                    CombatSpine.NoteStripEcho(toSpeak);
+                    continue;
+                }
+
                 if (kv.Value.Interrupt)
                     Scaffold.SpeechService.Say(toSpeak, source);
                 else
@@ -764,6 +823,12 @@ namespace SkaldAccessibility
             if (CombatSpine.NarrateCombatFrame(lines, _pendingBarks)) return;
             if (lines.Count == 0) return;
 
+            // Fallback frames (no composer) get the same bark sweep against
+            // the raw lines — verify-ride residual 2026-09-01 — and the same
+            // sanctioned-stop movement flush.
+            FlushMoveReceipt();
+            CombatSpine.SweepBarksAgainstRaw(lines, _pendingBarks);
+
             int i = 0;
             while (i < lines.Count)
             {
@@ -773,6 +838,58 @@ namespace SkaldAccessibility
                 Scaffold.SpeechService.SayQueued(text, "CombatLog");
                 i += run;
             }
+        }
+
+        // ---- Movement receipts (clicked combat courses ONLY) ----
+        // Final model (owner rulings 2026-09-01, serial revisions): WASD
+        // steps speak their destination IMMEDIATELY at the patch, per step —
+        // a fast-moving player interrupting their own receipts is the
+        // player's choice — and never come through here. ONLY click-to-move
+        // accumulates: the course walks node by node through the same step
+        // choke with no key held (moveCurrentCharacterAlongPath pops nodes
+        // into moveCharacter), is live exactly while the game's own
+        // Character.moveAlongCombatPath flag is up (cleared at course end
+        // AND at move exhaustion), and speaks ONE settled utterance where
+        // the walk actually stopped. Sanctioned stops (a composed combat
+        // event, the fallback narration) flush the pending receipt first so
+        // causality reads move-then-event; state transitions clear it.
+        private static string _pendingMoveLine;
+        private static object _pendingMoveMover;
+
+        /// <summary>A course step's receipt — pending until the mover's own
+        /// walking flag clears; latest position wins.</summary>
+        public static void NoteMoveReceipt(string line, object mover)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return;
+            _pendingMoveLine = line;
+            _pendingMoveMover = mover;
+        }
+
+        /// <summary>A sanctioned stop: speak the accumulated course NOW,
+        /// ahead of the event that broke it. No-op when nothing is pending.</summary>
+        public static void FlushMoveReceipt()
+        {
+            if (_pendingMoveLine == null) return;
+            Scaffold.SpeechService.Say(_pendingMoveLine, "Nav");
+            _pendingMoveLine = null;
+            _pendingMoveMover = null;
+        }
+
+        private static bool MoverStillWalking()
+        {
+            try
+            {
+                var c = _pendingMoveMover as Character;
+                return c != null && c.moveAlongCombatPath;
+            }
+            catch { return false; }
+        }
+
+        private static void DrainMoveReceipt()
+        {
+            if (_pendingMoveLine == null) return;
+            if (MoverStillWalking()) return;   // the clicked course is live by the game's own flag
+            FlushMoveReceipt();
         }
 
         private static string _pendingPCVitals;
@@ -1006,23 +1123,72 @@ namespace SkaldAccessibility
             return null;
         }
 
+        /// <summary>Speak an attribute-editor row landing (B8): the game's own
+        /// row name, the arrow side under the cursor, and the trailing
+        /// position — the slider-row idiom ("Agility, minus, 2 of 5"). Fires
+        /// when the hovered row CHANGES: up/down landings, and any residual
+        /// flip jump (nothing hovered pre-flip, so the snap recovered to the
+        /// column's remembered index). Runs BEFORE DrainEditorFlip; a
+        /// same-frame flip is consumed by this line, which already carries
+        /// the side. Player-driven landings interrupt; a landing the player
+        /// didn't press for (a popup close re-parking the mouse) queues.</summary>
+        private static void DrainEditorRow()
+        {
+            if (_editorRowNoteFrame != Time.frameCount) return;   // sheet idle: popup up or screen left
+            object row = _pendingEditorRow;
+            _pendingEditorRow = null;
+            if (row == null) { _lastEditorRowName = null; return; }   // hover left the arrows: re-arm
+
+            string name = null;
+            try { name = Seams.SkaldBaseObject_getName?.Invoke(row, null) as string; } catch { }
+            name = Patches.TextCleaner.CleanText(name ?? "").Trim();
+            if (name.Length == 0) return;
+            if (name == _lastEditorRowName) return;
+            _lastEditorRowName = name;
+
+            string side = ReadEditorSide(_pendingEditorRowSheet);
+            string text = side == null ? name : $"{name}, {side}";
+            if (_pendingEditorRowIndex > 0 && _pendingEditorRowCount > 0)
+                text += $", {_pendingEditorRowIndex} of {_pendingEditorRowCount}";
+
+            _editorRowSpokeFrame = Time.frameCount;
+            if (_playerNavFrame == Time.frameCount) Scaffold.SpeechService.Say(text, "Nav");
+            else Scaffold.SpeechService.SayQueued(text, "Nav");
+        }
+
+        /// <summary>The attribute editor's current arrow side, read from the
+        /// game's own controllerScrollToPlusButton flag (entry1; both entries
+        /// flip together by construction). Null when unreadable.</summary>
+        private static string ReadEditorSide(object sheet)
+        {
+            try
+            {
+                if (sheet == null || Seams.CharacterSheet_entry1 == null
+                    || Seams.EditorEntry_scrollToPlusButton == null) return null;
+                object entry = Seams.CharacterSheet_entry1.GetValue(sheet);
+                if (entry == null || Seams.EditorSheetEntryType == null
+                    || !Seams.EditorSheetEntryType.IsInstanceOfType(entry)) return null;
+                return (bool)Seams.EditorEntry_scrollToPlusButton.GetValue(entry) ? "plus" : "minus";
+            }
+            catch { return null; }
+        }
+
         /// <summary>Speak which arrow column the attribute editor's row cursor
-        /// flipped onto — "Plus." / "Minus." ONLY, never the row body (owner
-        /// ruling 2026-08-17) — read from the game's own
-        /// controllerScrollToPlusButton flag at drain time (entry1; both
-        /// entries flip together by construction).</summary>
+        /// flipped onto — "Plus." / "Minus.", the side word alone (owner
+        /// ruling 2026-08-17, reaffirmed 2026-08-30 for the same-row flip) —
+        /// read from the game's own flag at drain time. Suppressed when a row
+        /// landing spoke this frame: that line already carries the side, and
+        /// the bare word would talk over it (B8).</summary>
         private static void DrainEditorFlip()
         {
             object sheet = _pendingEditorFlip;
             if (sheet == null) return;
             _pendingEditorFlip = null;
+            if (_editorRowSpokeFrame == Time.frameCount) return;
 
-            if (Seams.CharacterSheet_entry1 == null || Seams.EditorEntry_scrollToPlusButton == null) return;
-            object entry = Seams.CharacterSheet_entry1.GetValue(sheet);
-            if (entry == null || Seams.EditorSheetEntryType == null
-                || !Seams.EditorSheetEntryType.IsInstanceOfType(entry)) return;
-            bool plus = (bool)Seams.EditorEntry_scrollToPlusButton.GetValue(entry);
-            Scaffold.SpeechService.Say(plus ? "Plus." : "Minus.", "Nav");
+            string side = ReadEditorSide(sheet);
+            if (side == null) return;
+            Scaffold.SpeechService.Say(char.ToUpper(side[0]) + side.Substring(1) + ".", "Nav");
         }
 
         /// <summary>Speak which arrow the cursor flipped onto ("Plus." /
@@ -1485,8 +1651,68 @@ namespace SkaldAccessibility
             if (numericClass) return $"{index + 1}: {GameStateTracker.TranscodeQuickLabel(text, index, CurrentStateObject())}";
             if (isCurrentListRow) text = $"{text}, selected";
             if (isAvailableRow) text = $"{text}, available";
-            if (count > 1) return $"{text}, {index + 1} of {count}";
+
+            // B12 (owner go 2026-08-30): the trailing counter reads the MODEL,
+            // not the page — the button canvas is a fixed maxPageSize window
+            // (20 slots), so a 10-class roster spoke "10 of 20" and long
+            // rosters spoke page-relative positions (the B4 amendment's named
+            // refinement; the first outside player hit it within the hour).
+            // The list-sheet state families all hold their backing
+            // SkaldObjectList in a "list" field; its scrollIndex is the
+            // window offset. Any resolution failure keeps the page numbers —
+            // never silence.
+            int dispIndex = index, dispCount = count;
+            var model = CurrentStateModelListFor(control);
+            if (model != null)
+            {
+                try
+                {
+                    int mCount = model.getCount();
+                    // getScrollIndex is protected — one cached handle.
+                    if (_solGetScrollIndex == null)
+                        _solGetScrollIndex = HarmonyLib.AccessTools.Method(typeof(SkaldObjectList), "getScrollIndex");
+                    int mIndex = (int)_solGetScrollIndex.Invoke(model, null) + index;
+                    if (mIndex >= 0 && mIndex < mCount) { dispIndex = mIndex; dispCount = mCount; }
+                }
+                catch { }
+            }
+            if (dispCount > 1) return $"{text}, {dispIndex + 1} of {dispCount}";
             return text;
+        }
+
+        /// <summary>The current state's backing SkaldObjectList, when its
+        /// class family carries one (ListSheetBaseState, the creation
+        /// pickers, load/save, load-module, settings — all declare a "list"
+        /// field) AND the control being composed IS the canvas rendering that
+        /// list (the GUIControl's own listButtons). Without the identity
+        /// check, any other button canvas on such a state borrowed the
+        /// model's numbers — the difficulty row spoke "Narrative, 1 of 12",
+        /// the 12 being the sub-settings list (owner-caught 2026-09-01).
+        /// Field resolved per state type and cached; null anywhere else.</summary>
+        private static readonly System.Collections.Generic.Dictionary<Type, System.Reflection.FieldInfo> _stateListFields
+            = new System.Collections.Generic.Dictionary<Type, System.Reflection.FieldInfo>();
+        private static System.Reflection.MethodInfo _solGetScrollIndex;
+
+        private static SkaldObjectList CurrentStateModelListFor(object control)
+        {
+            try
+            {
+                object s = CurrentStateObject();
+                if (s == null || control == null) return null;
+                object gui = Seams.StateBase_guiControl?.GetValue(s);
+                object listButtons = gui == null ? null
+                    : Seams.GUIControl_listButtonsField?.GetValue(gui);
+                if (!ReferenceEquals(control, listButtons)) return null;
+                Type t = s.GetType();
+                if (!_stateListFields.TryGetValue(t, out var f))
+                {
+                    f = HarmonyLib.AccessTools.Field(t, "list");
+                    if (f != null && !typeof(SkaldObjectList).IsAssignableFrom(f.FieldType)) f = null;
+                    _stateListFields[t] = f;
+                }
+                return f == null ? null : f.GetValue(s) as SkaldObjectList;
+            }
+            catch { return null; }
         }
 
         /// <summary>Grid-cell composition (WP9): name from the game's own
@@ -2126,6 +2352,7 @@ namespace SkaldAccessibility
             _inSceneFamily = nowScene;
 
             _pendingPCVitals = null;            // vitals never outlive their name line's state
+            _pendingMoveLine = null;            // nor a movement receipt its screen
             ReviewLayer.OnStateTransition();    // review never survives a state change
             DialogueCursor.OnStateTransition(); // text mode dies with its scene
             PanelPolicy.OnStateTransition();    // fact differ re-seeds: first strip
