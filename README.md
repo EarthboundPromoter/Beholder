@@ -1,6 +1,6 @@
 # Beholder
 
-**Version 0.5.1 — beta**
+**Version 0.5.5 — beta**
 
 A screen-reader mod for **SKALD: Against the Black Priory**: it speaks the
 game's story, exploration, character sheets, and turn-based combat through NVDA
@@ -51,7 +51,7 @@ From the [Steam store page](https://store.steampowered.com/app/1069160/SKALD_Aga
    [Releases page](https://github.com/EarthboundPromoter/Beholder/releases/latest).
 2. Extract it into the SKALD game folder (the one containing
    `SKALD Against the Black Priory.exe`), merging folders if asked.
-3. Launch the game. You'll hear "Beholder 0.5.1 loaded." To update, extract the
+3. Launch the game. You'll hear "Beholder 0.5.5 loaded." To update, extract the
    newer zip the same way.
 
 One thing to know: on launch the mod **silently rebinds two of the game's
@@ -84,7 +84,9 @@ behavior is noted on the key it belongs to.
 
 On the **overland map**, WASD walks the party while the arrows browse the
 tiles around it — each tile speaks what's on it, the terrain under it by name
-(shore, cobbles, cliffs...), and its map coordinates. H, N, B, O, and M scan
+(shore, cobbles, cliffs...), its map coordinates, and whether you can actually
+walk there ("out of reach" when you can't). V speaks the walking course to the
+browsed tile — "North 4, east 2, arrive." H, N, B, O, and M scan
 hostiles, neutrals, loot, objects, and exits; K opens a persistent list of the
 map's points of interest; and passive awareness announces things coming into
 view as you move, plus a census of what's around when you enter a map. Weather
@@ -97,8 +99,10 @@ active conditions.
 effects. The arrows browse the battlefield with the same tile speech, I and U
 walk the initiative order, P centers on the active unit, and K opens a
 four-tab overview of one combatant: Up and Down walk its entries, Left and
-Right change tabs. The placement phase before a fight speaks each tile's
-validity.
+Right change tabs. Your own movement is narrated: each WASD step speaks as you
+take it, and a clicked course reports where the walk stopped. The placement
+phase before a fight speaks each tile's validity, and selecting, placing, and
+swapping characters is announced.
 
 ## Keys
 
@@ -134,6 +138,7 @@ validity.
 | **H / N / B / O / M** | Scans: hostiles, neutrals, loot, objects, exits. |
 | **P** | Return the cursor to the party. |
 | **K** | Points-of-interest list. Z activates the current entry; the list stays open. |
+| **V** | Speak the walking course to the browsed tile — works from the POI list too. |
 | **T** | Light or douse your lantern (spoken). |
 | **.** | Next character — cycles the party, reporting health and conditions. |
 | **,** | Inventory. |
@@ -172,18 +177,19 @@ the problems that surfaced have been fixed. What hasn't had that exposure:
 - **Character creation, party management, the settings screens, and the
   level-up/feat screens** were built from the game's decompiled source and
   code-reviewed, but have only been lightly exercised in play.
-- **The newest features** — the contextual key tables, cutscene narration, and
-  the lantern, stealth, and character-change announcements — are fresh; their
-  wording has had only a first listen.
+- **The newest features** — the reachability verdicts, the V path readout, the
+  combat movement and placement narration, and the reworked combat speech
+  scheduling — are fresh; their wording has had only a first listen.
 - **No full campaign has been completed with the mod yet.** Later-game content
   has had the least exposure.
 
 Known issues:
 
-- Combat occasionally speaks a line twice; a speech-scheduling rework is
-  planned.
 - A reported problem with casting spells outside combat is under
   investigation.
+- Two player reports are under diagnosis: the "Walking X tiles" travel line
+  occasionally not speaking, and looted containers not reporting ", empty"
+  while out of view.
 
 ## Planned additions
 
@@ -193,8 +199,9 @@ On the roadmap, in no particular order and with no dates attached:
   topics and hearing their definitions.
 - **Combat log browsing** — keyboard access to the game's combat log screen.
 - **On-demand vitals** — a health readout without cycling characters.
-- **Wayfinding aids** — conveying map shape and connectivity, beyond
-  point-by-point browsing.
+- **Wayfinding aids** — building on this release's reachability and path
+  readout: conveying map shape and connectivity, beyond point-by-point
+  browsing.
 
 ## Reporting issues
 
