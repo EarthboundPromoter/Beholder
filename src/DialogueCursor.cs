@@ -6,14 +6,17 @@ using HarmonyLib;
 namespace SkaldAccessibility
 {
     /// <summary>
-    /// TP2: the dialogue text cursor — W/S extended seamlessly from the scene
-    /// option funnel up into the prose, A/D hopping the pane's own topic
-    /// words (owner rulings 2026-08-18).
+    /// TP2: the dialogue text cursor — the stick-up/down claims extended
+    /// seamlessly from the scene option funnel up into the prose, sideways
+    /// hopping the pane's own topic words (owner rulings 2026-08-18). The
+    /// claims are KEY-AGNOSTIC (stick-read postfixes); since the element
+    /// fence (nav revision, 2026-08-23) the ARROWS are what feed the stick
+    /// in dialogue — WASD is idle here.
     ///
     /// The idiom: in any scene-family state (SceneBase — dialogue, interact,
-    /// attack prompt, random encounter, game over; uniform per ruling 4), W
+    /// attack prompt, random encounter, game over; uniform per ruling 4), Up
     /// from the TOP option crosses into the text at its LAST sentence and
-    /// walks upward (bottom-up — the most recent unit first); S walks back
+    /// walks upward (bottom-up — the most recent unit first); Down walks back
     /// down and, past the last sentence, returns to the first option. A/D hop
     /// topic-to-topic from anywhere (position-global, the scan-key idiom):
     /// the hop drops the virtual mouse on the word element itself, so Z is
@@ -95,7 +98,8 @@ namespace SkaldAccessibility
 
         // ---- Claims (ControllerFeedPatch stick postfixes) ----
 
-        /// <summary>W / stick up. True = claimed (the funnel must not see it).</summary>
+        /// <summary>Stick up (arrows under the element fence). True = claimed
+        /// (the funnel must not see it).</summary>
         internal static bool ClaimStickUp()
         {
             if (!SceneReady(out object state, out object gui))
@@ -120,7 +124,7 @@ namespace SkaldAccessibility
             return true;
         }
 
-        /// <summary>S / stick down.</summary>
+        /// <summary>Stick down (arrows under the element fence).</summary>
         internal static bool ClaimStickDown()
         {
             if (!SceneReady(out object state, out object gui))
@@ -140,8 +144,8 @@ namespace SkaldAccessibility
         /// <summary>A/D topic hop — PARKED (owner ride 2026-08-18). The
         /// accessor-postfix claim never fired: no scene state READS the
         /// sideways stick accessors, so the postfix carrying the claim never
-        /// ran there (W/S work precisely because SceneBaseState reads up/down
-        /// every frame). Revival path: drive the hop from InputHandler's
+        /// ran there (the up/down claims work precisely because SceneBaseState
+        /// reads up/down every frame). Revival path: drive the hop from InputHandler's
         /// Update-side raw reads under the same SceneReady gate — the hop
         /// machinery below (BuildStops/HopTopic, the native-Z click) is built,
         /// reviewed, and waiting.</summary>

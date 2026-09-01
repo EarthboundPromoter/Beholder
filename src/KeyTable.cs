@@ -247,7 +247,7 @@ namespace SkaldAccessibility
                     case GameMode.CombatResolve:
                     case GameMode.CombatPlacement:
                         title = "combat";
-                        Add(rows, "W A S D", "step your character, or the placement cursor");
+                        Add(rows, "W A S D", "step your character; in placement, move the selected unit one step");
                         Add(rows, "Arrows", "battlefield cursor");
                         Add(rows, "Z", "the game's click at the cursor: move, attack, target, place");
                         Add(rows, "I", "next in initiative");
@@ -265,7 +265,7 @@ namespace SkaldAccessibility
                         Add(rows, "Arrows", "dialogue options");
                         Add(rows, "Numbers", "choose an option");
                         Add(rows, "Z", "choose the highlighted option");
-                        Add(rows, "W", "up into the story text; S walks back down");
+                        Add(rows, "Up from the top option", "into the story text; Down walks back");
                         Add(rows, "Escape", "back");
                         break;
 

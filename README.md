@@ -2,6 +2,10 @@
 
 **Version 0.5.5 — beta**
 
+**New to the mod? Start with the [tutorial](TUTORIAL.md)** — how SKALD's
+unusual interface works, how the mod presents it, and the habits that make
+both click.
+
 A screen-reader mod for **SKALD: Against the Black Priory**: it speaks the
 game's story, exploration, character sheets, and turn-based combat through NVDA
 or JAWS (via [Tolk](https://github.com/dkager/tolk)), with a Windows SAPI voice
