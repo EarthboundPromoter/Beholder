@@ -44,7 +44,6 @@ namespace SkaldAccessibility.Scaffold
         private static readonly Queue<Pending> Queue = new Queue<Pending>();
         private static readonly List<string> History = new List<string>();
         private static string _lastQueued;
-        private static float _lastSpokeAt;
         private static int _historyCursor = -1; // -1 = at the live end
 
         private static readonly Regex TagPattern = new Regex("<[^>]{1,64}?>", RegexOptions.Compiled);
@@ -150,7 +149,19 @@ namespace SkaldAccessibility.Scaffold
             Plugin.Logger.LogInfo($"[Speech:{source}] [f{Time.frameCount}] #{id} (event) {text}");
         }
 
-        /// <summary>Pump the queue: speak the next queued announcement once the reader is free.</summary>
+        /// <summary>Drain the frame's queued announcements to the reader, in
+        /// order, all of them, now. The queue is a per-frame ORDERING buffer
+        /// (interrupts emit at their drain; queued lines follow at the clock),
+        /// never a pacing device: the screen reader owns sequencing, and an
+        /// interrupt cancels everything it has not yet spoken — so nothing
+        /// queued can outlive the interaction that produced it.
+        ///
+        /// Timer retired 2026-09-02 (owner ruling: no timers; one interaction,
+        /// one stream). The 0.15s gap + Tolk_IsSpeaking gate held queued lines
+        /// mod-side across later interrupts (interrupt never flushed the queue),
+        /// so a fast second press spoke the NEW row and then the OLD row's
+        /// still-pending line — Shane's "arrows take two or three presses"
+        /// on the attribute editor (LogOutput 2026-09-02 f13406-f13472).</summary>
         public static void Tick()
         {
             // Flush coalesced event overflow as one batch utterance the moment
@@ -160,15 +171,16 @@ namespace SkaldAccessibility.Scaffold
                 Queue.Enqueue(new Pending { Text = _eventOverflow, Source = "CombatEvent", Id = ++_seq });
                 _eventOverflow = null;
             }
-            if (Queue.Count == 0) return;
-            if (Time.unscaledTime - _lastSpokeAt < Timing.SpeechQueueGap) return;
-            try
+            while (Queue.Count > 0)
             {
-                if (_loaded && Tolk.Tolk_IsSpeaking()) return;
+                var next = Queue.Dequeue();
+                Emit(next.Text, interrupt: false, next.Source, next.Id);
             }
-            catch { }
-            var next = Queue.Dequeue();
-            Emit(next.Text, interrupt: false, next.Source, next.Id);
+            // The identical-text guard is a WITHIN-FRAME collapse (a build
+            // burst queuing one line twice). Across frames the per-source
+            // diffs decide; a record that outlived the frame dropped honest
+            // repeats forever ("Bottom of list." twice in a row).
+            _lastQueued = null;
         }
 
         /// <summary>Convenience: immediate (interrupting) speech — this codebase's
@@ -319,7 +331,6 @@ namespace SkaldAccessibility.Scaffold
 
         private static void Emit(string text, bool interrupt, string source, int id = -1)
         {
-            _lastSpokeAt = Time.unscaledTime;
             History.Add(text);
             if (History.Count > HistoryCapacity)
                 History.RemoveRange(0, History.Count - HistoryCapacity);

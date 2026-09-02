@@ -137,3 +137,40 @@ The scene prose crossing announced a sentence counter of its own ("…, 5 of 5."
 ## Closed
 
 (none yet)
+
+## B16 — Attribute editor speaks every row twice; a fast second press replays the previous row (FIX LANDED 2026-09-02, Shane's 0.5.5 log; reporter-verify pending)
+
+**Symptom (Shane, Discord 2026-09-02):** "it takes two or three presses to move from one attribute to another"; inconsistent arrows in menus, loot, and all of character creation; settings and the map fine.
+
+**Receipts (his LogOutput, f13370-f13472):** every row landing logs one interrupt Nav line and one queued duplicate two frames later; the queued duplicate outlives the next press's interrupt and plays after the new row: Fortitude (interrupt) → Agility (stale, queued before the press) → FORTITUDE description → Fortitude again.
+
+**Root cause:** (1) two landing paths on the stats sheet — TableCursor.ComposeSheetCell at the press and the B15 hover-landing join (Pump.DrainEditorRow) two frames later when hover settled; its `> 1 frame gap` re-arm also re-spoke the row after every plus/minus click. (2) SpeechService.Tick paced queued lines 150 ms apart mod-side and Say(Immediate) never flushed them, so pending lines from the previous interaction survived the interrupt.
+
+**Fix:** landing join deleted (TableCursor's line stands); the queue timer deleted — Tick drains the frame's queue at the clock, the reader sequences, an interrupt cancels what it has not spoken; the cross-frame `_lastQueued` dedup scoped to the frame. See docs/timer-queue-audit.md.
+
+## B17 — Arrow funnel stalls silently whenever hover is lost (FIX LANDED 2026-09-02, same report)
+
+**Mechanism (decomp UICanvas.cs:39-69):** the native setMouseToClosestOptionAbove/Below increment/decrement walks the scrollable list for the HOVERED element and steps from it; with nothing hovered it no-ops and the snap re-parks on the remembered index. Hover is lost by physical-mouse displacement past the guard threshold (alt-tab — Shane's log shows several, a bumped mouse, a drifting sensor) and by popup closes re-parking the cursor. Screens on the native funnel (intro menu, creation lists, popups) stalled; index-driven surfaces (map, POI list, settings under TableCursor) did not — exactly his good/bad split. Evidence of the mouse leading the cursor: the Load/Save screens opened on "Empty slot 10 / 3 / 5 of 20" — whatever slot lay under the previous screen's mouse park.
+
+**Fix:** SkaldIOPatches.FunnelStep — an in-window press steps the canvas's own remembered index and snaps, on canvases whose increment/decrement are the UICanvas base bodies (overriding canvases keep native); PopupGridNavPatch.PlainStep does the same for every base popup with clamp lines at the ends. Edge branch and observer unchanged. Debug channel `[Funnel]` logs `index a->b of n` per press so the next log is decisive.
+
+## B18 — Loot popup "Selected: <first item>" interleaves every landing (OPEN, same log, f127629-f128827)
+
+**Receipts:** after "Shortbow, 2 of 7 / Selected: Shortbow" the nav "N of 7" lines stop; each subsequent landing logs "Selected: Shortsword" (list item 1) two frames before "Selected: <hovered item>", with the tertiary line naming the hovered item. Shortsword never reached the party inventory (8 items after Loot, none of them Shortsword).
+
+**Hypotheses:** PopUpLoot.handle calls `inventory.getObjectByIndex(gridHoverIndex)` every hovered frame (a mutating read the list-selection join notes) and `getCurrentObject()` defaults to `objectList[0]` when current is null; OR a second SkaldObjectList (the PC inventory) is writing in alternate frames and the single (list, object) diff record flips between them. The join now logs the writing list's type (`[ListSel]`, Debug) — needs a log at Debug level, or a bridge-driven repro on the Zephyr chest.
+
+## B19 — Residuals from Shane's 2026-09-02 log (OPEN, triage list)
+
+- Tutorial popups speak controller prompts ("Press the X BUTTON", "RIGHT TRIGGER") because the mod forces controller mode; keyboard users hear nothing usable. Rewrite prompts to the mod's keys at the popup compose.
+- W/S never reach the button row on the attribute editor; the screen's key table still advertises sections. Number keys are the only confirm path (owner-acknowledged); the F1 table for that screen should say so.
+- Save/Load slot counting split: filled slots "N of 2", empty slots "N of 20" (B12 fallout).
+- Spell list glue: "Summon Giant Insectshaladoor cannot afford to use..." — no separator between name and affordability text.
+- One W press in combat placement logged two "Moved to" lines one frame apart (f155287/f155288) at ~150 fps.
+- Character sheet Down repeats "Active Conditions, none." four times instead of advancing.
+- "ROLAND is now leading the party" and "Added some items to inventory!" re-fire on every return to overland; the sheet description re-reads when a popup opens over it.
+- Placeholder text spoken: loot "...", dice "*", "**", "***", the combat-start "?" bark.
+- Crafting Party Inventory read "Empty" with Rat Tails held.
+- Intro menu item 1 reads "dot dot dot" (the game's "..." when no save exists) — say "unavailable".
+- First save with the default name plus a typed suffix was rejected as an invalid filename; cause not visible in the log.
+- Something on the overland opened the level-up screen three times with zero ranks; the trigger key is not in the key table.

@@ -100,16 +100,6 @@ namespace SkaldAccessibility
         //      sheet instance — the drain reads its entry flag at the clock) ----
         private static object _pendingEditorFlip;
 
-        // ---- Attribute-editor row landings (B8; noted by
-        //      EditorRowLandingPatch from the sheet's own per-frame entry
-        //      updates — latest non-null hover wins within the frame) ----
-        private static object _pendingEditorRowSheet;
-        private static object _pendingEditorRow;
-        private static int _pendingEditorRowIndex = -1, _pendingEditorRowCount = -1;
-        private static int _editorRowNoteFrame = -1;
-        private static string _lastEditorRowName;
-        private static int _editorRowSpokeFrame = -1;
-
         // ---- Inventory hover stream (noted by InventoryHoverPatch during the
         //      segment's own update pass; the hovered cell is the surface's
         //      focus truth — owner direction 2026-08-17) ----
@@ -148,6 +138,11 @@ namespace SkaldAccessibility
         private static int _lastAttrPool = int.MinValue;   // int.MinValue = unseen
         private static int _lastSkillPool = int.MinValue;  // (reset per state change)
         private static object _pendingFeatRank;            // feat whose rank changed
+        // A value-change line (attribute/skill press, feat rank) spoke this
+        // frame: the description panel's same-frame re-render is the same
+        // fact and stays a capture (owner ruling 2026-09-02 — plus/minus
+        // compose the change only; the row keys read the description).
+        private static int _valueChangeFrame = -1;
         private static object _lastFeatTree;               // tree-crossing prefix record
         private static readonly System.Collections.Generic.List<object> _pendingRefunds
             = new System.Collections.Generic.List<object>(); // cascade-refunded feats (this frame)
@@ -399,31 +394,6 @@ namespace SkaldAccessibility
         /// row cursor (A/D sideways). The drain reads the settled flag.</summary>
         public static void NoteEditorFlip(object sheet) => _pendingEditorFlip = sheet;
 
-        /// <summary>Note-only: the attribute editor's hovered row this frame
-        /// (per entry; null row = this entry has no arrow hovered). Both
-        /// entries note every frame the sheet updates; at most one carries a
-        /// row (one mouse). A gap in the note stream longer than a frame
-        /// (popup up, screen left) re-arms the landing diff so the return
-        /// re-announces the row.</summary>
-        public static void NoteEditorRow(object sheet, object row, int index, int count)
-        {
-            if (_editorRowNoteFrame != Time.frameCount)
-            {
-                if (_editorRowNoteFrame >= 0 && Time.frameCount - _editorRowNoteFrame > 1)
-                    _lastEditorRowName = null;
-                _editorRowNoteFrame = Time.frameCount;
-                _pendingEditorRow = null;
-                _pendingEditorRowSheet = sheet;
-            }
-            if (row != null)
-            {
-                _pendingEditorRow = row;
-                _pendingEditorRowSheet = sheet;
-                _pendingEditorRowIndex = index;
-                _pendingEditorRowCount = count;
-            }
-        }
-
         /// <summary>Note-only: the virtual cursor sits on an inventory cell
         /// (found during the segment's own update). Latest wins; only noted
         /// when a hovered cell exists, so an idle segment never clobbers
@@ -505,11 +475,6 @@ namespace SkaldAccessibility
 
             try { DrainSliderArrowFlip(); }
             catch (Exception ex) { Scaffold.Log.Throttled("Pump:flip", ex.Message); }
-
-            // B8: landings before the flip drain — a same-frame flip is
-            // consumed by the landing line, which carries the side.
-            try { DrainEditorRow(); }
-            catch (Exception ex) { Scaffold.Log.Throttled("Pump:editorrow", ex.Message); }
 
             try { DrainEditorFlip(); }
             catch (Exception ex) { Scaffold.Log.Throttled("Pump:editorflip", ex.Message); }
@@ -710,6 +675,13 @@ namespace SkaldAccessibility
                 // never spoken — the R11 row already carries the comparative
                 // block; "Selected: X." stays the select feedback.
                 if (source == "SheetDesc" && TableCursor.SuppressSheetPanelSpeech()) continue;
+
+                // A plus/minus or feat-rank press re-renders the description
+                // with the new rank in the same frame the value line spoke.
+                // The record above took the new text (review buffer current,
+                // nothing speaks late); the panel itself is the row keys'
+                // business, not the press's.
+                if (source == "SheetDesc" && _valueChangeFrame == Time.frameCount) continue;
 
                 // The one config (owner ruling 2026-08-18): tooltips and
                 // UI-nav-initiated populations auto-read their full body only
@@ -996,6 +968,10 @@ namespace SkaldAccessibility
 
             string name = Patches.ListSelectionPatch.ListNameOf(current);
             if (name == null) return;
+            // Which list wrote (debug channel): Shane's 0.5.2 loot log showed
+            // "Selected: Shortsword" interleaving every other landing with no
+            // provenance in the line — this names the writer.
+            Scaffold.Log.Debug("ListSel", $"{list.GetType().Name} -> {name}");
             if (_spokenListSelections.Add(list))
                 Scaffold.SpeechService.SayQueued($"Selected: {name}.", "Nav");
             else Scaffold.SpeechService.Say($"Selected: {name}.", "Nav");
@@ -1123,39 +1099,6 @@ namespace SkaldAccessibility
             return null;
         }
 
-        /// <summary>Speak an attribute-editor row landing (B8): the game's own
-        /// row name, the arrow side under the cursor, and the trailing
-        /// position — the slider-row idiom ("Agility, minus, 2 of 5"). Fires
-        /// when the hovered row CHANGES: up/down landings, and any residual
-        /// flip jump (nothing hovered pre-flip, so the snap recovered to the
-        /// column's remembered index). Runs BEFORE DrainEditorFlip; a
-        /// same-frame flip is consumed by this line, which already carries
-        /// the side. Player-driven landings interrupt; a landing the player
-        /// didn't press for (a popup close re-parking the mouse) queues.</summary>
-        private static void DrainEditorRow()
-        {
-            if (_editorRowNoteFrame != Time.frameCount) return;   // sheet idle: popup up or screen left
-            object row = _pendingEditorRow;
-            _pendingEditorRow = null;
-            if (row == null) { _lastEditorRowName = null; return; }   // hover left the arrows: re-arm
-
-            string name = null;
-            try { name = Seams.SkaldBaseObject_getName?.Invoke(row, null) as string; } catch { }
-            name = Patches.TextCleaner.CleanText(name ?? "").Trim();
-            if (name.Length == 0) return;
-            if (name == _lastEditorRowName) return;
-            _lastEditorRowName = name;
-
-            string side = ReadEditorSide(_pendingEditorRowSheet);
-            string text = side == null ? name : $"{name}, {side}";
-            if (_pendingEditorRowIndex > 0 && _pendingEditorRowCount > 0)
-                text += $", {_pendingEditorRowIndex} of {_pendingEditorRowCount}";
-
-            _editorRowSpokeFrame = Time.frameCount;
-            if (_playerNavFrame == Time.frameCount) Scaffold.SpeechService.Say(text, "Nav");
-            else Scaffold.SpeechService.SayQueued(text, "Nav");
-        }
-
         /// <summary>The attribute editor's current arrow side, read from the
         /// game's own controllerScrollToPlusButton flag (entry1; both entries
         /// flip together by construction). Null when unreadable.</summary>
@@ -1176,15 +1119,14 @@ namespace SkaldAccessibility
         /// <summary>Speak which arrow column the attribute editor's row cursor
         /// flipped onto — "Plus." / "Minus.", the side word alone (owner
         /// ruling 2026-08-17, reaffirmed 2026-08-30 for the same-row flip) —
-        /// read from the game's own flag at drain time. Suppressed when a row
-        /// landing spoke this frame: that line already carries the side, and
-        /// the bare word would talk over it (B8).</summary>
+        /// read from the game's own flag at drain time. (The hover-landing
+        /// suppression that lived here retired with the landing join,
+        /// 2026-09-02; the resync prefix keeps a flip on its row.)</summary>
         private static void DrainEditorFlip()
         {
             object sheet = _pendingEditorFlip;
             if (sheet == null) return;
             _pendingEditorFlip = null;
-            if (_editorRowSpokeFrame == Time.frameCount) return;
 
             string side = ReadEditorSide(sheet);
             if (side == null) return;
@@ -2153,6 +2095,7 @@ namespace SkaldAccessibility
                         int rank = (int)Seams.Feat_getRank.Invoke(feat, null);
                         int max = (int)Seams.Feat_getMaxRankLevel.Invoke(feat, null);
                         Scaffold.SpeechService.Say($"{name}, rank {rank} of {max}.", "Points");
+                        _valueChangeFrame = Time.frameCount;
                     }
                 }
                 catch { }
@@ -2269,6 +2212,7 @@ namespace SkaldAccessibility
                     : value != null ? $"{name} {value}." : $"{name}.";
                 string tail = PoolPhrase(pool, kind);
                 Scaffold.SpeechService.Say(head == null ? tail : $"{head} {tail}", "Points");
+                _valueChangeFrame = Time.frameCount;
                 return;
             }
 

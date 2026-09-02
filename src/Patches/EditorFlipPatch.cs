@@ -4,8 +4,8 @@ using System.Reflection;
 namespace SkaldAccessibility.Patches
 {
     /// <summary>
-    /// Attribute-editor flip join (owner rulings 2026-08-17) + flip resync +
-    /// row landings (B8, owner rulings 2026-08-30 off the ninetails16 log).
+    /// Attribute-editor flip join (owner rulings 2026-08-17) + flip resync
+    /// (B15, owner rulings 2026-08-30 off the ninetails16 log).
     ///
     /// FLIP JOIN: A/D on the CC stats / attribute editor rows moves the row
     /// cursor between the plus and minus arrow columns
@@ -30,13 +30,15 @@ namespace SkaldAccessibility.Patches
     /// column. No hover → the game's own fallback stands, and the landing
     /// join below makes it audible.
     ///
-    /// ROW LANDINGS (B8 second half): rows on this sheet landed with no
-    /// label — identity arrived only as the queued full description. The
-    /// updateEntry1/2 postfixes note the hovered row each frame (the sheet's
-    /// own per-frame update, latest wins); the drain diffs by row name and
-    /// speaks "{name}, {side}, {i} of {n}" — the slider-row idiom
-    /// (Pump.DrainEditorRow). A same-frame flip is consumed by the landing
-    /// line, which already carries the side. Seam-gated (WP8).
+    /// ROW LANDINGS — RETIRED 2026-09-02 (Shane's 0.5.5 log): the hover-
+    /// diffed landing join (updateEntry1/2 postfixes → Pump.DrainEditorRow)
+    /// spoke every row a SECOND time two frames after the cursor's own index
+    /// landing (TableCursor.ComposeSheetCell already composes the identical
+    /// "{name}, {side}, {i} of {n}" line at the press), and its gap re-arm
+    /// re-spoke the row after every plus/minus click. With the funnel now an
+    /// index walk (SkaldIOPatches.FunnelStep) hover never leads the cursor,
+    /// so a hover-only landing has nothing left to announce. The flip join
+    /// and resync above stand. Seam-gated (WP8).
     /// </summary>
     [HarmonyPatch]
     public static class EditorFlipLeftPatch
@@ -83,72 +85,6 @@ namespace SkaldAccessibility.Patches
         {
             try { Seams.UICanvas_syncSelectedIndexToHover?.Invoke(sheet, null); }
             catch (System.Exception ex) { Plugin.Logger?.LogDebug($"[EditorFlip:resync] {ex.Message}"); }
-        }
-    }
-
-    // ---- Row landings: note the hovered row from the sheet's own entry
-    //      updates (they run every frame from the state's setGUIData) ----
-
-    [HarmonyPatch]
-    public static class EditorRowLandingAttributesPatch
-    {
-        [HarmonyPrepare]
-        static bool Prepare() => Seams.AttrSheet_updateEntry1 != null
-            && Seams.CharacterSheet_entry1 != null && Seams.SheetEntry_getCurrentObject != null;
-
-        [HarmonyTargetMethod]
-        static MethodBase TargetMethod() => Seams.AttrSheet_updateEntry1;
-
-        [HarmonyPostfix]
-        static void Postfix(object __instance, object __0)
-            => EditorRowLanding.Note(__instance, Seams.CharacterSheet_entry1, __0);
-    }
-
-    [HarmonyPatch]
-    public static class EditorRowLandingSkillsPatch
-    {
-        [HarmonyPrepare]
-        static bool Prepare() => Seams.AttrSheet_updateEntry2 != null
-            && Seams.CharacterSheet_entry2 != null && Seams.SheetEntry_getCurrentObject != null;
-
-        [HarmonyTargetMethod]
-        static MethodBase TargetMethod() => Seams.AttrSheet_updateEntry2;
-
-        [HarmonyPostfix]
-        static void Postfix(object __instance, object __0)
-            => EditorRowLanding.Note(__instance, Seams.CharacterSheet_entry2, __0);
-    }
-
-    internal static class EditorRowLanding
-    {
-        /// <summary>Note this entry's hovered row (null on no-hover frames)
-        /// plus its position among the data rows — slot 0 of the game's list
-        /// is the HEADER row (EditorSheetEntry.update reads hoverIndex + 1),
-        /// so list index 1 is spoken position 1. Reference-find is safe: the
-        /// entry's currentObject was assigned from this same list this frame.</summary>
-        internal static void Note(object sheet, FieldInfo entryField, object data)
-        {
-            try
-            {
-                object entry = entryField.GetValue(sheet);
-                if (entry == null) return;
-                object row = Seams.SheetEntry_getCurrentObject.Invoke(entry, null);
-                int index = -1, count = -1;
-                if (row != null && data != null && Seams.SkaldDataList_getObjectList != null)
-                {
-                    if (Seams.SkaldDataList_getObjectList.Invoke(data, null) is System.Collections.IList list)
-                    {
-                        count = list.Count - 1;
-                        for (int i = 1; i < list.Count; i++)
-                            if (ReferenceEquals(list[i], row)) { index = i; break; }
-                    }
-                }
-                Pump.NoteEditorRow(sheet, row, index, count);
-            }
-            catch (System.Exception ex)
-            {
-                Scaffold.Log.Throttled("EditorRow:note", ex.Message);
-            }
         }
     }
 }

@@ -23,6 +23,9 @@ namespace SkaldAccessibility.Patches
     ///     arrows never land on empty slots. Grid order = inventory order,
     ///     so W/S steps item by item.
     ///
+    /// Every OTHER popup takes the same index step through PlainStep (2026-09-02)
+    /// — the prefix is no longer inventory-only.
+    ///
     /// Everything downstream is native: the snap keeps hover true, the game's
     /// own handle() narrates the hovered item into the tertiary line, Z = LT
     /// = left click loots the focused item, X = RT = right click raises the
@@ -94,8 +97,9 @@ namespace SkaldAccessibility.Patches
         {
             try
             {
-                if (uiElements == null || !Seams.PopUpUISystemInventoryType.IsInstanceOfType(uiElements))
-                    return false; // every other popup keeps its native behavior
+                if (uiElements == null) return false;
+                if (!Seams.PopUpUISystemInventoryType.IsInstanceOfType(uiElements))
+                    return PlainStep(uiElements, up);
 
                 object canvas = Seams.PopUpUIBase_getControllerScrollableUICanvas.Invoke(uiElements, null);
                 object grid = Seams.PopUpUI_grid.GetValue(uiElements);
@@ -143,6 +147,41 @@ namespace SkaldAccessibility.Patches
                 return true;
             }
             catch { return false; }
+        }
+
+        /// <summary>The index walk for every other popup (owner ruling
+        /// 2026-09-02 — the SkaldIOPatches.FunnelStep twin at the popup
+        /// choke): yes/no, OK, tutorial, system menu, loot-less containers.
+        /// The native setMouseToClosestButtonAbove/Below runs the UICanvas
+        /// hover walk (no hovered element → silent no-op + re-park), so a
+        /// press after hover loss did nothing. Step the popup canvas's own
+        /// remembered index and snap; clamp at the ends and say so (the
+        /// game-logic clamp, never a silent press). Canvases overriding the
+        /// walk keep native (BaseIndexWalk). Overriding popup UIs
+        /// (spell selector, visual style) have their own methods and never
+        /// reach this prefix. Returns true when handled.</summary>
+        private static bool PlainStep(object uiElements, bool up)
+        {
+            object canvas = Seams.PopUpUIBase_getControllerScrollableUICanvas.Invoke(uiElements, null);
+            if (canvas == null || !SkaldIOPatches.BaseIndexWalk(canvas)) return false;
+            int index = (int)Seams.UICanvas_getCurrentSelectedButtonIndex.Invoke(canvas, null);
+            int count = CountOf(canvas);
+            if (count <= 0) return false;
+            int next = index + (up ? -1 : +1);
+            if (next < 0)
+            {
+                if (index <= 0) { Scaffold.SpeechService.Say("Top of list.", "Nav"); return true; }
+                next = 0;
+            }
+            else if (next >= count)
+            {
+                if (index >= count - 1) { Scaffold.SpeechService.Say("Bottom of list.", "Nav"); return true; }
+                next = count - 1;
+            }
+            Seams.UICanvas_setCurrentSelectedButton.Invoke(canvas, new object[] { next });
+            Seams.PopUpUIBase_setMouseToSelectedButton.Invoke(uiElements, null);
+            Scaffold.Log.Debug("Funnel", $"popup {canvas.GetType().Name} index {index}->{next} of {count}");
+            return true;
         }
 
         private static int CountOf(object canvas)

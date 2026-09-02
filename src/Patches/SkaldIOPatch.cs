@@ -14,11 +14,13 @@ namespace SkaldAccessibility.Patches
     ///    exact mode, so it is a shipped first-class configuration. Keyboard
     ///    reaches the controller layer via ControllerFeedPatch.
     ///
-    /// 2. Edge observer (bug-ledger B4 as amended 2026-08-16): at a window edge
-    ///    the native setMouseToClosestOptionAbove/Below branch slides the paged
-    ///    window — on long lists the only route past the page. The native slide
-    ///    always runs; the drain diffs the focused slot pre/post and speaks the
-    ///    revealed entry or the true-edge line.
+    /// 2. Funnel index walk + edge observer (2026-09-02; B4 as amended
+    ///    2026-08-16): an in-window setMouseToClosestOptionAbove/Below press
+    ///    steps the canvas's remembered index directly and snaps (the native
+    ///    hover walk stalls silently whenever hover is lost); at a window edge
+    ///    the native branch slides the paged window — on long lists the only
+    ///    route past the page. That slide always runs; the drain diffs the
+    ///    focused slot pre/post and speaks the revealed entry or the edge line.
     ///
     /// 3. SheetComplexSettings.getControllerScrollableList null-fallback: the
     ///    keybindings screen has no sliderControl and natively returns null,
@@ -78,7 +80,7 @@ namespace SkaldAccessibility.Patches
                         prefix: new HarmonyMethod(typeof(SkaldIOPatches), nameof(Prefix_ClampAbove)));
                     harmony.Patch(Seams.GUIControl_setMouseToClosestOptionBelow,
                         prefix: new HarmonyMethod(typeof(SkaldIOPatches), nameof(Prefix_ClampBelow)));
-                    Plugin.Logger?.LogInfo("[SkaldIO] Edge observer on setMouseToClosestOptionAbove/Below (B4)");
+                    Plugin.Logger?.LogInfo("[SkaldIO] Funnel index walk + edge observer on setMouseToClosestOptionAbove/Below");
                 }
                 else
                 {
@@ -243,37 +245,95 @@ namespace SkaldAccessibility.Patches
         /// (index &gt; 0) is the edge test, asked at time of use.</summary>
         static bool Prefix_ClampAbove(object __instance)
         {
-            return ObserveEdge(__instance, Seams.UICanvas_canControllerScrollDown, "Top of list.");
+            return FunnelStep(__instance, Seams.UICanvas_canControllerScrollDown, -1, "Top of list.");
         }
 
         /// <summary>Below = increment; canControllerScrollUp (index &lt; count-1).</summary>
         static bool Prefix_ClampBelow(object __instance)
         {
-            return ObserveEdge(__instance, Seams.UICanvas_canControllerScrollUp, "Bottom of list.");
+            return FunnelStep(__instance, Seams.UICanvas_canControllerScrollUp, +1, "Bottom of list.");
         }
 
-        /// <summary>B4 as amended (2026-08-16, class-list ride): at a window edge
-        /// the native branch slides the PAGED WINDOW one entry — on long lists
-        /// that is the only route to entries beyond the page (the original B4
-        /// "never load-bearing" claim was wrong there). So the native scroll
-        /// always runs; we capture the focused slot's composed line first, and
-        /// the drain compares after the re-render — content changed means a new
-        /// entry slid under focus (speak it), unchanged means a true end
-        /// (speak the edge line). Never a silent press either way.</summary>
-        private static bool ObserveEdge(object instance, MethodInfo canScroll, string edgeText)
+        /// <summary>The index walk (owner ruling 2026-09-02, off Shane's
+        /// 0.5.5 log): an in-window arrow press moves the canvas's OWN
+        /// remembered index by one and snaps the mouse to it — never the
+        /// native hover walk. The native increment/decrement (UICanvas.cs:39-69)
+        /// finds the HOVERED element and steps from there; with nothing hovered
+        /// it silently no-ops and the snap merely re-parks on the remembered
+        /// row. Hover is lost by any physical-mouse displacement past the
+        /// guard's threshold (an alt-tab, a desk bump, a drifting sensor) and
+        /// by a popup close re-parking the cursor — so a press after any of
+        /// those moved nothing and spoke nothing: "sometimes one press moved,
+        /// other times I had to hit up arrow three or four times" (Shane,
+        /// main menu / creation / loot, 2026-09-02). The remembered index is
+        /// the cursor of record (no mouse→index sync, standing ruling); hover
+        /// follows the snap, never leads it.
+        ///
+        /// Scope: canvases whose increment/decrement are the UICanvas base
+        /// (numeric/list button rows, sheets, slider controls). A canvas that
+        /// OVERRIDES them (UIAbilitySelectorGrid's row-width stride,
+        /// UIInventorySheetBase's surface delegation) keeps its native walk —
+        /// those carry semantics the flat step must not flatten. The edge
+        /// branch is untouched: the native window-slide runs and the observer
+        /// speaks the revealed entry or the edge line (B4 as amended).
+        /// Returns false when the step was taken here (native skipped).</summary>
+        private static bool FunnelStep(object instance, MethodInfo canScroll, int delta, string edgeText)
         {
             try
             {
                 object list = Seams.GUIControl_getControllerScrollableList.Invoke(instance, null);
                 if (list == null) return true;                 // original no-ops
-                if ((bool)canScroll.Invoke(list, null)) return true; // in-window move; join speaks
-                Pump.NoteEdgeScroll(list, Pump.CurrentLineOf(list), edgeText);
+                if (!(bool)canScroll.Invoke(list, null))
+                {
+                    Pump.NoteEdgeScroll(list, Pump.CurrentLineOf(list), edgeText);
+                    return true; // the native window-slide always runs
+                }
+                if (!BaseIndexWalk(list)) return true;         // overriding canvas: native walk
+                if (Seams.UICanvas_getCurrentSelectedButtonIndex == null
+                    || Seams.UICanvas_setCurrentSelectedButton == null
+                    || Seams.UICanvas_getScrollableElements == null
+                    || Seams.GUIControl_setMouseToSelectedOption == null) return true;
+
+                int index = (int)Seams.UICanvas_getCurrentSelectedButtonIndex.Invoke(list, null);
+                int count = (Seams.UICanvas_getScrollableElements.Invoke(list, null)
+                    as System.Collections.ICollection)?.Count ?? 0;
+                if (count <= 0) return true;
+                int next = index + delta;
+                if (next < 0) next = 0;
+                else if (next >= count) next = count - 1;
+                Seams.UICanvas_setCurrentSelectedButton.Invoke(list, new object[] { next });
+                Seams.GUIControl_setMouseToSelectedOption.Invoke(instance, null);
+                Scaffold.Log.Debug("Funnel", $"{list.GetType().Name} index {index}->{next} of {count}");
+                return false;
             }
             catch (Exception ex)
             {
-                Plugin.Logger?.LogDebug($"[SkaldIO:edge] {ex.Message}");
+                Plugin.Logger?.LogDebug($"[SkaldIO:funnel] {ex.Message}");
             }
-            return true; // the native window-slide always runs
+            return true;
+        }
+
+        private static readonly System.Collections.Generic.Dictionary<Type, bool> _baseWalk
+            = new System.Collections.Generic.Dictionary<Type, bool>();
+
+        /// <summary>True when this canvas's increment AND decrement are the
+        /// UICanvas base bodies (hover walks) — the only bodies the flat index
+        /// step is equivalent to. Cached per runtime type.</summary>
+        internal static bool BaseIndexWalk(object canvas)
+        {
+            Type t = canvas.GetType();
+            if (_baseWalk.TryGetValue(t, out bool b)) return b;
+            bool result = false;
+            try
+            {
+                var inc = t.GetMethod("incrementCurrentSelectedButton", BindingFlags.Public | BindingFlags.Instance);
+                var dec = t.GetMethod("decrementCurrentSelectedButton", BindingFlags.Public | BindingFlags.Instance);
+                result = inc != null && dec != null && Seams.UICanvasType != null
+                    && inc.DeclaringType == Seams.UICanvasType && dec.DeclaringType == Seams.UICanvasType;
+            }
+            catch { }
+            _baseWalk[t] = result;
+            return result;
         }
 
         /// <summary>When SheetComplexSettings.getControllerScrollableList()

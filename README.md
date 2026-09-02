@@ -1,6 +1,6 @@
 # Beholder
 
-**Version 0.5.5 — beta**
+**Version 0.5.6 — beta**
 
 **New to the mod? Start with the [tutorial](TUTORIAL.md)** — how SKALD's
 unusual interface works, how the mod presents it, and the habits that make
@@ -55,7 +55,7 @@ From the [Steam store page](https://store.steampowered.com/app/1069160/SKALD_Aga
    [Releases page](https://github.com/EarthboundPromoter/Beholder/releases/latest).
 2. Extract it into the SKALD game folder (the one containing
    `SKALD Against the Black Priory.exe`), merging folders if asked.
-3. Launch the game. You'll hear "Beholder 0.5.5 loaded." To update, extract the
+3. Launch the game. You'll hear "Beholder 0.5.6 loaded." To update, extract the
    newer zip the same way.
 
 One thing to know: on launch the mod **silently rebinds two of the game's
@@ -184,6 +184,12 @@ the problems that surfaced have been fixed. What hasn't had that exposure:
 - **The newest features** — the reachability verdicts, the V path readout, the
   combat movement and placement narration, and the reworked combat speech
   scheduling — are fresh; their wording has had only a first listen.
+- **This release's arrow-key fix is unverified by the author.** A player
+  reported arrow presses that sometimes moved nothing in menus, character
+  creation, and loot popups; the cause was found in his log (the game's
+  cursor followed the mouse pointer's hover, which any pointer nudge or
+  alt-tab could lose) and the cursor now moves by index instead. The author's
+  own setup never showed the problem, so the fix shipped on the log alone.
 - **No full campaign has been completed with the mod yet.** Later-game content
   has had the least exposure.
 
@@ -191,9 +197,13 @@ Known issues:
 
 - A reported problem with casting spells outside combat is under
   investigation.
-- Two player reports are under diagnosis: the "Walking X tiles" travel line
-  occasionally not speaking, and looted containers not reporting ", empty"
-  while out of view.
+- Three player reports are under diagnosis: the "Walking X tiles" travel line
+  occasionally not speaking, looted containers not reporting ", empty" while
+  out of view, and a loot popup that interleaves "Selected: <first item>"
+  between item landings.
+- Tutorial popups still name controller buttons ("X BUTTON", "RIGHT
+  TRIGGER") because the mod runs the game in its controller mode; the
+  keyboard equivalents are in TUTORIAL.md and the F1 key tables.
 
 ## Planned additions
 

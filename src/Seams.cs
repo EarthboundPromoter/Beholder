@@ -555,15 +555,10 @@ namespace SkaldAccessibility
         // ---- Attribute-editor flip resync + row landings (B8, ninetails16
         //      log 2026-08-30: a flip snaps to the canvas's remembered index,
         //      which tracks hover only through up/down presses — a flip-first
-        //      press teleports the cursor; and rows on this sheet land with
-        //      no label, only the queued description) ----
+        //      press teleports the cursor. The row-landing seams retired with
+        //      the hover landing join, 2026-09-02) ----
         internal static FieldInfo CharacterSheet_entry2;
-        internal static MethodInfo SheetEntry_getCurrentObject;
         internal static MethodInfo UICanvas_syncSelectedIndexToHover;  // setCurrentSelectedButtonIndexToHoveredElement
-        internal static MethodInfo AttrSheet_updateEntry1;
-        internal static MethodInfo AttrSheet_updateEntry2;
-        internal static Type SkaldDataListType;
-        internal static MethodInfo SkaldDataList_getObjectList;
 
         // ---- Combat spine (CP1, 2026-08-18): turn/round cues, economy diffs,
         //      cost forecast, deployment order. Every name verified against
@@ -1069,7 +1064,6 @@ namespace SkaldAccessibility
                 BindingFlags.NonPublic | BindingFlags.Public);
             Row("UIBaseCharacterSheet+EditorSheetEntry", EditorSheetEntryType != null);
             EditorEntry_scrollToPlusButton = F(EditorSheetEntryType, "EditorSheetEntry", "controllerScrollToPlusButton");
-            SheetEntry_getCurrentObject = M(EditorSheetEntryType, "EditorSheetEntry", "getCurrentObject");
             ToolTipPrinter_clearToolTip = M(ToolTipPrinterType, "ToolTipPrinter", "clearToolTip");
             ToolTipPrinter_hasToolTip = M(ToolTipPrinterType, "ToolTipPrinter", "hasToolTip");
             OverlandState_setMouseInput = M(OverlandStateType, "OverlandState", "setMouseInput");
@@ -1111,10 +1105,6 @@ namespace SkaldAccessibility
             AttrSheet_getAttributeMinusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getAttributeMinusObject");
             AttrSheet_getSkillPlusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getSkillPlusObject");
             AttrSheet_getSkillMinusObject = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "getSkillMinusObject");
-            AttrSheet_updateEntry1 = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "updateEntry1");
-            AttrSheet_updateEntry2 = M(UIAttributeEditorSheetType, "UIAttributeEditorSheet", "updateEntry2");
-            SkaldDataListType = T("SkaldDataList");
-            SkaldDataList_getObjectList = M(SkaldDataListType, "SkaldDataList", "getObjectList");
             CharacterBuilderBase_getCharacter = M(CharacterBuilderBaseStateType, "CharacterBuilderBaseState", "getCharacter");
             Character_getAttributeRank = M(CharacterType, "Character", "getAttributeRank", new[] { typeof(string) });
             SkaldBaseObject_getId = M(SkaldBaseObjectType, "SkaldBaseObject", "getId");
