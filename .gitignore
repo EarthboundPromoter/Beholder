@@ -24,13 +24,13 @@ all_types.txt
 # Claude session tooling (local process commands)
 .claude/
 
-# Design docs — local working artifacts, not for the public repo
-# (owner ruling 2026-08-18: the published repo carries mod code,
-# dependencies, and licenses only)
-docs/combat-survey.md
-docs/combat-spec.md
-docs/text-surface-audit.md
-docs/table-ui-design.md
+# The whole docs tree — design docs, ledgers, surveys, audits, dockets,
+# feedback captures, reception material, tile-art working set: local working
+# artifacts, NONE of it for the public repo (owner ruling 2026-09-02,
+# superseding the itemized 2026-08-18/08-29/09-01 rules: no design or
+# assistant-produced docs on GitHub at all; the published repo carries mod
+# code, dependencies, licenses, README, and TUTORIAL only)
+docs/
 
 # Dev bridge — local-only, never ships (lineage rule)
 bridge/bin/
@@ -39,17 +39,3 @@ bridge/obj/
 # Session log snapshots (bridge log watcher, 2026-08-18)
 logs/
 
-# Reception analytics history (gha) — local trend data, not for the public repo
-docs/reception_log.jsonl
-
-# Reception material (forum thread snapshots, player feedback captures) —
-# local, never for the public repo (same family as the reception log)
-docs/reception/
-
-# Tile-art classification working set — game-derived data (sprite censuses,
-# label tables, the review page with embedded game sprites) and player
-# feedback transcripts; NEVER for the public repo (owner ruling 2026-09-01).
-# The derived speech vocabulary ships only as compiled-in mod source
-# (src/TileArtData.cs / src/TileArtTable.cs).
-docs/tile-art/
-docs/tile-art-review.html
