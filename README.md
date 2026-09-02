@@ -184,12 +184,9 @@ the problems that surfaced have been fixed. What hasn't had that exposure:
 - **The newest features** — the reachability verdicts, the V path readout, the
   combat movement and placement narration, and the reworked combat speech
   scheduling — are fresh; their wording has had only a first listen.
-- **This release's arrow-key fix is unverified by the author.** A player
-  reported arrow presses that sometimes moved nothing in menus, character
-  creation, and loot popups; the cause was found in his log (the game's
-  cursor followed the mouse pointer's hover, which any pointer nudge or
-  alt-tab could lose) and the cursor now moves by index instead. The author's
-  own setup never showed the problem, so the fix shipped on the log alone.
+- **The arrow-key cursor change** — menus, character creation, and popups
+  now move the cursor by index rather than by mouse hover — is new in this
+  release and has had only a first listen.
 - **No full campaign has been completed with the mod yet.** Later-game content
   has had the least exposure.
 
