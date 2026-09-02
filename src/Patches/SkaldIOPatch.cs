@@ -228,10 +228,18 @@ namespace SkaldAccessibility.Patches
         /// and only when no real press happened (__result stays authoritative).</summary>
         static void Postfix_InjectNumeric(ref int __result)
         {
-            if (__result != -1 || InjectNumericFrame != UnityEngine.Time.frameCount) return;
+            // Read from the game's tick (StateBase.update): fires on the first
+            // tick at or after the armed frame, never on frame equality — a
+            // tick need not land in that exact render frame (press-latch
+            // audit 2026-09-02). One-shot by its own reset.
+            if (__result != -1 || InjectNumericFrame < 0 || UnityEngine.Time.frameCount < InjectNumericFrame) return;
             __result = InjectNumericIndex;
             InjectNumericFrame = -1;
         }
+
+        /// <summary>Plugin.Update relay to the feed's press latch (kept here so
+        /// Plugin talks to one patch surface).</summary>
+        internal static void ArmPressLatch() => ControllerFeedPatch.ArmLatch();
 
         static void Postfix_SwallowEscape(ref bool __result)
         {

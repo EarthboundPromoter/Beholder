@@ -546,6 +546,10 @@ namespace SkaldAccessibility
         // ---- Mouse guard + attribute-editor flip join (owner rulings
         //      2026-08-17: latch snaps against jitter; speak the flip side) ----
         internal static MethodInfo SkaldIO_updateMousePosition;
+        // The press latch's tick boundary (audit 2026-09-02): the game clears
+        // its own per-tick input latches here, at the end of every
+        // FixedUpdate game-logic tick — the feed's latch clears alongside.
+        internal static MethodInfo SkaldIO_clear;
         internal static MethodInfo AttributeEditor_scrollSidewaysLeft;
         internal static MethodInfo AttributeEditor_scrollSidewaysRight;
         internal static FieldInfo CharacterSheet_entry1;
@@ -1050,6 +1054,7 @@ namespace SkaldAccessibility
             SkaldIO_setVirtualMousePosition = M(SkaldIOType, "SkaldIO", "setVirtualMousePosition",
                 new[] { typeof(int), typeof(int) });
             SkaldIO_updateMousePosition = M(SkaldIOType, "SkaldIO", "updateMousePosition");
+            SkaldIO_clear = M(SkaldIOType, "SkaldIO", "clear");
             UIElement_getPosition = M(T("UIElement"), "UIElement", "getPosition");
             InfoBaseStateType = T("InfoBaseState");
             BaseMenuStateType = T("BaseMenuState");

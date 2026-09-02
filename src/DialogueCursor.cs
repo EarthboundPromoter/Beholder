@@ -52,7 +52,11 @@ namespace SkaldAccessibility
         /// game reads input from FixedUpdate, which Unity can batch during a
         /// frame hitch while Input.GetKeyDown stays true — a second call in
         /// the same rendered frame is still CLAIMED (the funnel must not see
-        /// it either) but acts zero times.</summary>
+        /// it either) but acts zero times. Since the press latch (audit
+        /// 2026-09-02, ControllerFeedPatch) the feed itself clears a press at
+        /// the first tick's boundary, so the batched second tick never sees
+        /// it; this guard is a belt over that brace, kept for the unlatched
+        /// fallback window before the boundary is confirmed.</summary>
         private static int _lastActFrame = -1;
 
         private static bool ActedThisFrame()

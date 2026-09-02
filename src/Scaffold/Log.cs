@@ -152,7 +152,10 @@ namespace SkaldAccessibility.Scaffold
 
         // ---- Wall clock (L3) ----
 
-        private static int _lastClockFrame = int.MinValue;
+        // -600, not int.MinValue: the subtraction in ClockTick overflowed on
+        // the sentinel, so the periodic stamp only self-started once a state
+        // transition had stamped (review note 11).
+        private static int _lastClockFrame = -600;
 
         /// <summary>Periodic wall-clock stamp (~10s at 60fps) — call every
         /// frame; also called unconditionally at state transitions.</summary>
@@ -164,9 +167,18 @@ namespace SkaldAccessibility.Scaffold
 
         internal static void ClockNow()
         {
+            // Ticks since the last stamp beside the frames since it: the
+            // frames-per-tick ratio is the press-latch audit's key number
+            // (1.0 at 60 fps; 2.4 at 144 Hz) and now reads straight off a log.
+            long ticks = Patches.ControllerFeedPatch.TickCount;
+            int frames = _lastClockFrame < 0 ? 0 : Time.frameCount - _lastClockFrame;
+            long tickDelta = _lastClockTicks < 0 ? 0 : ticks - _lastClockTicks;
             _lastClockFrame = Time.frameCount;
+            _lastClockTicks = ticks;
             Plugin.Logger?.LogInfo(
-                $"[Clock] {DateTime.Now:yyyy-MM-dd'T'HH:mm:ss} f{Time.frameCount}");
+                $"[Clock] {DateTime.Now:yyyy-MM-dd'T'HH:mm:ss} f{Time.frameCount} +{frames}f/+{tickDelta} ticks");
         }
+
+        private static long _lastClockTicks = -1;
     }
 }

@@ -15,7 +15,7 @@ namespace SkaldAccessibility
         // plugin identity (and any config) carries across the toolchain flip.
         public const string Guid = "SkaldAccessibility";
         public const string Name = "Beholder";
-        public const string Version = "0.5.6";
+        public const string Version = "0.5.7";
 
         internal static new ManualLogSource Logger;
 
@@ -127,8 +127,14 @@ namespace SkaldAccessibility
                 SkaldIOPatches.ApplyPatches(_harmony);
             }
 
-            // Hotkey processing
-            InputHandler.ProcessInput();
+            // Hotkey processing, then the press latch (audit 2026-09-02):
+            // after the mod's own layers consumed what they own, this frame's
+            // key-downs arm the feed's per-key flags for the game's next
+            // FixedUpdate tick — the Update-phase latch the game gives its own
+            // keys in SkaldIO.update. `finally`: a throwing mod layer must
+            // cost mod features, never the game's own keyboard.
+            try { InputHandler.ProcessInput(); }
+            finally { SkaldIOPatches.ArmPressLatch(); }
 
             // Verification-gate instrumentation (table-UI foundation; log-only)
             GateReceipts.Tick();
