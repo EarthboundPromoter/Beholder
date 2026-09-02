@@ -250,6 +250,7 @@ namespace SkaldAccessibility
                         Add(rows, "W A S D", "step your character; in placement, move the selected unit one step");
                         Add(rows, "Arrows", "battlefield cursor");
                         Add(rows, "Z", "the game's click at the cursor: move, attack, target, place");
+                        Add(rows, "Space", "in placement, begin combat once everyone is placed");
                         Add(rows, "I", "next in initiative");
                         Add(rows, "U", "previous in initiative");
                         Add(rows, "P", "center on the active unit");

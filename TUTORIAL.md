@@ -81,10 +81,12 @@ character screens** (sheet, inventory, spellbook, and so on) — that's the
 game's screen carousel, and Alt is its native key. Escape backs out.
 
 **Number keys are choosers.** In dialogue and on popup buttons, pressing a
-number picks that option — the mod always announces options with their
-numbers, in spoken order. In combat, the numbers select ability-bar slots
-directly, which is faster than paging with Ctrl once you've internalized
-which number does what.
+number picks that option. The same goes for the button row at the bottom of
+full-screen UIs: when a screen announces "1: Continue, 2: Abort," those
+numbers are how you press those buttons. The mod always announces options
+with their numbers, in spoken order. In combat, the numbers select
+ability-bar slots directly, which is faster than paging with Ctrl once
+you've internalized which number does what.
 
 **Single letters open screens.** From the world: **C** character sheet, **G**
 spellbook, **F** feats, **J** quest log, **L** level up, **T** light or douse
@@ -129,6 +131,13 @@ and so on) is presented the same way, so one habit covers all of them:
   per-character — the normal way to check everyone's sheet or bags in a row.
   **The Alt keys** tab through the sequence of character screens.
 - **Escape** backs out.
+- **Numbers press the screen's buttons.** Every screen announces its button
+  row on entry ("1: Select, 2: Abort"); press the number. On most screens W
+  and S can also land on a Buttons section, but not every screen puts its
+  buttons in the ring. The character-creation attributes and skills screen
+  is one that doesn't: its sections are the attribute list and the skill
+  list, 1 continues, 2 aborts, and there is nothing to arrow to. When W and
+  S don't find the buttons, the numbers always do.
 
 Item rows are spoken fully composed: name, stats with a comparison verdict
 against what the character has equipped, value and weight. **X reads the full
@@ -193,7 +202,9 @@ where each combatant spends action points to move and act.
 each landing, and stepping onto an ally swaps their positions ("Swapped with
 Embla"). Alternatively, park the arrows' cursor on a tile (validity is
 spoken) and Z places the selected unit there directly. When everyone's
-placed, confirm and the fight starts.
+placed, **press Space**. That is the game's "Begin Combat!" button, and
+placement is the one place in the game where Space is the confirm key. Z
+here selects or places a unit; it does not start the fight.
 
 **Orientation:** the arrows browse the battlefield exactly like the overland
 cursor — occupant, Blocked or Open, coordinates. **I and U walk the
