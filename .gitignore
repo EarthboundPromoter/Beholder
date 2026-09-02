@@ -42,6 +42,10 @@ logs/
 # Reception analytics history (gha) — local trend data, not for the public repo
 docs/reception_log.jsonl
 
+# Reception material (forum thread snapshots, player feedback captures) —
+# local, never for the public repo (same family as the reception log)
+docs/reception/
+
 # Tile-art classification working set — game-derived data (sprite censuses,
 # label tables, the review page with embedded game sprites) and player
 # feedback transcripts; NEVER for the public repo (owner ruling 2026-09-01).
