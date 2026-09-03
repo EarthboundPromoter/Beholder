@@ -208,6 +208,7 @@ namespace SkaldAccessibility
         internal static ConstructorInfo CutsceneTextHeader_ctor;
         internal static ConstructorInfo CutSceneGameWin_ctor;
         internal static FieldInfo CutSceneGameWin_textBlock;
+        internal static MethodInfo CutSceneControl_hasCutScene;   // the walk watchdog's suspend gate (B21, 2026-09-03)
 
         // ---- Popup announce (top-of-stack watch — the add event alone misses
         //      reveals and frame-late UI builds; the drain reads getCurrentPopUp,
@@ -550,6 +551,16 @@ namespace SkaldAccessibility
         // its own per-tick input latches here, at the end of every
         // FixedUpdate game-logic tick — the feed's latch clears alongside.
         internal static MethodInfo SkaldIO_clear;
+        // Rest-drift guard + walk watchdog (click-to-move report 2026-09-03):
+        // the game's any-input check treats a joystick axis resting off
+        // exact zero as "held" and never walks a clicked course while it
+        // holds; the guard re-answers it with the game's own stick threshold.
+        internal static MethodInfo CIC_isAnyControllerButtonPressed;
+        internal static MethodInfo CIC_getLeftJoystickPosition;
+        internal static MethodInfo CIC_getDpadPosition;
+        internal static FieldInfo CIC_leftStickThreshold;
+        internal static MethodInfo SkaldIO_anyKeyDown;
+        internal static FieldInfo SkaldIO_keyHeldDown;
         internal static MethodInfo AttributeEditor_scrollSidewaysLeft;
         internal static MethodInfo AttributeEditor_scrollSidewaysRight;
         internal static FieldInfo CharacterSheet_entry1;
@@ -896,6 +907,7 @@ namespace SkaldAccessibility
             // narration, text cards e.g. "Two Weeks Earlier") chain through
             // this one base ctor. CutSceneGameWin builds a plain UITextBlock.
             var cutSceneControl = T("CutSceneControl");
+            CutSceneControl_hasCutScene = M(cutSceneControl, "CutSceneControl", "hasCutScene");
             var cutSceneType = cutSceneControl?.GetNestedType("CutScene", BindingFlags.NonPublic | BindingFlags.Public);
             var cutHeaderType = cutSceneType?.GetNestedType("CutsceneTextHeader", BindingFlags.NonPublic | BindingFlags.Public);
             CutsceneTextHeader_ctor = cutHeaderType == null ? null
@@ -1055,6 +1067,12 @@ namespace SkaldAccessibility
                 new[] { typeof(int), typeof(int) });
             SkaldIO_updateMousePosition = M(SkaldIOType, "SkaldIO", "updateMousePosition");
             SkaldIO_clear = M(SkaldIOType, "SkaldIO", "clear");
+            CIC_isAnyControllerButtonPressed = M(ControllerInputControlType, "ControllerInputControl", "isAnyControllerButtonPressed");
+            CIC_getLeftJoystickPosition = M(ControllerInputControlType, "ControllerInputControl", "getLeftJoystickPosition");
+            CIC_getDpadPosition = M(ControllerInputControlType, "ControllerInputControl", "getDpadPosition");
+            CIC_leftStickThreshold = F(ControllerInputControlType, "ControllerInputControl", "leftStickThreshold");
+            SkaldIO_anyKeyDown = M(SkaldIOType, "SkaldIO", "anyKeyDown");
+            SkaldIO_keyHeldDown = F(SkaldIOType, "SkaldIO", "keyHeldDown");
             UIElement_getPosition = M(T("UIElement"), "UIElement", "getPosition");
             InfoBaseStateType = T("InfoBaseState");
             BaseMenuStateType = T("BaseMenuState");

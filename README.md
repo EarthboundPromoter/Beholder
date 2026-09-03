@@ -201,6 +201,11 @@ Known issues:
 - Tutorial popups still name controller buttons ("X BUTTON", "RIGHT
   TRIGGER") because the mod runs the game in its controller mode; the
   keyboard equivalents are in TUTORIAL.md and the F1 key tables.
+- A connected controller or other joystick-class device with a stick that
+  does not rest at center, or a button held down, stops the party from
+  walking a clicked route (the game pauses the walk while any input is
+  held). The mod ignores resting stick drift; a held button or a stuck
+  key still pauses the walk. If routes stop walking, unplug the device.
 
 ## Planned additions
 

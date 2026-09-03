@@ -205,6 +205,8 @@ namespace SkaldBridge
                     return OnMainThread(() => PressJson(query));
                 case "/screenshot":
                     return OnMainThread(ScreenshotJson);
+                case "/input":
+                    return OnMainThread(InputJson);
                 case "/quit":
                     MainThreadQueue.Enqueue(() => Application.Quit());
                     return "{\"ok\":true,\"action\":\"quit queued\"}";
@@ -273,6 +275,46 @@ namespace SkaldBridge
             if (field == null) return "{\"ok\":false,\"error\":\"inject field not found (old mod build?)\"}";
             field.SetValue(null, Time.frameCount + 1);
             return $"{{\"ok\":true,\"pressed\":\"{key}\",\"armedForFrame\":{Time.frameCount + 1}}}";
+        }
+
+        /// <summary>What the game's any-input check sees right now (the
+        /// click-to-move walk gate, 2026-09-03): joystick names, the raw
+        /// stick/d-pad/trigger axes, SkaldIO.anyKeyDown's verdict (with the
+        /// mod's rest-drift guard applied), the held-key list, mouse
+        /// buttons, and the guard's discard count. Update-phase read: the
+        /// held-key list holds this frame's accumulation since the last tick.</summary>
+        private static string InputJson()
+        {
+            string sticks;
+            try { sticks = string.Join("; ", Input.GetJoystickNames().Where(n => !string.IsNullOrEmpty(n))); }
+            catch { sticks = "unreadable"; }
+            float h = 0, v = 0, h3 = 0, v3 = 0, tl = 0, tr = 0;
+            try { h = Input.GetAxis("Horizontal"); v = Input.GetAxis("Vertical"); } catch { }
+            try { h3 = Input.GetAxis("Horizontal3"); v3 = Input.GetAxis("Vertical3"); } catch { }
+            try { tl = Input.GetAxis("TriggerLeft"); tr = Input.GetAxis("TriggerRight"); } catch { }
+            string any = "unknown", held = "?", drift = "?";
+            try
+            {
+                var io = AccessTools.TypeByName("SkaldIO");
+                var m = AccessTools.Method(io, "anyKeyDown");
+                if (m != null) any = ((bool)m.Invoke(null, null)).ToString().ToLowerInvariant();
+                var f = AccessTools.Field(io, "keyHeldDown");
+                var list = f?.GetValue(null) as System.Collections.IList;
+                if (list != null)
+                {
+                    var names = new System.Collections.Generic.List<string>();
+                    foreach (object k in list) { string n = k.ToString(); if (!names.Contains(n)) names.Add(n); }
+                    held = string.Join(" ", names);
+                }
+                var guard = AccessTools.TypeByName("SkaldAccessibility.Patches.InputRestGuardPatch");
+                var d = guard != null ? AccessTools.Field(guard, "DriftDiscards") : null;
+                if (d != null) drift = d.GetValue(null).ToString();
+            }
+            catch { }
+            string mouse = (Input.GetMouseButton(0) ? "L" : "") + (Input.GetMouseButton(1) ? "R" : "") + (Input.GetMouseButton(2) ? "M" : "");
+            return $"{{\"ok\":true,\"joysticks\":\"{Escape(sticks)}\",\"stick\":[{h:F3},{v:F3}],\"dpad\":[{h3:F2},{v3:F2}],"
+                 + $"\"triggers\":[{tl:F2},{tr:F2}],\"anyKeyDown\":\"{any}\",\"keysHeld\":\"{Escape(held)}\","
+                 + $"\"mouseHeld\":\"{mouse}\",\"driftDiscards\":\"{drift}\",\"frame\":{Time.frameCount}}}";
         }
 
         private static string ScreenshotJson()

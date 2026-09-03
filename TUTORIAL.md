@@ -58,7 +58,10 @@ Two consequences worth internalizing early:
 
 There is no universal "press Enter to confirm" in this game. Enter and Space
 exist natively and act in a few places, but they are not reliable across
-screens. **Z is the do-it key.**
+screens. **Z is the do-it key.** On the map, Space is the game's contextual
+verb: next to something usable it triggers that verb, and with nothing usable
+in front of the party it passes a round ("You wait a short while"), so a Space
+pressed as a confirm quietly spends time.
 
 ## The game's own keyboard, and its oddities
 

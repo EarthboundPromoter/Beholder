@@ -161,6 +161,10 @@ namespace SkaldAccessibility.Patches
                 // jitter and right-stick drift.
                 MouseGuardPatch.Apply(harmony);
 
+                // (8b) Rest-drift guard + walk watchdog (click-to-move report
+                // 2026-09-03) — nested SkaldIO detours, so deferred.
+                InputRestGuardPatch.Apply(harmony);
+
                 // (9) Combat cursor prefixes (CP3) — game-type detours on the
                 // combat states' mouse branches, so deferred like the rest.
                 CombatCursorPatches.Apply(harmony);
