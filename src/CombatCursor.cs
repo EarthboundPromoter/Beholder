@@ -99,7 +99,7 @@ namespace SkaldAccessibility
         private static bool _listOpen;
         private static int _tabIdx;                    // 0 TurnOrder · 1 Hostiles · 2 Neutrals/Friendlies · 3 Party
         private static readonly int[] _tabRow = { -1, -1, -1, -1 };
-        private static int _swallowTailFrame = -1;
+        private static readonly EatTail _tail = new EatTail();   // one game tick after a list close
         private static bool _latchGateLogged;
 
         private static readonly string[] TabNames =
@@ -142,7 +142,7 @@ namespace SkaldAccessibility
         /// cursor's): keys the game must not see while the K list is open.</summary>
         public static bool ShouldSwallowKey(KeyCode key)
         {
-            if (!_listOpen && Time.frameCount > _swallowTailFrame) return false;
+            if (!_listOpen && !_tail.Holds) return false;
             // The latch suspends under the game's own modal surfaces (Sonnet
             // MUST-FIX): a popup or selector grid over the latch keeps full
             // native input — Escape must reach the grid, options must fire.
@@ -1315,7 +1315,7 @@ namespace SkaldAccessibility
         private static void CloseList()
         {
             CloseListSilent();
-            _swallowTailFrame = Time.frameCount + 1;
+            _tail.Arm(1);               // one game tick (EatTail)
             Scaffold.SpeechService.Say("Closed.", "Nav");
         }
 

@@ -117,8 +117,12 @@ namespace SkaldAccessibility.Patches
         // press after the grid closes).
         private const int InjectExpiryFrames = 3;
         /// <summary>Game-logic ticks seen (one per SkaldIO.clear); the clock
-        /// stamp prints the delta so a log states frames-per-tick.</summary>
+        /// stamp prints the delta so a log states frames-per-tick, and the
+        /// eat tails (EatTail) count on it.</summary>
         internal static long TickCount;
+        /// <summary>True once the tick boundary has been observed running —
+        /// the point from which TickCount is a trustworthy clock.</summary>
+        internal static bool TickClockLive => _latchLive;
 
         private static int LatchIndex(KeyCode key)
         {

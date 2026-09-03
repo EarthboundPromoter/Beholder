@@ -31,7 +31,7 @@ namespace SkaldAccessibility
     public static class KeyTable
     {
         private static bool _active;
-        private static int _eatUntilFrame = -1;
+        private static readonly EatTail _tail = new EatTail();   // one game tick after a close
         private static int _row;   // -1 = just opened, no row landed yet
         private static int _col;   // -1 = both columns, 0 = key, 1 = function
         private static string _title;
@@ -48,10 +48,11 @@ namespace SkaldAccessibility
 
         public static bool Active => _active;
 
-        /// <summary>True while open or in the one-frame eat tail after a
-        /// close — the game must not see any key (SkaldIO chokes) and the
-        /// controller feed must not fire (ControllerFeedPatch).</summary>
-        public static bool Engaged => _active || Time.frameCount <= _eatUntilFrame;
+        /// <summary>True while open or in the eat tail after a close — the
+        /// game must not see any key (SkaldIO chokes) and the controller
+        /// feed must not fire (ControllerFeedPatch). The tail is one game
+        /// TICK (EatTail): the tick that reads the latched closing press.</summary>
+        public static bool Engaged => _active || _tail.Holds;
 
         /// <summary>Choke-point predicate (SkaldIOPatch): while engaged the
         /// game sees no bound key at all.</summary>
@@ -127,14 +128,14 @@ namespace SkaldAccessibility
         private static void Close()
         {
             _active = false;
-            _eatUntilFrame = Time.frameCount + 1;
+            _tail.Arm(1);
             Scaffold.SpeechService.Say("Key table closed.", "KeyTable");
         }
 
         private static void CloseSilent()
         {
             _active = false;
-            _eatUntilFrame = Time.frameCount + 1;
+            _tail.Arm(1);
         }
 
         // ---- Browse ----

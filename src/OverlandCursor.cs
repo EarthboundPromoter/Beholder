@@ -105,7 +105,7 @@ namespace SkaldAccessibility
         private static int _listCat;
         private static int _listIdx = -1;
         private static int _lastPartyX = int.MinValue, _lastPartyY = int.MinValue;
-        private static int _swallowTailFrame = -1;
+        private static readonly EatTail _tail = new EatTail();   // one game tick after a list close
         private static bool _ringsDirty;            // world may have mutated since the last build;
                                                     // rings refresh at the next browse press (Sonnet
                                                     // SHOULD-FIX 2026-08-19: no per-step rebuild —
@@ -140,7 +140,7 @@ namespace SkaldAccessibility
         /// owns those keys natively.</summary>
         public static bool ShouldSwallowKey(KeyCode key)
         {
-            if (!(Time.frameCount <= _swallowTailFrame || (_listOpen && ActiveNow()))) return false;
+            if (!(_tail.Holds || (_listOpen && ActiveNow()))) return false;
             switch (key)
             {
                 case KeyCode.UpArrow:
@@ -1418,7 +1418,7 @@ namespace SkaldAccessibility
             _listOpen = false;
             _rings = null;
             _listIdx = -1;
-            _swallowTailFrame = Time.frameCount + 2;
+            _tail.Arm(2);               // one game tick (EatTail)
             _announcedActive = false;   // the explicit close IS the off edge
             Scaffold.Log.Debug("Mode", "POIList closed (explicit)");
             if (announce) Scaffold.SpeechService.Say("POI list closed.", "Nav");

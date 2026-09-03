@@ -247,9 +247,14 @@ namespace SkaldAccessibility.Patches
 
         static void Postfix_SwallowEscape(ref bool __result)
         {
+            // getPressedEscapeKey reads keyPressed directly (SkaldIO.cs:891-898),
+            // never through getKeyPressed — every layer that swallows Escape
+            // must be consulted HERE. The combat K-list was missing (audit
+            // 2026-09-03): Escape inside it reached the game at any fps.
             if (__result && (KeyTable.ShouldSwallowKey(UnityEngine.KeyCode.Escape)
                 || ReviewLayer.ShouldSwallowKey(UnityEngine.KeyCode.Escape)
-                || OverlandCursor.ShouldSwallowKey(UnityEngine.KeyCode.Escape)))
+                || OverlandCursor.ShouldSwallowKey(UnityEngine.KeyCode.Escape)
+                || CombatCursor.ShouldSwallowKey(UnityEngine.KeyCode.Escape)))
                 __result = false;
         }
 

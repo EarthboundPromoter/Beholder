@@ -92,7 +92,7 @@ namespace SkaldAccessibility
 
         // ---- Toggle state ----
         private static bool _active;
-        private static int _eatUntilFrame = -1; // swallow tail after an eat-close
+        private static readonly EatTail _tail = new EatTail(); // swallow tail after an eat-close: one game tick
         private static int _section;
         private static int _element = -1; // -1 = section-level position
 
@@ -101,14 +101,14 @@ namespace SkaldAccessibility
         /// <summary>True while activation-class emulations (triggers, X/Y/B
         /// buttons) must not fire — consulted by ControllerFeedPatch.</summary>
         public static bool EatingActivations()
-            => _active || Time.frameCount <= _eatUntilFrame;
+            => _active || _tail.Holds;
 
         /// <summary>Choke-point predicate (SkaldIOPatches): keys the game must
         /// not see while review is open (or during the eat tail of the closing
         /// press). Navigation-class keys are never swallowed — they exit-then-act.</summary>
         public static bool ShouldSwallowKey(KeyCode key)
         {
-            if (!_active && Time.frameCount > _eatUntilFrame) return false;
+            if (!_active && !_tail.Holds) return false;
             switch (key)
             {
                 case KeyCode.LeftArrow:
@@ -237,7 +237,7 @@ namespace SkaldAccessibility
         private static void Close(bool announce, bool eat)
         {
             _active = false;
-            if (eat) _eatUntilFrame = Time.frameCount + 2; // covers FixedUpdate straddle
+            if (eat) _tail.Arm(2); // one game tick (EatTail); the old two-frame window is the fallback
             if (announce)
             {
                 Scaffold.SpeechService.Say("Closed.", "Review");
