@@ -146,13 +146,15 @@ namespace SkaldAccessibility
         private static object _lastFeatTree;               // tree-crossing prefix record
         private static readonly System.Collections.Generic.List<object> _pendingRefunds
             = new System.Collections.Generic.List<object>(); // cascade-refunded feats (this frame)
-        // The legality cascade drains ONE rank per feat per FRAME, so a
-        // multi-rank refund arrives across consecutive frames (adversarial
-        // review F4) — tally per feat and speak once after a quiet frame,
+        // The legality cascade drains ONE rank per feat per game TICK, so a
+        // multi-rank refund arrives across consecutive ticks (adversarial
+        // review F4) — tally per feat and speak once after two quiet TICKS
+        // (TickClock.Moment; audit 2026-09-03: two quiet render frames were
+        // zero ticks at 240 fps and split one refund into several lines),
         // holding the FeatPoints trailer until the tally settles.
         private static readonly System.Collections.Generic.Dictionary<object, int> _refundTally
             = new System.Collections.Generic.Dictionary<object, int>();
-        private static int _refundQuietFrames;
+        private static long _refundLastChangeMoment = -1;
         private static bool RefundSettling => _refundTally.Count > 0;
 
         // ---- List-selection stream (noted by ListSelectionPatch; latest wins) ----
@@ -2123,9 +2125,9 @@ namespace SkaldAccessibility
                     _refundTally[refunded] = n + 1;
                 }
                 _pendingRefunds.Clear();
-                _refundQuietFrames = 0;
+                _refundLastChangeMoment = Scaffold.TickClock.Moment;
             }
-            else if (RefundSettling && ++_refundQuietFrames >= 2)
+            else if (RefundSettling && Scaffold.TickClock.Moment - _refundLastChangeMoment >= 2)
             {
                 int total = 0;
                 var names = new System.Collections.Generic.List<string>();

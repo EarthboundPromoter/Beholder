@@ -80,7 +80,7 @@ namespace SkaldAccessibility
 
         // ---- Live strip read (the author, asked at the drain clock) ----
 
-        private static int _stripFrame = -1;
+        private static long _stripKey = -1;
         private static string _stripRaw;
 
         /// <summary>The game's own strip composition, this frame. Pure reads
@@ -88,9 +88,9 @@ namespace SkaldAccessibility
         /// cached per frame; null when unavailable or empty (no map).</summary>
         internal static string LiveStripRaw()
         {
-            int frame = UnityEngine.Time.frameCount;
-            if (frame == _stripFrame) return _stripRaw;
-            _stripFrame = frame;
+            long key = Scaffold.TickClock.MemoKey;   // tick OR frame change recomputes (audit 2026-09-03)
+            if (key == _stripKey) return _stripRaw;
+            _stripKey = key;
             _stripRaw = null;
             try
             {

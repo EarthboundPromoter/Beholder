@@ -239,7 +239,7 @@ namespace SkaldAccessibility
         // Live screen memo
         // =====================================================================
 
-        private static int _frame = -1;
+        private static long _memoKey = -1;
         private static object _state;
         private static object _gui;
         private static string _simpleLabel;      // gate-B screen
@@ -266,8 +266,10 @@ namespace SkaldAccessibility
 
         private static bool Refresh()
         {
-            if (Time.frameCount == _frame) return _registered;
-            _frame = Time.frameCount;
+            // Memo keyed on tick OR frame (TickClock.MemoKey; audit
+            // 2026-09-03): read inside ticks by ClaimsStick/ShouldSwallowKey.
+            if (Scaffold.TickClock.MemoKey == _memoKey) return _registered;
+            _memoKey = Scaffold.TickClock.MemoKey;
             _state = null; _gui = null; _simpleLabel = null; _sheetDef = null; _invDef = null;
             _settingsScreen = false; _partyScreen = false; _difficultyScreen = false;
             _registered = false;
@@ -547,13 +549,13 @@ namespace SkaldAccessibility
             public bool PortraitRows;   // gate-F party management: park-driven portrait cells
         }
 
-        private static int _secFrame = -1;
+        private static long _secKey = -1;
         private static List<Section> _sections;
 
         private static List<Section> ResolveSections()
         {
-            if (Time.frameCount == _secFrame && _sections != null) return _sections;
-            _secFrame = Time.frameCount;
+            if (Scaffold.TickClock.MemoKey == _secKey && _sections != null) return _sections;
+            _secKey = Scaffold.TickClock.MemoKey;
             _sections = _sheetDef != null ? ResolveSheetSections()
                 : _invDef != null ? ResolveInvSections()
                 : _partyScreen ? ResolvePartySections()

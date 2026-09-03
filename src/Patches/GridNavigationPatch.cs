@@ -42,15 +42,53 @@ namespace SkaldAccessibility.Patches
     /// </summary>
     public static class GridNavigationPatch
     {
-        // ---- Live game-truth reads (memoized once per frame) ----
-        private static int _frame = -1;
+        // ---- Live game-truth reads (memoized once per moment: the key
+        //      changes on a tick OR a frame — this memo is read inside ticks
+        //      by Postfix_SuppressMovement, and a frame-only key served tick 1's
+        //      answer to tick 2 of a 30 fps frame; audit 2026-09-03) ----
+        private static long _memoKey = -1;
         private static object _gui, _grid;
         private static object _lastGrid;
+        // The Update-phase driver steps at most once per game tick per
+        // direction: a physical stick press stays latched in the game's
+        // container until the tick clears it, so at 240 fps the driver read
+        // it true on four consecutive frames and stepped four cells
+        // (keyboard edges are one frame and never repeated). Two gates
+        // (Sonnet + Opus reviews 2026-09-03): a tick-wide gate alone dropped
+        // a DIFFERENT arrow pressed within the same tick; a per-direction
+        // gate alone let a diagonal stick push — both axes latched until the
+        // tick clears them — step a second cell on the next render frame,
+        // where native steps one. So: per-direction debounce, and a SECOND
+        // step inside one tick only on a fresh keyboard edge this frame (a
+        // display-time event a latched stick cannot produce).
+        private static readonly long[] _lastStepTick = { -1, -1, -1, -1 };   // per direction: up, down, left, right
+        private static long _lastStepTickAny = -1;
+
+        private static bool Gated(int dir)
+            => Scaffold.TickClock.Live && _lastStepTick[dir] == Scaffold.TickClock.Now;
+
+        private static bool SteppedThisTick
+            => Scaffold.TickClock.Live && _lastStepTickAny == Scaffold.TickClock.Now;
+
+        private static void Stepped(int dir)
+        {
+            _lastStepTick[dir] = Scaffold.TickClock.Now;
+            _lastStepTickAny = Scaffold.TickClock.Now;
+        }
+
+        /// <summary>A fresh display-time edge on either key that can feed
+        /// this direction (the arrow on element surfaces, WASD otherwise —
+        /// both are checked so this stays independent of the fence).</summary>
+        private static bool KeyEdge(KeyCode arrow, KeyCode wasd)
+            => Input.GetKeyDown(arrow) || Input.GetKeyDown(wasd);
+
+        private static bool MayStep(int dir, KeyCode arrow, KeyCode wasd)
+            => !Gated(dir) && (!SteppedThisTick || KeyEdge(arrow, wasd));
 
         private static void Refresh()
         {
-            if (Time.frameCount == _frame) return;
-            _frame = Time.frameCount;
+            if (Scaffold.TickClock.MemoKey == _memoKey) return;
+            _memoKey = Scaffold.TickClock.MemoKey;
             _gui = null;
             _grid = null;
             try
@@ -177,23 +215,29 @@ namespace SkaldAccessibility.Patches
                     return;
                 }
 
-                if (Pressed(Seams.SkaldIO_getOptionSelectionButtonUp))
+                // Per-direction debounce + the second-step rule (see the gate
+                // fields above); a gated read is short-circuited (unread).
+                if (MayStep(0, KeyCode.UpArrow, KeyCode.W) && Pressed(Seams.SkaldIO_getOptionSelectionButtonUp))
                 {
                     Seams.GUIControl_setMouseToClosestOptionAbove?.Invoke(_gui, null);
                     Snap();
+                    Stepped(0);
                 }
-                else if (Pressed(Seams.SkaldIO_getOptionSelectionButtonDown))
+                else if (MayStep(1, KeyCode.DownArrow, KeyCode.S) && Pressed(Seams.SkaldIO_getOptionSelectionButtonDown))
                 {
                     Seams.GUIControl_setMouseToClosestOptionBelow?.Invoke(_gui, null);
                     Snap();
+                    Stepped(1);
                 }
-                else if (Pressed(Seams.SkaldIO_getOptionSelectionButtonLeft))
+                else if (MayStep(2, KeyCode.LeftArrow, KeyCode.A) && Pressed(Seams.SkaldIO_getOptionSelectionButtonLeft))
                 {
                     SidewaysWithEdge(Seams.UICanvas_controllerScrollSidewaysLeft);
+                    Stepped(2);
                 }
-                else if (Pressed(Seams.SkaldIO_getOptionSelectionButtonRight))
+                else if (MayStep(3, KeyCode.RightArrow, KeyCode.D) && Pressed(Seams.SkaldIO_getOptionSelectionButtonRight))
                 {
                     SidewaysWithEdge(Seams.UICanvas_controllerScrollSidewaysRight);
+                    Stepped(3);
                 }
             }
             catch (Exception ex)

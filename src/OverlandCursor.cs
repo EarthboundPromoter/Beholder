@@ -111,7 +111,7 @@ namespace SkaldAccessibility
                                                     // SHOULD-FIX 2026-08-19: no per-step rebuild —
                                                     // an auto-walk would pay it per path node)
         private static bool _announcedActive;       // the on/off edge announcer's memory
-        private static int _activeFrame = -1;       // frame-stamped modality cache (predicates
+        private static long _activeKey = -1;        // moment-stamped modality cache (TickClock.MemoKey: tick OR frame change recomputes; predicates
         private static bool _activeCache;           // may run before Tick in a frame)
 
         public static bool ListOpen => _listOpen;
@@ -124,9 +124,9 @@ namespace SkaldAccessibility
         /// other states keep their native input.</summary>
         private static bool ActiveNow()
         {
-            if (Time.frameCount != _activeFrame)
+            if (Scaffold.TickClock.MemoKey != _activeKey)
             {
-                _activeFrame = Time.frameCount;
+                _activeKey = Scaffold.TickClock.MemoKey;
                 _activeCache = _listOpen && InOverland() && CurrentMap() != null
                     && !PopupUp() && !Patches.GridNavigationPatch.GridActive();
             }
@@ -249,7 +249,7 @@ namespace SkaldAccessibility
                 // ---- Modality edges (run in every state) ----
                 bool active = _listOpen && map != null && !PopupUp()
                     && !Patches.GridNavigationPatch.GridActive();
-                _activeFrame = Time.frameCount;
+                _activeKey = Scaffold.TickClock.MemoKey;
                 _activeCache = active;
                 if (active && !_announcedActive)
                 {
@@ -1239,12 +1239,15 @@ namespace SkaldAccessibility
         private static HashSet<object> _paSeenTracked = new HashSet<object>(RefEq.Instance);
         private static HashSet<long> _paSeenFixed = new HashSet<long>();
         private static bool _paSeeded;               // census spoken for this map
-        private static int _paSeedEarliestFrame;     // census defers past the mount frame
+        // Passive timing is in GAME TICKS (TickClock.Moment; audit 2026-09-03):
+        // the marks land on the keypress frame, before the tick that processes
+        // the action, so "one later" must be one TICK — at 240 fps one render
+        // frame later the world was still unprocessed and the sweep baked the
+        // arrivals into the baseline. Constants unchanged (ticks = frames at 60 fps).
+        private static long _paSeedEarliestMoment;   // census defers past the mount tick
         private static bool _paDirty;
-        private static int _paDirtyFrame = -1;       // sweep waits one frame past the mark:
-                                                     // the mark lands on the keypress frame,
-                                                     // BEFORE the game processes the action
-        private static int _paEchoFrame = -1;        // one follow-up sweep after every dirty
+        private static long _paDirtyMoment = -1;     // sweep waits one tick past the mark
+        private static long _paEchoMoment = -1;      // one follow-up sweep after every dirty
                                                      // sweep (Sonnet SHOULD-FIX 2026-08-21:
                                                      // a same-tile interact has no movement
                                                      // event to re-arm the clock, so a
@@ -1260,7 +1263,7 @@ namespace SkaldAccessibility
         private static void MarkPassiveDirty()
         {
             _paDirty = true;
-            _paDirtyFrame = Time.frameCount;
+            _paDirtyMoment = Scaffold.TickClock.Moment;
         }
 
         private static void ResetPassive()
@@ -1268,9 +1271,9 @@ namespace SkaldAccessibility
             _paSeenTracked.Clear();
             _paSeenFixed.Clear();
             _paSeeded = false;
-            _paSeedEarliestFrame = Time.frameCount + 1;
+            _paSeedEarliestMoment = Scaffold.TickClock.Moment + 1;
             _paDirty = false;
-            _paEchoFrame = -1;
+            _paEchoMoment = -1;
             Array.Clear(_paPending, 0, _paPending.Length);
             _paPendingAny = false;
         }
@@ -1294,7 +1297,7 @@ namespace SkaldAccessibility
         {
             if (!_paSeeded)
             {
-                if (Time.frameCount < _paSeedEarliestFrame) return;
+                if (Scaffold.TickClock.Moment < _paSeedEarliestMoment) return;
                 if (!PartyPos(map, out int sx, out int sy)) return;
                 var rings = PassiveSweep(map, sx, sy, countArrivals: false);
                 _paSeeded = true;
@@ -1314,18 +1317,18 @@ namespace SkaldAccessibility
                 return;
             }
 
-            if (_paDirty && Time.frameCount > _paDirtyFrame)
+            if (_paDirty && Scaffold.TickClock.Moment > _paDirtyMoment)
             {
                 _paDirty = false;
                 if (PartyPos(map, out int px, out int py))
                 {
                     PassiveSweep(map, px, py, countArrivals: true);
-                    _paEchoFrame = Time.frameCount + 6;
+                    _paEchoMoment = Scaffold.TickClock.Moment + 6;
                 }
             }
-            else if (_paEchoFrame >= 0 && Time.frameCount >= _paEchoFrame)
+            else if (_paEchoMoment >= 0 && Scaffold.TickClock.Moment >= _paEchoMoment)
             {
-                _paEchoFrame = -1;
+                _paEchoMoment = -1;
                 if (PartyPos(map, out int ex, out int ey))
                     PassiveSweep(map, ex, ey, countArrivals: true);
             }

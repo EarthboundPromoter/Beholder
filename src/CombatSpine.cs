@@ -485,7 +485,7 @@ namespace SkaldAccessibility
             // absorbed. Survivors are unique facts and speak on the bark
             // lane as before. Length-guarded so punctuation barks can't
             // false-match.
-            if (shorts.Count > 0 || frame.Barks.Count > 0) _lastActivityFrame = UnityEngine.Time.frameCount;
+            if (shorts.Count > 0 || frame.Barks.Count > 0) _lastActivityMoment = Scaffold.TickClock.Moment;
             SweepCoveredBarks(frame.Barks, lines);
             RegisterComposedLines(lines);
 
@@ -500,21 +500,27 @@ namespace SkaldAccessibility
         // ---- Speech-lane reform: the composed ledger, the bark sweep, and
         //      the strip-echo hold (owner go 2026-09-01) ----
 
-        private static readonly System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>> _composedLedger
-            = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>>();
-        private static readonly System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>> _stripEchoes
-            = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>>();
-        private static int _lastActivityFrame = -1;
-        private const int LedgerWindow = 90;   // frames a composed fact still absorbs stragglers
-        private const int EchoWindow = 45;     // frames a held strip echo waits for its covering line
+        private static readonly System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<long, string>> _composedLedger
+            = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<long, string>>();
+        private static readonly System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<long, string>> _stripEchoes
+            = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<long, string>>();
+        // All three windows are GAME TICKS (TickClock.Moment; audit
+        // 2026-09-03): combat events are emitted by the tick, and a tick is
+        // 1/60 s at every frame rate — so 30/45/90 are the documented
+        // 0.5/0.75/1.5 s everywhere. As frames they shrank 4× at 240 fps
+        // (reopening the strip-echo doubles the lane reform closed) and
+        // doubled at 30 fps (holding browse reads, dropping real repeats).
+        private static long _lastActivityMoment = -1;
+        private const int LedgerWindow = 90;   // ticks a composed fact still absorbs stragglers
+        private const int EchoWindow = 45;     // ticks a held strip echo waits for its covering line
 
         /// <summary>True while an event group is resolving — log/bark
         /// activity within the last half-second. The strip's combat lines are
         /// action echoes during this window (held for the sweep); outside it
         /// they are browse/hover content and speak immediately.</summary>
         internal static bool NarrationActive()
-            => _lastActivityFrame >= 0
-               && UnityEngine.Time.frameCount - _lastActivityFrame <= 30;
+            => _lastActivityMoment >= 0
+               && Scaffold.TickClock.Moment - _lastActivityMoment <= 30;
 
         /// <summary>A combat-mode SecondaryDesc line noted during an active
         /// narration window (DrainContent routes it here instead of
@@ -523,8 +529,8 @@ namespace SkaldAccessibility
         internal static void NoteStripEcho(string line)
         {
             if (!string.IsNullOrWhiteSpace(line))
-                _stripEchoes.Add(new System.Collections.Generic.KeyValuePair<int, string>(
-                    UnityEngine.Time.frameCount, line));
+                _stripEchoes.Add(new System.Collections.Generic.KeyValuePair<long, string>(
+                    Scaffold.TickClock.Moment, line));
         }
 
         private static void SweepCoveredBarks(
@@ -558,7 +564,7 @@ namespace SkaldAccessibility
 
         private static bool CoveredByLedger(string text)
         {
-            int now = UnityEngine.Time.frameCount;
+            long now = Scaffold.TickClock.Moment;
             for (int i = _composedLedger.Count - 1; i >= 0; i--)
             {
                 if (now - _composedLedger[i].Key > LedgerWindow) break;
@@ -569,10 +575,10 @@ namespace SkaldAccessibility
 
         private static void RegisterComposedLines(System.Collections.Generic.List<string> lines)
         {
-            int now = UnityEngine.Time.frameCount;
+            long now = Scaffold.TickClock.Moment;
             foreach (string l in lines)
                 if (!string.IsNullOrWhiteSpace(l))
-                    _composedLedger.Add(new System.Collections.Generic.KeyValuePair<int, string>(now, l));
+                    _composedLedger.Add(new System.Collections.Generic.KeyValuePair<long, string>(now, l));
             // Prune from the front — entries are frame-ordered.
             while (_composedLedger.Count > 0 && now - _composedLedger[0].Key > LedgerWindow)
                 _composedLedger.RemoveAt(0);
@@ -581,7 +587,7 @@ namespace SkaldAccessibility
         private static void DrainStripEchoes()
         {
             if (_stripEchoes.Count == 0) return;
-            int now = UnityEngine.Time.frameCount;
+            long now = Scaffold.TickClock.Moment;
             System.Collections.Generic.List<string> expired = null;
             for (int i = _stripEchoes.Count - 1; i >= 0; i--)
             {
@@ -623,7 +629,7 @@ namespace SkaldAccessibility
             if (left.EndsWith(" begun", StringComparison.OrdinalIgnoreCase))
                 left = left.Substring(0, left.Length - 6).Trim();
             if (left.Length < 3 || right.Length < 3) return false;
-            int now = UnityEngine.Time.frameCount;
+            long now = Scaffold.TickClock.Moment;
             for (int i = _composedLedger.Count - 1; i >= 0; i--)
             {
                 if (now - _composedLedger[i].Key > LedgerWindow) break;
@@ -659,7 +665,7 @@ namespace SkaldAccessibility
                 Scaffold.SpeechService.SayQueued(e.Value, "SecondaryDesc");
             _stripEchoes.Clear();
             _composedLedger.Clear();
-            _lastActivityFrame = -1;
+            _lastActivityMoment = -1;
         }
 
         // (CP5's position-diff swap detector DELETED 2026-09-01 — superseded

@@ -286,7 +286,7 @@ namespace SkaldAccessibility.Patches
 
         // ---- Text-entry gate (game truth, memoized once per frame; all
         //      handles from the WP8 Seams registry) ----
-        private static int _gateFrame = -1;
+        private static long _gateKey = -1;
         private static bool _gateActive;
 
         /// <summary>True while the game itself is capturing typed text: the Tab
@@ -306,8 +306,8 @@ namespace SkaldAccessibility.Patches
         public static bool TextEntryActive()
         {
             if (GameStateTracker.CurrentMode == GameMode.Unknown) return false;
-            if (Time.frameCount == _gateFrame) return _gateActive;
-            _gateFrame = Time.frameCount;
+            if (Scaffold.TickClock.MemoKey == _gateKey) return _gateActive;   // tick OR frame change recomputes (audit 2026-09-03)
+            _gateKey = Scaffold.TickClock.MemoKey;
             _gateActive = ComputeTextEntryActive();
             return _gateActive;
         }
@@ -494,12 +494,12 @@ namespace SkaldAccessibility.Patches
         // race-free by the game's own strict if/else (MainControl.cs:118).
         // The K-latch stick claim is RETIRED (nav revision §5: WASD
         // released to native character stepping under the latch).
-        private static int _elemFrame = -1;
+        private static long _elemKey = -1;
         private static bool _elemCache;
         private static bool ElementSurface()
         {
-            if (Time.frameCount == _elemFrame) return _elemCache;
-            _elemFrame = Time.frameCount;
+            if (Scaffold.TickClock.MemoKey == _elemKey) return _elemCache;   // tick OR frame change recomputes (audit 2026-09-03)
+            _elemKey = Scaffold.TickClock.MemoKey;
             bool elem = false;
             try
             {

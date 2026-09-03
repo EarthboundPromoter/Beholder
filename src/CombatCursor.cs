@@ -82,7 +82,7 @@ namespace SkaldAccessibility
         //      nudge flushes the first landing instead of dropping it
         //      (review find 6). ----
         private static bool _pendingSpeak;
-        private static int _pendingFrame = -1;
+        private static long _pendingMoment = -1;   // TickClock.Moment at arm — the landing waits one game tick
         private static int _pendingX, _pendingY;
         private static string _pendingTail;      // ring counter (", 2 of 4.") or null
         private static string _pendingPrefix;    // initiative ordinal ("3, ") or null
@@ -616,7 +616,7 @@ namespace SkaldAccessibility
         /// are genuine last-wins.</summary>
         private static void QueueLanding(string tail, string prefix = null)
         {
-            if (_pendingSpeak && Time.frameCount > _pendingFrame)
+            if (_pendingSpeak && Scaffold.TickClock.Moment > _pendingMoment)
             {
                 _pendingSpeak = false;
                 object map = CurrentMap();
@@ -624,7 +624,7 @@ namespace SkaldAccessibility
                     SpeakTile(map, _pendingX, _pendingY, _pendingTail, _pendingPrefix);
             }
             _pendingSpeak = true;
-            _pendingFrame = Time.frameCount;
+            _pendingMoment = Scaffold.TickClock.Moment;   // a full game tick must run before the speak (audit 2026-09-03: was one render frame — nothing at 240 fps)
             _pendingX = _tileX;
             _pendingY = _tileY;
             _pendingTail = tail;
@@ -639,7 +639,7 @@ namespace SkaldAccessibility
         /// hold-and-flush against the popup's own announcement (review find 3).</summary>
         public static void DrainSpeak()
         {
-            if (!_pendingSpeak || Time.frameCount <= _pendingFrame) return;
+            if (!_pendingSpeak || Scaffold.TickClock.Moment <= _pendingMoment) return;
             if (!InCombat() || !_held) { _pendingSpeak = false; return; }
             if (PopupUp() || Patches.GridNavigationPatch.GridActive()) return;   // defer, not drop
             _pendingSpeak = false;
