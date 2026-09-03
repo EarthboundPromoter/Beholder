@@ -88,6 +88,11 @@ namespace SkaldAccessibility
                 + "step or action, and speak an 'In view:' census on map entry. Deliberately pays one POI "
                 + "ring sweep per step while on (reverses the 2026-08-19 lazy-rebuild ruling for this "
                 + "feature; sweep timing logged on the PA channel). Off restores browse-time-only rebuilds.");
+            _cfgParity = config.Bind("Logging", "PassiveParityCheck", false,
+                "Verification of the typed POI ring builder against the original reflective one (sweep-cost "
+                + "job 2026-09-03): every ring build runs both and logs any membership difference as a "
+                + "warning on the PA channel. Costs the old builder's milliseconds per sweep; leave off "
+                + "except for the check ride.");
         }
 
         // ---- Cursor state (two ints + a held flag; the latch re-asserts) ----
@@ -356,10 +361,7 @@ namespace SkaldAccessibility
         private static void RebuildRings(object map, int px, int py)
         {
             if (_rings == null) return;
-            var newRings = new List<Entry>[5];
-            for (int i = 0; i < 5; i++)
-                newRings[i] = BuildRing(map, (Category)i, px, py);
-            ApplyRings(newRings);
+            ApplyRings(BuildRings(map, px, py));
         }
 
         /// <summary>Install freshly-built rings into the open list, keeping
@@ -815,8 +817,292 @@ namespace SkaldAccessibility
         }
 
         // ---- Category rings ----
+        //
+        // The ring builder (typed single pass; sweep-cost job 2026-09-03).
+        // One walk over the 23×17 viewport classifies every tile into all five
+        // rings with DIRECT calls on the referenced game assembly. The WP11
+        // builder (BuildRingLegacy below — kept PERMANENTLY as the fallback
+        // and the parity reference, owner ruling 2026-09-03) walked the
+        // viewport once per category through
+        // MethodInfo.Invoke, plus once more per map edge with an edge id:
+        // 9,000–17,000 reflective calls and about a megabyte of boxing
+        // garbage per sweep — 4–11 ms on the owner's 60 Hz ride, a dropped
+        // frame on every sweep at 240 Hz. Membership, labels, ordering
+        // (RingOrder / UnseenOrder, shared with the legacy builder), the
+        // renderer's prop gate, the unseen tail, and the one sanctioned side
+        // effect (getInventory's lazy allocation — the renderer's own read)
+        // are unchanged; Logging.PassiveParityCheck proves it on a ride.
+        //
+        // Containment: every typed member reference lives in BuildRingsTyped
+        // and PropEntryTyped, reached only inside BuildRings' try. A game
+        // update that removes one surfaces as a MissingMethodException at
+        // that method's JIT — caught at the call in BuildRings, one Error
+        // line, and the legacy builder answers for the rest of the session.
 
-        private static List<Entry> BuildRing(object map, Category cat, int px, int py)
+        private static readonly Comparison<Entry> RingOrder = (a, b) =>
+            a.Deprioritized != b.Deprioritized ? (a.Deprioritized ? 1 : -1)
+            : a.Dist != b.Dist ? a.Dist - b.Dist : (a.Y != b.Y ? b.Y - a.Y : a.X - b.X);
+        private static readonly Comparison<Entry> UnseenOrder = (a, b) => a.Dist - b.Dist;
+
+        private static ConfigEntry<bool> _cfgParity;
+        private static bool ParityOn => _cfgParity != null && _cfgParity.Value;
+        private static bool _typedFailed;
+        private static int _typedFaults;         // consecutive non-JIT faults; reset by a clean build
+        private const int TypedFaultLimit = 3;
+        private static double _lastRingsMs;      // the typed build alone, for the PA sweep line
+        private static int _parityLines;
+
+        /// <summary>All five rings for the party at (px,py): typed builder,
+        /// legacy fallback, optional parity check. Never null, never throws.
+        /// <paramref name="onlyCat"/> (a scan's single category) matters only
+        /// on the fallback: the typed pass builds all five for free, the
+        /// legacy pass costs a viewport walk per ring, so a scan in degraded
+        /// mode pays one walk — the pre-rewrite cost — not five (Opus review
+        /// 2026-09-03).</summary>
+        private static List<Entry>[] BuildRings(object map, int px, int py, int onlyCat = -1)
+        {
+            List<Entry>[] rings = null;
+            if (!_typedFailed)
+            {
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                try { rings = BuildRingsTyped(map, px, py); _typedFaults = 0; }
+                catch (Exception ex)
+                {
+                    rings = null;
+                    // The JIT class (a game update removed a member: Missing*
+                    // or TypeLoad) is permanent for the session. Anything
+                    // else is one bad tile or prop on THIS build — the
+                    // reflective builder answers this once (its per-read
+                    // try/catch tolerates the same fault) and the typed path
+                    // gets the next call — unless it keeps faulting: a fault
+                    // that is a property of the map would otherwise pay the
+                    // pre-rewrite sweep cost on every step at Debug-only
+                    // visibility (Sonnet SHOULD-FIX 2026-09-03), so the third
+                    // consecutive fault escalates to the same Error + disable.
+                    bool jit = ex is MissingMemberException || ex is TypeLoadException;
+                    if (jit || ++_typedFaults >= TypedFaultLimit)
+                    {
+                        _typedFailed = true;
+                        Plugin.Logger?.LogError($"[POI] Typed ring builder unavailable ({ex.GetType().Name}: {ex.Message}"
+                            + (jit ? "" : $"; {_typedFaults} consecutive builds faulted")
+                            + "); the reflective builder answers for the rest of this session — the passive layer pays the pre-rewrite sweep cost");
+                    }
+                    else Scaffold.Log.Throttled("POI:typed", $"{ex.GetType().Name}: {ex.Message} (reflective builder answered this build; fault {_typedFaults} of {TypedFaultLimit})");
+                }
+                _lastRingsMs = rings == null ? -1
+                    : (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            }
+            else _lastRingsMs = -1;
+            if (rings == null) return BuildRingsLegacy(map, px, py, onlyCat);
+            if (ParityOn) CheckParity(rings, BuildRingsLegacy(map, px, py));
+            return rings;
+        }
+
+        /// <summary>The reflective builder, all five rings — or just
+        /// <paramref name="onlyCat"/> with the other four empty.</summary>
+        private static List<Entry>[] BuildRingsLegacy(object map, int px, int py, int onlyCat = -1)
+        {
+            var rings = new List<Entry>[5];
+            for (int i = 0; i < 5; i++)
+                rings[i] = onlyCat < 0 || i == onlyCat ? BuildRingLegacy(map, (Category)i, px, py) : new List<Entry>();
+            return rings;
+        }
+
+        /// <summary>The typed single pass. Same tile order as the legacy
+        /// builder (x outer, y inner), same per-category tests in the same
+        /// order, edge exits appended N,S,E,W before the sort, unseen tail
+        /// after it — identical input sequences to the same comparator give
+        /// identical rings.</summary>
+        private static List<Entry>[] BuildRingsTyped(object mapObj, int px, int py)
+        {
+            var map = (Map)mapObj;
+            var rings = new List<Entry>[5];
+            for (int i = 0; i < 5; i++) rings[i] = new List<Entry>();
+            var hostiles = rings[(int)Category.Hostiles];
+            var neutrals = rings[(int)Category.Neutrals];
+            var loot = rings[(int)Category.Loot];
+            var objects = rings[(int)Category.Objects];
+            var exits = rings[(int)Category.Exits];
+            var unseenTail = new List<Entry>();
+
+            int vx = map.getViewportX();
+            int vy = map.getViewportY();
+
+            // Edge exits: one synthetic entry per map-edge direction whose
+            // edge id is set, at the nearest passable border tile in the
+            // window (first found wins ties). Judged on EVERY valid tile,
+            // spotted or not — the legacy AddEdge had no spotted gate.
+            bool north = !string.IsNullOrEmpty(map.northernEdgeMapId);
+            bool south = !string.IsNullOrEmpty(map.southernEdgeMapId);
+            bool east = !string.IsNullOrEmpty(map.easternEdgeMapId);
+            bool west = !string.IsNullOrEmpty(map.westernEdgeMapId);
+            bool anyEdge = north || south || east || west;
+            Entry bestN = default, bestS = default, bestE = default, bestW = default;
+            bool foundN = false, foundS = false, foundE = false, foundW = false;
+
+            for (int tx = vx - 11; tx <= vx + 11; tx++)
+            {
+                for (int ty = vy - 8; ty <= vy + 8; ty++)
+                {
+                    if (!map.isTileValid(tx, ty)) continue;
+                    MapTile tile = map.getTile(tx, ty);
+                    if (tile == null) continue;
+                    int dist = Math.Abs(tx - px) + Math.Abs(ty - py);
+
+                    if (anyEdge)
+                    {
+                        int mtx = tile.getTileX(), mty = tile.getTileY();
+                        bool onW = west && mtx == 0;
+                        bool onS = south && mty == 0;
+                        bool onE = east && !map.isTileValid(mtx + 1, mty);
+                        bool onN = north && !map.isTileValid(mtx, mty + 1);
+                        if ((onW || onS || onE || onN) && tile.isPassable())
+                        {
+                            if (onN && (!foundN || dist < bestN.Dist)) { bestN = new Entry { X = tx, Y = ty, Label = "North edge", Dist = dist, Synthetic = true }; foundN = true; }
+                            if (onS && (!foundS || dist < bestS.Dist)) { bestS = new Entry { X = tx, Y = ty, Label = "South edge", Dist = dist, Synthetic = true }; foundS = true; }
+                            if (onE && (!foundE || dist < bestE.Dist)) { bestE = new Entry { X = tx, Y = ty, Label = "East edge", Dist = dist, Synthetic = true }; foundE = true; }
+                            if (onW && (!foundW || dist < bestW.Dist)) { bestW = new Entry { X = tx, Y = ty, Label = "West edge", Dist = dist, Synthetic = true }; foundW = true; }
+                        }
+                    }
+
+                    if (!tile.isSpotted()) continue;
+
+                    // Characters: hostiles / neutrals by identity; the
+                    // unseen-icon state tails the hostiles ring (caution bias).
+                    Character ch = tile.getLiveCharacter();
+                    if (ch != null && !ch.isPC())
+                    {
+                        bool identifiable = tile.isIlluminated() || ch.isSpotted();
+                        if (!identifiable)
+                        {
+                            if (!tile.isConcealment())
+                                unseenTail.Add(new Entry { X = tx, Y = ty, Label = "Something unseen", Tracked = ch, Dist = dist });
+                        }
+                        else
+                        {
+                            string name = Patches.TextCleaner.CleanText(ch.getName() ?? "Someone");
+                            (ch.isHostile() ? hostiles : neutrals).Add(new Entry { X = tx, Y = ty, Label = name, Tracked = ch, Dist = dist });
+                        }
+                    }
+
+                    // The prop through the renderer's gate (drawProps):
+                    // removed-from-game, hidden, undrawn.
+                    Prop prop = tile.getPropOrGuestProp();
+                    if (prop != null && (prop.shouldBeRemovedFromGame() || prop.isHidden() || prop.shouldNotBeDrawn()))
+                        prop = null;
+
+                    // Loot: containers and pickups; looted containers labeled
+                    // and sunk (owner ruling 2026-08-19); else ground items.
+                    if (prop != null && (prop is PropCont || prop is PropPickup))
+                    {
+                        Entry pe = PropEntryTyped(prop, tx, ty, dist);
+                        if (prop is PropCont && !((PropLockable)prop).isLocked() && tile.getInventory().isEmpty())
+                        {
+                            pe.Label += ", empty";
+                            pe.Deprioritized = true;
+                        }
+                        loot.Add(pe);
+                    }
+                    else if (tile.isPassable() && !tile.getInventory().isEmpty())
+                        loot.Add(new Entry { X = tx, Y = ty, Label = "Items", Dist = dist });
+
+                    // Objects: every other named prop.
+                    if (prop != null && !(prop is PropWarp || prop is PropCont || prop is PropPickup
+                        || prop is PropBeacon || prop is PropSpawner || prop is PropTrigger))
+                    {
+                        string pn = Patches.TextCleaner.CleanText(prop.getName() ?? "");
+                        // pn is non-empty here, so this IS PropEntryTyped's
+                        // label — built once instead of cleaning the name
+                        // twice (the legacy path pays the second CleanText).
+                        if (!string.IsNullOrWhiteSpace(pn))
+                            objects.Add(new Entry { X = tx, Y = ty, Label = pn, Dist = dist });
+                    }
+
+                    // Exits: warps, nested-map tiles, ships.
+                    if (prop != null && prop is PropWarp)
+                        exits.Add(PropEntryTyped(prop, tx, ty, dist));
+                    else
+                    {
+                        string nested = tile.getNestedMapId();
+                        if (!string.IsNullOrEmpty(nested))
+                        {
+                            string pn = prop != null ? Patches.TextCleaner.CleanText(prop.getName() ?? "") : "";
+                            exits.Add(new Entry { X = tx, Y = ty, Label = string.IsNullOrWhiteSpace(pn) ? "Entrance" : pn, Dist = dist });
+                        }
+                        else if (tile.hasVehicle())
+                            exits.Add(new Entry { X = tx, Y = ty, Label = "Ship", Dist = dist });
+                    }
+                }
+            }
+
+            if (foundN) exits.Add(bestN);
+            if (foundS) exits.Add(bestS);
+            if (foundE) exits.Add(bestE);
+            if (foundW) exits.Add(bestW);
+            for (int i = 0; i < 5; i++) rings[i].Sort(RingOrder);
+            if (unseenTail.Count > 0)
+            {
+                unseenTail.Sort(UnseenOrder);
+                hostiles.AddRange(unseenTail);
+            }
+            return rings;
+        }
+
+        private static Entry PropEntryTyped(Prop prop, int tx, int ty, int dist)
+        {
+            string pn = Patches.TextCleaner.CleanText(prop.getName() ?? "");
+            return new Entry { X = tx, Y = ty, Label = string.IsNullOrWhiteSpace(pn) ? "Object" : pn, Dist = dist };
+        }
+
+        /// <summary>The parity receipt (Logging.PassiveParityCheck): the
+        /// first differing entry per ring as a Warning, one Debug summary
+        /// per build. Capped so a systematic difference costs lines, not the
+        /// log.</summary>
+        private static void CheckParity(List<Entry>[] typed, List<Entry>[] legacy)
+        {
+            bool allEqual = true;
+            for (int c = 0; c < 5; c++)
+            {
+                var a = typed[c];
+                var b = legacy[c];
+                int n = Math.Max(a.Count, b.Count);
+                for (int i = 0; i < n; i++)
+                {
+                    string diff = null;
+                    if (i >= a.Count) diff = "typed lacks " + Describe(b[i]);
+                    else if (i >= b.Count) diff = "legacy lacks " + Describe(a[i]);
+                    else if (!SameEntry(a[i], b[i])) diff = "typed " + Describe(a[i]) + " vs legacy " + Describe(b[i]);
+                    if (diff == null) continue;
+                    allEqual = false;
+                    if (_parityLines++ < 40)
+                        Plugin.Logger?.LogWarning($"[PA] parity MISMATCH {CategoryNames[c]} #{i}: {diff} (typed {a.Count}, legacy {b.Count})");
+                    break;
+                }
+            }
+            Scaffold.Log.Debug("PA", $"parity {(allEqual ? "equal" : "MISMATCH")} h={typed[0].Count}/{legacy[0].Count}"
+                + $" n={typed[1].Count}/{legacy[1].Count} l={typed[2].Count}/{legacy[2].Count}"
+                + $" o={typed[3].Count}/{legacy[3].Count} x={typed[4].Count}/{legacy[4].Count}");
+        }
+
+        private static bool SameEntry(Entry a, Entry b)
+            => a.X == b.X && a.Y == b.Y && a.Dist == b.Dist && a.Deprioritized == b.Deprioritized
+               && a.Synthetic == b.Synthetic && ReferenceEquals(a.Tracked, b.Tracked)
+               && string.Equals(a.Label, b.Label, StringComparison.Ordinal);
+
+        private static string Describe(Entry e)
+            => $"({e.X},{e.Y}) '{e.Label}' d{e.Dist}{(e.Deprioritized ? " depr" : "")}{(e.Synthetic ? " syn" : "")}{(e.Tracked != null ? " tracked" : "")}";
+
+        /// <summary>The WP11 reflective builder, one category per call.
+        /// Retired from the hot path by the typed single pass above; kept
+        /// PERMANENTLY as the fallback and the parity reference (owner ruling
+        /// 2026-09-03): a game update that breaks the typed builder costs
+        /// speed, not the passive layer, the K list, or the scans — and a
+        /// scan in that mode pays one walk (BuildRings' onlyCat), the
+        /// pre-rewrite cost. Note for parity rides: this builder answers
+        /// false for a NULL type seam (IsType), so a missing prop-type seam
+        /// makes IT the wrong side of a mismatch; the boot seam report names
+        /// the seam.</summary>
+        private static List<Entry> BuildRingLegacy(object map, Category cat, int px, int py)
         {
             var ring = new List<Entry>();
             if (Seams.Map_getViewportX == null) return ring;
@@ -912,11 +1198,10 @@ namespace SkaldAccessibility
             }
 
             if (cat == Category.Exits) AddEdgeExits(map, ring, vx, vy, px, py);
-            ring.Sort((a, b) => a.Deprioritized != b.Deprioritized ? (a.Deprioritized ? 1 : -1)
-                : a.Dist != b.Dist ? a.Dist - b.Dist : (a.Y != b.Y ? b.Y - a.Y : a.X - b.X));
+            ring.Sort(RingOrder);
             if (unseenTail.Count > 0)
             {
-                unseenTail.Sort((a, b) => a.Dist - b.Dist);
+                unseenTail.Sort(UnseenOrder);
                 ring.AddRange(unseenTail);
             }
             return ring;
@@ -1015,7 +1300,7 @@ namespace SkaldAccessibility
         {
             ClearTooltip();
             if (!PartyPos(map, out int px, out int py)) return;
-            var ring = BuildRing(map, cat, px, py);
+            var ring = BuildRings(map, px, py, (int)cat)[(int)cat];
             if (ring.Count == 0)
             {
                 Scaffold.SpeechService.Say($"No {CategoryNames[(int)cat]}.", "Nav");
@@ -1043,16 +1328,15 @@ namespace SkaldAccessibility
             ClearTooltip();
             if (!PartyPos(map, out int px, out int py)) return;
 
-            _rings = new List<Entry>[5];
+            var built = BuildRings(map, px, py);
             var census = new List<string>();
             int unseen = 0;
             for (int i = 0; i < 5; i++)
             {
-                _rings[i] = BuildRing(map, (Category)i, px, py);
-                int n = _rings[i].Count;
+                int n = built[i].Count;
                 if (i == (int)Category.Hostiles)
                 {
-                    unseen = _rings[i].FindAll(e => e.Label == "Something unseen").Count;
+                    unseen = built[i].FindAll(e => e.Label == "Something unseen").Count;
                     n -= unseen;
                 }
                 if (n > 0) census.Add($"{n} {(n == 1 ? CategoryNames[i].TrimEnd('s') : CategoryNames[i])}");
@@ -1062,10 +1346,11 @@ namespace SkaldAccessibility
             if (census.Count == 0)
             {
                 Scaffold.SpeechService.Say("Nothing nearby.", "Nav");
-                _rings = null;
+                _rings = null;   // closed-list invariant kept explicit (was the pre-rewrite behaviour)
                 return;
             }
 
+            _rings = built;
             _listOpen = true;
             _listIdx = -1;
             _listCat = 0;
@@ -1348,14 +1633,13 @@ namespace SkaldAccessibility
         /// step-fresh by construction while passive is on).</summary>
         private static List<Entry>[] PassiveSweep(object map, int px, int py, bool countArrivals)
         {
-            float t0 = Time.realtimeSinceStartup;
-            var rings = new List<Entry>[5];
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            var rings = BuildRings(map, px, py);
             var tracked = new HashSet<object>(RefEq.Instance);
             var fixedKeys = new HashSet<long>();
             bool any = false;
             for (int i = 0; i < 5; i++)
             {
-                rings[i] = BuildRing(map, (Category)i, px, py);
                 foreach (var e in rings[i])
                 {
                     bool fresh;
@@ -1386,11 +1670,14 @@ namespace SkaldAccessibility
                 _paPendingAny = true;
                 _paLastAccumAt = Time.unscaledTime;
             }
-            float ms = (Time.realtimeSinceStartup - t0) * 1000f;
-            if (ms >= 2f || any)
-                Scaffold.Log.Debug("PA", $"sweep {ms:0.0}ms"
-                    + (any ? $" pending h={_paPending[0]} n={_paPending[1]} l={_paPending[2]}"
-                           + $" o={_paPending[3]} x={_paPending[4]} u={_paPending[5]}" : ""));
+            // Every sweep logs its cost (the 2 ms threshold went with the
+            // sweep-cost job 2026-09-03: the new number must be written
+            // down). "rings" is the typed build alone; "sweep" adds the
+            // identity diff and the parity build when that is on.
+            double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            Scaffold.Log.Debug("PA", $"sweep {ms:0.00}ms ({(_lastRingsMs < 0 ? "rings legacy" : $"rings {_lastRingsMs:0.00}ms")}{(ParityOn ? ", parity on" : "")})"
+                + (any ? $" pending h={_paPending[0]} n={_paPending[1]} l={_paPending[2]}"
+                       + $" o={_paPending[3]} x={_paPending[4]} u={_paPending[5]}" : ""));
             return rings;
         }
 

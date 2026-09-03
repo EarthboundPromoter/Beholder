@@ -133,19 +133,32 @@ namespace SkaldAccessibility
             // FixedUpdate tick — the Update-phase latch the game gives its own
             // keys in SkaldIO.update. `finally`: a throwing mod layer must
             // cost mod features, never the game's own keyboard.
-            try { InputHandler.ProcessInput(); }
-            finally { SkaldIOPatches.ArmPressLatch(); }
+            // The whole Update-phase body is stopwatched (FrameBudget, the
+            // frame-budget receipt 2026-09-03): this is where the overland
+            // passive sweep runs.
+            FrameBudget.Begin();
+            try
+            {
+                try { InputHandler.ProcessInput(); }
+                finally { SkaldIOPatches.ArmPressLatch(); }
 
-            // Verification-gate instrumentation (table-UI foundation; log-only)
-            GateReceipts.Tick();
+                // Verification-gate instrumentation (table-UI foundation; log-only)
+                GateReceipts.Tick();
+            }
+            finally { FrameBudget.End(); }
         }
 
         private void LateUpdate()
         {
             // The timing spine: note-only hooks feed pending state; all reads,
             // composition, and the speech queue pump happen here, once per frame,
-            // after the game's own update has settled.
-            Pump.Drain();
+            // after the game's own update has settled. Stopwatched as the
+            // frame's second mod segment (the speech pump's synchronous Tolk
+            // call lands here); then the previous frame is judged.
+            FrameBudget.Begin();
+            try { Pump.Drain(); }
+            finally { FrameBudget.End(); }
+            FrameBudget.EndFrame();
             Scaffold.Log.ClockTick();   // wall-clock stamp ~every 10s (L3)
         }
 

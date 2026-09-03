@@ -157,15 +157,29 @@ namespace SkaldAccessibility.Scaffold
         // transition had stamped (review note 11).
         private static int _lastClockFrame = -600;
 
-        /// <summary>Periodic wall-clock stamp (~10s at 60fps) — call every
-        /// frame; also called unconditionally at state transitions.</summary>
+        /// <summary>Periodic wall-clock stamp — call every frame. 600 game
+        /// ticks, i.e. ~10 s at EVERY frame rate (the 600-frame period was
+        /// 2.5–4 s on a 150–240 fps machine — Opus review 2026-09-03; it was
+        /// the one wall-clock-intent window still counted in frames).
+        /// TickClock.Moment counts frames until the tick clock is live, so
+        /// boot stamps keep their old cadence. The transition stamp
+        /// (Pump, every state change) calls ClockNow directly and does not
+        /// reset this period.</summary>
         internal static void ClockTick()
         {
-            if (Time.frameCount - _lastClockFrame < 600) return;
-            ClockNow();
+            if (TickClock.Moment - _lastClockMoment < 600) return;
+            _lastClockMoment = TickClock.Moment;
+            ClockNow(periodic: true);
         }
 
-        internal static void ClockNow()
+        private static long _lastClockMoment = -600;
+
+        /// <summary>The stamp line. The frame-budget rollup rides ONLY the
+        /// periodic stamp (2026-09-03): its window is then the ~10 s period,
+        /// self-described by its own frame count, and its Debug-line cap is
+        /// per period — a transition stamp that reset it made the cap "per
+        /// state change" during navigation (Opus review).</summary>
+        internal static void ClockNow(bool periodic = false)
         {
             // Ticks since the last stamp beside the frames since it: the
             // frames-per-tick ratio is the press-latch audit's key number
@@ -175,8 +189,12 @@ namespace SkaldAccessibility.Scaffold
             long tickDelta = _lastClockTicks < 0 ? 0 : ticks - _lastClockTicks;
             _lastClockFrame = Time.frameCount;
             _lastClockTicks = ticks;
-            Plugin.Logger?.LogInfo(
-                $"[Clock] {DateTime.Now:yyyy-MM-dd'T'HH:mm:ss} f{Time.frameCount} +{frames}f/+{tickDelta} ticks");
+            string line = $"[Clock] {DateTime.Now:yyyy-MM-dd'T'HH:mm:ss} f{Time.frameCount} +{frames}f/+{tickDelta} ticks";
+            // The frame-budget rollup: the mod's max per-frame share and the
+            // frame counts over the period, so an Info-level player log
+            // answers "did the mod drop frames" without Debug logging.
+            if (periodic) line += "; " + FrameBudget.Rollup();
+            Plugin.Logger?.LogInfo(line);
         }
 
         private static long _lastClockTicks = -1;
