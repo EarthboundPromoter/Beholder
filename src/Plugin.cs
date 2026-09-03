@@ -15,7 +15,7 @@ namespace SkaldAccessibility
         // plugin identity (and any config) carries across the toolchain flip.
         public const string Guid = "SkaldAccessibility";
         public const string Name = "Beholder";
-        public const string Version = "0.5.7";
+        public const string Version = "0.5.8";
 
         internal static new ManualLogSource Logger;
 

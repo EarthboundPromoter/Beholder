@@ -1,6 +1,6 @@
 # Beholder
 
-**Version 0.5.7 — beta**
+**Version 0.5.8 — beta**
 
 **New to the mod? Start with the [tutorial](TUTORIAL.md)** — how SKALD's
 unusual interface works, how the mod presents it, and the habits that make
@@ -55,7 +55,7 @@ From the [Steam store page](https://store.steampowered.com/app/1069160/SKALD_Aga
    [Releases page](https://github.com/EarthboundPromoter/Beholder/releases/latest).
 2. Extract it into the SKALD game folder (the one containing
    `SKALD Against the Black Priory.exe`), merging folders if asked.
-3. Launch the game. You'll hear "Beholder 0.5.7 loaded." To update, extract the
+3. Launch the game. You'll hear "Beholder 0.5.8 loaded." To update, extract the
    newer zip the same way.
 
 One thing to know: on launch the mod **silently rebinds two of the game's
